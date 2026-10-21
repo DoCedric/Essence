@@ -1,0 +1,14 @@
+schema_version = "1.0.0"
+id = "essence"
+version = "0.1.0"
+name = "Essence"
+tagline = "Layered, mask-based PBR texturing built on the shader graph"
+maintainer = "Cedric Van der Kelen <cedric.van.der.kelen@howest.be>"
+type = "add-on"
+blender_version_min = "5.2.0"
+license = ["SPDX:CC0-1.0"]
+website = "https://github.com/Cedricvdk/Essence"
+tags = ["Material", "Paint"]
+
+[permissions]
+files = "Export baked textures to disk"
