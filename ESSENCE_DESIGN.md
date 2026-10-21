@@ -61,10 +61,12 @@ Map types *(built, untested)*:
 - Create layers that influence different channels of the PBR shader.
 - Create masks that control where those layers apply.
 - All layers and masks are built from shader graph nodes (see Design Philosophy).
-- A mask is an **image slot** *(built, untested)*: either a new blank paint image (fill black or white, size) or any image already in the file, picked from Blender's thumbnail grid (`template_ID_preview`, with Open and unlink). The two are interchangeable at any time. The layer list shows the mask thumbnail.
+- A mask is an **image slot** *(built, untested)*: either a new blank paint image (white reveals, black hides; size set in the redo panel) or any image already in the file, picked from Blender's thumbnail grid (`template_ID_preview`, with Open and unlink). The two are interchangeable at any time.
 - Masks should be Non-Color. If a picked image is not, the panel warns and offers a one-click Set Non-Color instead of changing the image silently (it may be used elsewhere).
-- Mask adjustments *(built, untested)*: **Invert**, **Brightness** and **Contrast** (same ranges as Blender's Brightness/Contrast node, -100 to 100). Order inside the layer: invert, then brightness/contrast, then clamp to 0-1, so Brightness always brightens the mask the user sees.
-- Masks can be painted in Blender's Texture Paint mode. A Paint Mask button makes the selected layer's mask the active image node and enters Texture Paint in Material mode; an Exit button leaves it. Painting on a picked image edits that image.
+- Mask adjustments *(built, untested)*: **Invert**, **Brightness** and **Contrast** (same ranges as Blender's Brightness/Contrast node, -100 to 100), per mask. Order inside the mask node: invert, then brightness/contrast, then clamp to 0-1, so Brightness always brightens the mask the user sees.
+- **Mask stack** *(built, untested)*: a layer or folder can have any number of masks, stacked on top of each other. Each mask is a row in the layer list, indented under its owner and shown with its thumbnail, like Substance Painter. Masks multiply together (the effect shows only where every enabled mask is white). Each mask row has an eye toggle that disables it (a disabled mask counts as white), and masks reorder with the up/down arrows within their owner. More blend modes between masks (add, subtract, ...) are a future extension of the mask node.
+- **Selection decides the panel.** Selecting a layer or folder shows its properties (channel values and enables) and an Add Mask menu (white, black or image mask). Selecting a mask shows only the mask properties (image, invert, brightness, contrast, paint, remove). A layer never shows both at once.
+- Masks can be painted in Blender's Texture Paint mode. A Paint Mask button makes the selected mask's image the active image node and enters Texture Paint in Material mode; an Exit button leaves it. Painting on a picked image edits that image.
 
 ### PBR Channels (v1)
 - Color
@@ -74,19 +76,19 @@ Map types *(built, untested)*:
 
 ### Layer Structure
 - One **layer node** (a node group) per layer, chained: each layer's output feeds the next layer's A inputs, and the layer's own channel values are the B inputs.
-- Inputs per layer: A and B for Color, Roughness, Metallic and Bump, plus a Mask, and the settings below.
+- Inputs per layer: A and B for Color, Roughness, Metallic and Bump, plus a Mask (the already combined result of the layer's mask stack) and the settings below.
 - **Per-channel enable** *(built, untested)*: each channel has an Enable checkbox input. The effective blend factor for a channel is `mask * enable`, so a disabled channel passes the layers below straight through ("leaks"), like Substance Painter. A layer can therefore affect only roughness, only color, and so on.
-- **Mask adjustment inputs** *(built, untested)*: Mask Invert, Mask Brightness, Mask Contrast.
+- **Mask nodes** *(built, untested)*: each mask is one instance of the shared "Essence Mask" node group (version 1). Inputs: Value (the mask image), Previous (the masks before it in the stack), Mask Invert, Mask Brightness, Mask Contrast, Enable. Output: Mask = adjusted value (or 1 when disabled) * Previous. The image node feeds Value and the last mask node of the stack feeds the layer's Mask input, so the whole stack is a visible chain of nodes below the layer.
 - Outputs per layer: Color, Roughness, Metallic and Bump (height). Each layer node therefore has a Bump output, and the end of the stack has a single Bump node (see Channel Blending).
-- The shared "Essence Layer" node group carries a version (currently 3: 2 added the Enable inputs, 3 the mask adjustments). Outdated groups upgrade on Rebuild or Add Layer, and the upgrade preserves each layer's input values by socket name.
+- The shared "Essence Layer" node group carries a version (currently 4: 2 added the Enable inputs, 3 the mask adjustments, 4 moved the mask adjustments to the mask nodes). Outdated groups upgrade on Rebuild or Add Layer, and the upgrade preserves each layer's input values by socket name. Layers made before mask stacks existed (one mask stored on the layer) are converted to a mask entry first, so their adjustments are kept.
 - Blender node groups have no variable number of inputs, so a stack of N layers is N group instances in a chain. This is accepted.
 
 ### Folders *(built, untested)*
-A folder holds layers and has its own mask, which limits the combined effect of everything inside (like a Substance Painter folder). One level only: folders do not nest.
+A folder holds layers and has its own mask stack, which limits the combined effect of everything inside (like a Substance Painter folder). One level only: folders do not nest.
 - **Node structure:** the layers inside a folder chain as normal, starting from the stack below the folder. A **folder node** (shared node group "Essence Folder", version 1) then lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is already `A + sum of inner heights`, so a folder mask of 0 leaves the height below untouched. The folder node's outputs continue the chain like a layer's. An empty folder passes the stack through.
-- **Folder node inputs:** A and B per channel, Mask, Mask Invert, Mask Brightness, Mask Contrast. No per-channel Enable (decided for v1; can be added later). The mask is optional and uses the same image slot, adjustments and paint workflow as a layer mask.
-- **Data:** the layer list stays flat and bottom-to-top. A folder entry sits directly above its children, which carry the folder's `uid` as `parent`.
-- **UI:** children are indented under the folder in the list. Add Folder creates an empty folder above the active entry. Add Layer with a folder active adds into it. The up/down arrows move a layer within its folder and across folder borders (up into a folder joins as its bottom child, down into one as its top child, past the end leaves it); a folder moves as a block. Removing a folder ungroups its layers.
+- **Folder node inputs:** A and B per channel, Mask. No per-channel Enable (decided for v1; can be added later). The folder's masks are mask nodes exactly like a layer's.
+- **Data:** the layer list stays flat and bottom-to-top. Every entry has a `uid`, a `kind` (layer, folder or mask) and a `parent` (the owner's uid). Everything an entry owns sits directly below it in the list, so with the list drawn reversed an owner is followed by its masks and, for a folder, its layers. All reordering goes through the tree helpers in `stack.py`.
+- **UI:** children are indented under the folder and masks under their owner. Add Folder creates an empty folder above the active entry. Add Layer with a folder active adds into it. The up/down arrows move a layer within its folder and across folder borders (up into a folder joins as its bottom child, down into one as its top child, past the end leaves it); a folder moves as a block and masks reorder within their owner. Removing a folder ungroups its layers; removing a layer or folder removes its masks.
 
 ### Layer Properties
 - The layer's Bump value is a slider from -1 to 1: positive raises the surface, negative carves into it, 0 has no effect. Height is therefore signed.
@@ -95,7 +97,7 @@ A folder holds layers and has its own mask, which limits the combined effect of 
 ### User Interface
 - All Essence UI lives in the sidebar (N panel), using standard Blender panels, UI lists and properties.
 - It aims to be as close to Substance Painter's workflow as that allows.
-- Panel order: Layers (stack list, add/remove/move/rebuild), Layer Properties (value and enable checkbox per channel), Mask (image picker, invert/brightness/contrast, paint), Material (Normal Map Strength, Bump Strength and Distance), Bake, Export.
+- Panel order: Layers (stack list with masks, add layer/folder/mask, remove, move, rebuild), then either Layer Properties (value and enable checkbox per channel, Add Mask) or Mask Properties (image picker, invert/brightness/contrast, paint), depending on what is selected, then Material (Normal Map Strength, Bump Strength and Distance), Bake, Export.
 - Available in both the 3D Viewport sidebar and the UV/Image Editor sidebar.
 - No custom workspace, no custom drawn UI (see Design Philosophy). A left-hand panel layout is not pursued for now because addons may not be able to place panels there; it can be revisited later if Blender allows it.
 
@@ -152,7 +154,7 @@ Values are baked from the top layer node's outputs with the Emission trick, so t
 
 ## Open Questions
 
-1. **Painting entry**: currently an explicit Paint Mask / Exit Paint Mode button. Automatic entry on selecting a mask is not built.
+1. **Painting entry**: currently an explicit Paint Mask / Exit Paint Mode button on the selected mask. Automatic entry on selecting a mask is not built.
 2. **Painting plumbing**: built as active image node plus Material paint mode (see Painting); not yet validated. The toggle to view the mask on its own is not built.
 3. **Sidebar details**: layer list, properties, mask, material, bake and export panels exist in both sidebars; how they should be refined (and how both sidebars share state, which they do through Material and Scene properties) is still open.
 4. **Baking groups** and the final shape of the bake section.

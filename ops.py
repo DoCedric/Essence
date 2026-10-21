@@ -1,12 +1,10 @@
-import uuid
-
 import bpy
 from bpy.props import EnumProperty, IntProperty
 
-from . import nodes
+from . import nodes, stack
 
 
-def _material(context, create=False):
+def _material(context, create=False, migrate=False):
     ob = context.active_object
     if ob is None or ob.type != 'MESH':
         return None
@@ -15,7 +13,28 @@ def _material(context, create=False):
         mat = bpy.data.materials.new(f"{ob.name} Essence")
         ob.data.materials.append(mat)
         ob.active_material = mat
+    if mat is not None and migrate:  # only from execute(), never from poll()
+        nodes.migrate(mat)
     return mat
+
+
+def _active(mat):
+    """The active stack entry, or None."""
+    s = mat.essence
+    return s.layers[s.active_index] if 0 <= s.active_index < len(s.layers) else None
+
+
+def _active_mask(context):
+    mat = _material(context)
+    e = _active(mat) if mat is not None else None
+    return e if e is not None and e.kind == 'MASK' else None
+
+
+def _owner(mat, e):
+    """The layer or folder entry that `e` belongs to (`e` itself if it is not a mask)."""
+    if e.kind != 'MASK':
+        return e
+    return next((x for x in mat.essence.layers if x.uid == e.parent), None)
 
 
 class _Base:
@@ -28,35 +47,30 @@ class _Base:
 class ESSENCE_OT_add_layer(_Base, bpy.types.Operator):
     bl_idname = "essence.add_layer"
     bl_label = "Add Layer"
-    bl_description = "Add a layer on top of the stack"
+    bl_description = ("Add a layer above the active one. With a folder active, the layer "
+                      "goes inside it")
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        mat = _material(context, create=True)
+        mat = _material(context, create=True, migrate=True)
         s = mat.essence
         nodes.ensure_tree(mat)
-        name = f"Layer {len(s.layers) + 1}"
+        name = f"Layer {sum(1 for x in s.layers if x.kind == 'LAYER') + 1}"
         node = nodes.add_layer_node(mat, name)
-        # Insert above the active entry. With a folder active, the layer goes inside it
-        # as its top child; with a child active, it joins that child's folder.
-        n = len(s.layers)
-        parent = ""
-        target = 0
-        if n:
-            cur = s.layers[s.active_index]
-            if cur.kind == 'FOLDER':
-                parent = cur.uid
-                target = s.active_index  # just below the folder entry
-            else:
-                parent = cur.parent
-                target = s.active_index + 1
+        cur = _active(mat)
+        owner = _owner(mat, cur) if cur is not None else None
         e = s.layers.add()
+        e.uid = uid = stack.new_uid()
         e.node_name = node.name
         e.name = name
-        e.parent = parent
-        s.layers.move(n, target)
+        e.parent = owner.uid if owner is not None and owner.kind == 'FOLDER' else (
+            owner.parent if owner is not None else "")
+        tree = stack.Tree(s.layers)
+        if owner is not None and owner.kind == 'LAYER':
+            tree.insert_after(uid, owner.uid)
+        tree.apply()
         nodes.rebuild_stack(mat)
-        s.active_index = target
+        s.active_index = tree.index(uid)
         return {'FINISHED'}
 
 
@@ -68,34 +82,32 @@ class ESSENCE_OT_add_folder(_Base, bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        mat = _material(context, create=True)
+        mat = _material(context, create=True, migrate=True)
         s = mat.essence
         nodes.ensure_tree(mat)
-        node = nodes.add_layer_node(mat, "", folder=True)
-        n = len(s.layers)
-        target = 0
-        if n:
-            cur = s.layers[s.active_index]
-            target = s.active_index + 1
-            if cur.parent:  # above the folder holding the active layer
-                target = _unit_end(s.layers, s.active_index) + 1
         name = f"Folder {sum(1 for x in s.layers if x.kind == 'FOLDER') + 1}"
-        node.label = name
+        node = nodes.add_layer_node(mat, name, folder=True)
+        cur = _active(mat)
+        owner = _owner(mat, cur) if cur is not None else None
         e = s.layers.add()
         e.kind = 'FOLDER'
-        e.uid = uuid.uuid4().hex[:8]
+        e.uid = uid = stack.new_uid()
         e.node_name = node.name
         e.name = name
-        s.layers.move(n, target)
+        tree = stack.Tree(s.layers)
+        if owner is not None:
+            tree.insert_after(uid, owner.parent or owner.uid)  # above the whole folder
+        tree.apply()
         nodes.rebuild_stack(mat)
-        s.active_index = target
+        s.active_index = tree.index(uid)
         return {'FINISHED'}
 
 
 class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
     bl_idname = "essence.remove_layer"
-    bl_label = "Remove Layer"
-    bl_description = "Remove the active layer, or ungroup and remove the active folder"
+    bl_label = "Remove"
+    bl_description = ("Remove the active layer or mask. Removing a folder ungroups its "
+                      "layers. A layer or folder takes its masks with it")
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -104,105 +116,28 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
         return mat is not None and len(mat.essence.layers) > 0
 
     def execute(self, context):
-        mat = _material(context)
+        mat = _material(context, migrate=True)
         s = mat.essence
         i = s.active_index
-        e = s.layers[i]
+        e = _active(mat)
+        if e is None:
+            return {'CANCELLED'}
         tree = mat.node_tree
-        if e.kind == 'FOLDER':  # removing a folder ungroups its layers
-            for c in s.layers:
-                if c.parent == e.uid:
-                    c.parent = ""
-        for n in (e.node_name, e.mask_node_name):
-            node = tree.nodes.get(n) if n else None
-            if node is not None:
-                tree.nodes.remove(node)
-        s.layers.remove(i)
+        for names in stack.remove_entries(s.layers, e.uid):
+            for n in names:
+                node = tree.nodes.get(n) if n else None
+                if node is not None:
+                    tree.nodes.remove(node)
         s.active_index = max(0, min(i, len(s.layers) - 1))
         nodes.rebuild_stack(mat)
         return {'FINISHED'}
 
 
-def _block_start(layers, h):
-    """Index of the first child of the folder whose entry is at `h` (`h` if empty)."""
-    s = h
-    while s > 0 and layers[s - 1].parent == layers[h].uid:
-        s -= 1
-    return s
-
-
-def _unit_end(layers, i):
-    """Index of the topmost entry of the top-level unit whose lowest entry is `i`: the
-    folder entry if `i` is a child, otherwise `i` itself."""
-    e = layers[i]
-    if not e.parent:
-        return i
-    j = i
-    while layers[j].kind != 'FOLDER' or layers[j].uid != e.parent:
-        j += 1
-    return j
-
-
-def _unit_size(layers, i):
-    """Size of the top-level unit whose topmost entry is `i`."""
-    return i - _block_start(layers, i) + 1 if layers[i].kind == 'FOLDER' else 1
-
-
-def _move(layers, i, up):
-    """Move entry `i` one step up or down. Layers cross folder borders: moving up into
-    a folder joins it as its bottom child, moving down into one as its top child, and
-    moving past the end leaves it. Folders move as whole blocks. Returns the entry's new
-    index, or None if it cannot move."""
-    n = len(layers)
-    e = layers[i]
-    if e.kind == 'FOLDER':
-        start = _block_start(layers, i)
-        if up:
-            if i + 1 >= n:
-                return None
-            m = _unit_end(layers, i + 1) - i
-            for k in range(m):
-                layers.move(i + 1 + k, start + k)
-            return i + m
-        if start == 0:
-            return None
-        m = _unit_size(layers, start - 1)
-        for _ in range(m):
-            layers.move(start - m, i)
-        return i - m
-    if up:
-        if i + 1 >= n:
-            return None
-        nxt = layers[i + 1]
-        if e.parent:
-            if nxt.parent != e.parent:  # next is the folder entry: step out above it
-                e.parent = ""
-            layers.move(i, i + 1)
-            return i + 1
-        if nxt.kind == 'FOLDER' or nxt.parent:  # step into the folder above
-            e.parent = nxt.uid if nxt.kind == 'FOLDER' else nxt.parent
-            return i
-        layers.move(i, i + 1)
-        return i + 1
-    if i == 0:
-        return None
-    below = layers[i - 1]
-    if e.parent:
-        if below.parent == e.parent:
-            layers.move(i, i - 1)
-            return i - 1
-        e.parent = ""  # bottom child steps out below the folder
-        return i
-    folder_uid = below.uid if below.kind == 'FOLDER' else ""  # read before the move
-    layers.move(i, i - 1)
-    if folder_uid:  # step into the folder below as its top child
-        layers[i - 1].parent = folder_uid
-    return i - 1
-
-
 class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
     bl_idname = "essence.move_layer"
-    bl_label = "Move Layer"
+    bl_label = "Move"
+    bl_description = ("Move the active entry. Layers move in and out of folders, masks "
+                      "reorder within their layer")
     bl_options = {'REGISTER', 'UNDO'}
 
     direction: EnumProperty(items=[('UP', "Up", ""), ('DOWN', "Down", "")])
@@ -213,22 +148,27 @@ class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
         return mat is not None and len(mat.essence.layers) > 1
 
     def execute(self, context):
-        mat = _material(context)
+        mat = _material(context, migrate=True)
         s = mat.essence
-        i = s.active_index
-        # The list is stored bottom-to-top; "up" in the UI means a higher index.
-        j = _move(s.layers, i, self.direction == 'UP')
-        if j is None:
+        e = _active(mat)
+        if e is None:
             return {'CANCELLED'}
+        uid = e.uid
+        tree = stack.Tree(s.layers)
+        # The list is stored bottom-to-top; "up" in the UI means a higher index.
+        if not tree.move(uid, self.direction == 'UP'):
+            return {'CANCELLED'}
+        tree.apply()
         nodes.rebuild_stack(mat)
-        s.active_index = j
+        s.active_index = tree.index(uid)
         return {'FINISHED'}
 
 
 class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
     bl_idname = "essence.add_mask"
     bl_label = "Add Mask"
-    bl_description = "Create an image mask for the active layer"
+    bl_description = ("Add a mask on top of the active layer's or folder's mask stack. "
+                      "Masks multiply together")
     bl_options = {'REGISTER', 'UNDO'}
 
     source: EnumProperty(
@@ -238,69 +178,46 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
         default='PAINT', options={'HIDDEN'})
     fill: EnumProperty(
         name="Fill",
-        items=[('BLACK', "Black (hidden)", "Layer is hidden until painted"),
-               ('WHITE', "White (visible)", "Layer is fully visible until erased")],
-        default='BLACK')
+        items=[('BLACK', "Black (hides)", "Hides the layer until painted"),
+               ('WHITE', "White (reveals)", "Layer is fully visible until erased")],
+        default='WHITE')
     size: IntProperty(name="Size", default=1024, min=64, max=8192)
 
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        if mat is None or not mat.essence.layers:
-            return False
-        return not mat.essence.layers[mat.essence.active_index].mask_node_name
-
-    def invoke(self, context, event):
-        if self.source == 'IMAGE':
-            return self.execute(context)
-        return context.window_manager.invoke_props_dialog(self)
-
-    def draw(self, context):
-        self.layout.prop(self, "fill")
-        self.layout.prop(self, "size")
+        return mat is not None and _active(mat) is not None
 
     def execute(self, context):
-        mat = _material(context)
+        mat = _material(context, migrate=True)
         s = mat.essence
-        e = s.layers[s.active_index]
-        layer_node = mat.node_tree.nodes.get(e.node_name)
-        if layer_node is None:
-            self.report({'ERROR'}, "Layer node is missing from the shader graph")
+        cur = _active(mat)
+        owner = _owner(mat, cur) if cur is not None else None
+        if owner is None:
             return {'CANCELLED'}
+        n = sum(1 for x in s.layers if x.kind == 'MASK' and x.parent == owner.uid)
+        name = "Mask" if n == 0 else f"Mask {n + 1}"
         img = None
         if self.source == 'PAINT':
             v = 0.0 if self.fill == 'BLACK' else 1.0
-            img = bpy.data.images.new(f"{mat.name}_{e.name}_mask", self.size, self.size,
-                                      alpha=False)
+            img = bpy.data.images.new(f"{mat.name}_{owner.name}_{name}", self.size,
+                                      self.size, alpha=False)
             img.generated_color = (v, v, v, 1.0)
             img.colorspace_settings.name = 'Non-Color'
             img.pack()
-        mask_node = nodes.add_mask_node(mat, layer_node, img)
-        e.mask_node_name = mask_node.name
+        node, img_node = nodes.add_mask_node(mat, name, img)
+        owner_uid = owner.uid
+        e = s.layers.add()
+        e.kind = 'MASK'
+        e.uid = uid = stack.new_uid()
+        e.parent = owner_uid
+        e.name = name
+        e.node_name = node.name
+        e.mask_node_name = img_node.name
+        tree = stack.Tree(s.layers)
+        tree.apply()
         nodes.rebuild_stack(mat)
-        mat.node_tree.nodes.active = mask_node
-        return {'FINISHED'}
-
-
-class ESSENCE_OT_remove_mask(_Base, bpy.types.Operator):
-    bl_idname = "essence.remove_mask"
-    bl_label = "Remove Mask"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        mat = _material(context)
-        if mat is None or not mat.essence.layers:
-            return False
-        return bool(mat.essence.layers[mat.essence.active_index].mask_node_name)
-
-    def execute(self, context):
-        mat = _material(context)
-        e = mat.essence.layers[mat.essence.active_index]
-        node = mat.node_tree.nodes.get(e.mask_node_name)
-        if node is not None:
-            mat.node_tree.nodes.remove(node)
-        e.mask_node_name = ""
+        s.active_index = tree.index(uid)  # selects the mask, which shows its options
         return {'FINISHED'}
 
 
@@ -313,12 +230,11 @@ class ESSENCE_OT_mask_non_color(_Base, bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return ESSENCE_OT_remove_mask.poll(context)
+        return _active_mask(context) is not None
 
     def execute(self, context):
         mat = _material(context)
-        e = mat.essence.layers[mat.essence.active_index]
-        node = mat.node_tree.nodes.get(e.mask_node_name)
+        node = mat.node_tree.nodes.get(_active_mask(context).mask_node_name)
         if node is None or node.image is None:
             return {'CANCELLED'}
         node.image.colorspace_settings.name = 'Non-Color'
@@ -328,16 +244,16 @@ class ESSENCE_OT_mask_non_color(_Base, bpy.types.Operator):
 class ESSENCE_OT_paint_mask(_Base, bpy.types.Operator):
     bl_idname = "essence.paint_mask"
     bl_label = "Paint Mask"
-    bl_description = "Enter Texture Paint mode targeting the active layer's mask"
+    bl_description = "Enter Texture Paint mode targeting the active mask"
 
     @classmethod
     def poll(cls, context):
-        return ESSENCE_OT_remove_mask.poll(context)
+        return _active_mask(context) is not None
 
     def execute(self, context):
         ob = context.active_object
         mat = _material(context)
-        e = mat.essence.layers[mat.essence.active_index]
+        e = _active_mask(context)
         node = mat.node_tree.nodes.get(e.mask_node_name)
         if node is None or node.image is None:
             self.report({'ERROR'}, "Mask image node is missing")
@@ -368,13 +284,15 @@ class ESSENCE_OT_exit_paint(_Base, bpy.types.Operator):
 class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
     bl_idname = "essence.rebuild"
     bl_label = "Rebuild Links"
-    bl_description = "Re-create the layer chain links and refresh the layer node group"
+    bl_description = ("Re-create the links of the stack, refresh the node groups and "
+                      "upgrade layers from older versions of Essence")
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         mat = _material(context)
         if mat is None or mat.node_tree is None:
             return {'CANCELLED'}
+        nodes.migrate(mat)  # before the groups upgrade: it reads their old inputs
         for e in mat.essence.layers:
             n = mat.node_tree.nodes.get(e.node_name)
             group = nodes.group_for(e)
@@ -384,10 +302,27 @@ class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_MT_add_mask(bpy.types.Menu):
+    bl_idname = "ESSENCE_MT_add_mask"
+    bl_label = "Add Mask"
+
+    def draw(self, context):
+        layout = self.layout
+        op = layout.operator("essence.add_mask", text="White Mask (reveals all)",
+                             icon='IMAGE_ALPHA')
+        op.source, op.fill = 'PAINT', 'WHITE'
+        op = layout.operator("essence.add_mask", text="Black Mask (hides all)",
+                             icon='MOD_MASK')
+        op.source, op.fill = 'PAINT', 'BLACK'
+        layout.separator()
+        layout.operator("essence.add_mask", text="Image Mask", icon='IMAGE_DATA').source = 'IMAGE'
+
+
 classes = (
-    ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer, ESSENCE_OT_move_layer,
-    ESSENCE_OT_add_mask, ESSENCE_OT_remove_mask,
-    ESSENCE_OT_mask_non_color, ESSENCE_OT_paint_mask, ESSENCE_OT_exit_paint, ESSENCE_OT_rebuild,
+    ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
+    ESSENCE_OT_move_layer, ESSENCE_OT_add_mask,
+    ESSENCE_OT_mask_non_color, ESSENCE_OT_paint_mask, ESSENCE_OT_exit_paint,
+    ESSENCE_OT_rebuild, ESSENCE_MT_add_mask,
 )
 
 

@@ -7,24 +7,25 @@ def _name_update(self, context):
     mat = self.id_data
     if mat.node_tree is None:
         return
-    node = mat.node_tree.nodes.get(self.node_name)
-    if node is not None:
-        node.label = self.name
-    mask = mat.node_tree.nodes.get(self.mask_node_name) if self.mask_node_name else None
-    if mask is not None:
-        mask.label = f"{self.name} Mask"
+    for n in (self.node_name, self.mask_node_name):
+        node = mat.node_tree.nodes.get(n) if n else None
+        if node is not None:
+            node.label = self.name
 
 
 class EssenceLayer(bpy.types.PropertyGroup):
     """Thin index into the node tree. Values live on the group node's sockets.
 
     The list is stored bottom-to-top. A folder entry sits directly above its children,
-    which point at it through `parent` (the folder's `uid`). Folders do not nest."""
+    which point at it through `parent` (the folder's `uid`). Folders do not nest.
+    Masks (kind MASK) point at the layer or folder that owns them; their `node_name` is the
+    mask group node and `mask_node_name` the image node. See stack.py."""
     name: StringProperty(name="Name", update=_name_update)
-    kind: EnumProperty(items=[('LAYER', "Layer", ""), ('FOLDER', "Folder", "")],
+    kind: EnumProperty(items=[('LAYER', "Layer", ""), ('FOLDER', "Folder", ""),
+                              ('MASK', "Mask", "")],
                        default='LAYER')
-    uid: StringProperty()      # set on folders
-    parent: StringProperty()   # uid of the containing folder, empty at top level
+    uid: StringProperty()
+    parent: StringProperty()   # uid of the owner (folder or layer), empty at top level
     node_name: StringProperty()
     mask_node_name: StringProperty()
 

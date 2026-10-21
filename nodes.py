@@ -2,16 +2,25 @@
 
 import bpy
 
+from . import stack
 from .channels import CHANNELS, MASK_SOCKET
 
 MASK_INVERT = "Mask Invert"
 MASK_BRIGHTNESS = "Mask Brightness"
 MASK_CONTRAST = "Mask Contrast"
 
+MASK_ENABLE = "Enable"
+MASK_VALUE = "Value"
+MASK_PREVIOUS = "Previous"
+
 GROUP_NAME = "Essence Layer"
-GROUP_VERSION = 3  # 2: per-channel Enable inputs, 3: mask invert/brightness/contrast
+# 2: per-channel Enable inputs, 3: mask invert/brightness/contrast,
+# 4: mask adjustments moved to the mask group (a layer has a stack of masks)
+GROUP_VERSION = 4
 FOLDER_GROUP_NAME = "Essence Folder"
-FOLDER_GROUP_VERSION = 1
+FOLDER_GROUP_VERSION = 2
+MASK_GROUP_NAME = "Essence Mask"
+MASK_GROUP_VERSION = 1
 VERSION_KEY = "essence_version"
 BUMP_NODE_NAME = "Essence Bump"
 NORMAL_NODE_NAME = "Essence Normal Map"
@@ -43,7 +52,7 @@ def _new_socket(iface, name, in_out, ch):
 def _build_group(ng, folder=False):
     """Build the layer group, or the folder group (`folder=True`).
 
-    The folder group has the same A/B/Mask/mask-adjustment interface but no Enable inputs,
+    The folder group has the same A/B/Mask interface but no Enable inputs,
     and lerps every channel (A = stack below the folder, B = result of the folder's
     layers), so the folder mask limits the combined effect of everything inside."""
     iface = ng.interface
@@ -58,13 +67,6 @@ def _build_group(ng, folder=False):
     mask.min_value = 0.0
     mask.max_value = 1.0
     mask.subtype = 'FACTOR'
-    inv = iface.new_socket(MASK_INVERT, in_out='INPUT', socket_type='NodeSocketBool')
-    inv.default_value = False
-    for name in (MASK_BRIGHTNESS, MASK_CONTRAST):
-        s = iface.new_socket(name, in_out='INPUT', socket_type='NodeSocketFloat')
-        s.default_value = 0.0
-        s.min_value = -100.0  # same range as Blender's Brightness/Contrast node
-        s.max_value = 100.0
     for ch in CHANNELS if not folder else ():
         en = iface.new_socket(f"{ch.label} Enable", in_out='INPUT',
                               socket_type='NodeSocketBool')
@@ -78,26 +80,8 @@ def _build_group(ng, folder=False):
     n_out = nodes.new('NodeGroupOutput')
     n_out.location = (400, 0)
 
-    # Mask adjustments: invert -> brightness/contrast -> clamp.
-    sub = nodes.new('ShaderNodeMath')
-    sub.operation = 'SUBTRACT'
-    sub.label = "Invert (|invert - mask|)"
-    sub.location = (-1000, 300)
-    links.new(n_in.outputs[MASK_INVERT], sub.inputs[0])
-    links.new(n_in.outputs[MASK_SOCKET], sub.inputs[1])
-    absn = nodes.new('ShaderNodeMath')
-    absn.operation = 'ABSOLUTE'
-    absn.location = (-800, 300)
-    links.new(sub.outputs[0], absn.inputs[0])
-    bc = nodes.new('ShaderNodeBrightContrast')
-    bc.location = (-600, 300)
-    links.new(absn.outputs[0], bc.inputs['Color'])
-    links.new(n_in.outputs[MASK_BRIGHTNESS], bc.inputs['Bright'])
-    links.new(n_in.outputs[MASK_CONTRAST], bc.inputs['Contrast'])
-    clamp = nodes.new('ShaderNodeClamp')
-    clamp.location = (-400, 300)
-    links.new(bc.outputs['Color'], clamp.inputs['Value'])
-    mask_out = clamp.outputs['Result']
+    # The mask arrives already adjusted and combined by the mask nodes feeding it.
+    mask_out = n_in.outputs[MASK_SOCKET]
 
     for i, ch in enumerate(CHANNELS):
         a = n_in.outputs[f"{ch.label} A"]
@@ -140,14 +124,90 @@ def _build_group(ng, folder=False):
         links.new(result, n_out.inputs[ch.label])
 
 
+def _build_mask_group(ng):
+    """One mask of a layer or folder. Adjusts the image value (invert, then
+    brightness/contrast, then clamp 0-1) and multiplies it onto the masks before it, so a
+    stack of masks is a chain of these nodes. A disabled mask contributes 1 (no effect)."""
+    iface = ng.interface
+    iface.clear()
+    ng.nodes.clear()
+
+    def float_in(name, default, lo=None, hi=None, subtype='NONE'):
+        s = iface.new_socket(name, in_out='INPUT', socket_type='NodeSocketFloat')
+        s.default_value = default
+        if lo is not None:
+            s.min_value, s.max_value = lo, hi
+        s.subtype = subtype
+        return s
+
+    float_in(MASK_VALUE, 1.0, 0.0, 1.0, 'FACTOR')
+    float_in(MASK_PREVIOUS, 1.0, 0.0, 1.0, 'FACTOR')
+    inv = iface.new_socket(MASK_INVERT, in_out='INPUT', socket_type='NodeSocketBool')
+    inv.default_value = False
+    float_in(MASK_BRIGHTNESS, 0.0, -100.0, 100.0)  # same range as the Brightness/Contrast node
+    float_in(MASK_CONTRAST, 0.0, -100.0, 100.0)
+    en = iface.new_socket(MASK_ENABLE, in_out='INPUT', socket_type='NodeSocketBool')
+    en.default_value = True
+    iface.new_socket(MASK_SOCKET, in_out='OUTPUT', socket_type='NodeSocketFloat')
+
+    nodes, links = ng.nodes, ng.links
+    n_in = nodes.new('NodeGroupInput')
+    n_in.location = (-1100, 0)
+    n_out = nodes.new('NodeGroupOutput')
+    n_out.location = (500, 0)
+
+    sub = nodes.new('ShaderNodeMath')
+    sub.operation = 'SUBTRACT'
+    sub.label = "Invert (|invert - mask|)"
+    sub.location = (-850, 100)
+    links.new(n_in.outputs[MASK_INVERT], sub.inputs[0])
+    links.new(n_in.outputs[MASK_VALUE], sub.inputs[1])
+    absn = nodes.new('ShaderNodeMath')
+    absn.operation = 'ABSOLUTE'
+    absn.location = (-650, 100)
+    links.new(sub.outputs[0], absn.inputs[0])
+    bc = nodes.new('ShaderNodeBrightContrast')
+    bc.location = (-450, 100)
+    links.new(absn.outputs[0], bc.inputs['Color'])
+    links.new(n_in.outputs[MASK_BRIGHTNESS], bc.inputs['Bright'])
+    links.new(n_in.outputs[MASK_CONTRAST], bc.inputs['Contrast'])
+    clamp = nodes.new('ShaderNodeClamp')
+    clamp.location = (-250, 100)
+    links.new(bc.outputs['Color'], clamp.inputs['Value'])
+
+    # Disabled -> 1.0, enabled -> adjusted value.
+    gate = nodes.new('ShaderNodeMix')
+    gate.data_type = 'FLOAT'
+    gate.label = "Enable"
+    gate.location = (-50, 100)
+    gate.inputs[2].default_value = 1.0  # A_Float
+    links.new(n_in.outputs[MASK_ENABLE], _by_ident(gate.inputs, "Factor_Float"))
+    links.new(clamp.outputs['Result'], _by_ident(gate.inputs, "B_Float"))
+    mul = nodes.new('ShaderNodeMath')
+    mul.operation = 'MULTIPLY'
+    mul.label = "Multiply with previous masks"
+    mul.location = (200, 100)
+    links.new(_by_ident(gate.outputs, "Result_Float"), mul.inputs[0])
+    links.new(n_in.outputs[MASK_PREVIOUS], mul.inputs[1])
+    links.new(mul.outputs[0], n_out.inputs[MASK_SOCKET])
+
+
 def _ensure_group(name, version, folder):
     ng = bpy.data.node_groups.get(name)
     if ng is not None and ng.get(VERSION_KEY) == version:
         return ng
     if ng is None:
         ng = bpy.data.node_groups.new(name, 'ShaderNodeTree')
+    elif name != MASK_GROUP_NAME:
+        # Upgrading rebuilds the interface for every material using the group, which drops
+        # the old per-layer mask inputs. Convert those to mask entries first.
+        for mat in bpy.data.materials:
+            migrate(mat)
     saved = _snapshot_values(ng)
-    _build_group(ng, folder)
+    if name == MASK_GROUP_NAME:
+        _build_mask_group(ng)
+    else:
+        _build_group(ng, folder)
     ng[VERSION_KEY] = version
     _restore_values(saved)
     return ng
@@ -163,7 +223,14 @@ def ensure_folder_group():
     return _ensure_group(FOLDER_GROUP_NAME, FOLDER_GROUP_VERSION, True)
 
 
+def ensure_mask_group():
+    """Return the shared mask node group, (re)building it if missing or outdated."""
+    return _ensure_group(MASK_GROUP_NAME, MASK_GROUP_VERSION, False)
+
+
 def group_for(entry):
+    if entry.kind == 'MASK':
+        return ensure_mask_group()
     return ensure_folder_group() if entry.kind == 'FOLDER' else ensure_layer_group()
 
 
@@ -272,7 +339,7 @@ def rebuild_stack(mat):
     """Wire the layer nodes of `mat` into a chain and into the shader."""
     tree = mat.node_tree
     layers = mat.essence.layers
-    entries = [(e, tree.nodes.get(e.node_name)) for e in layers]
+    entries = [(e, tree.nodes.get(e.node_name)) for e in layers if e.kind != 'MASK']
     entries = [(e, n) for e, n in entries if n is not None]
     if not entries:
         return
@@ -323,15 +390,38 @@ def rebuild_stack(mat):
         _clear_links(tree, dst)
         tree.links.new(prev.outputs[ch.label], dst)
 
-    # Mask image nodes sit below their layer.
-    for e in layers:
-        layer_node = tree.nodes.get(e.node_name)
-        mask_node = tree.nodes.get(e.mask_node_name) if e.mask_node_name else None
-        if layer_node and mask_node:
-            # Restores the link after a group upgrade rebuilt the interface.
-            if not layer_node.inputs[MASK_SOCKET].is_linked:
-                tree.links.new(mask_node.outputs['Color'], layer_node.inputs[MASK_SOCKET])
-            mask_node.location = (layer_node.location.x - 40, layer_node.location.y - 420)
+    for e, node in entries:
+        _link_masks(tree, layers, e, node)
+
+
+def _link_masks(tree, layers, owner, owner_node):
+    """Chain the owner's mask nodes (image -> mask node -> next mask node) into its Mask
+    input, and lay them out in a column below the owner."""
+    dst = owner_node.inputs[MASK_SOCKET]
+    _clear_links(tree, dst)
+    prev = None
+    x, y = owner_node.location.x, owner_node.location.y - 420
+    for m in layers:
+        if m.kind != 'MASK' or m.parent != owner.uid:
+            continue
+        node = tree.nodes.get(m.node_name)
+        if node is None:
+            continue
+        image = tree.nodes.get(m.mask_node_name) if m.mask_node_name else None
+        prev_in = node.inputs[MASK_PREVIOUS]
+        _clear_links(tree, prev_in)
+        if prev is not None:
+            tree.links.new(prev.outputs[MASK_SOCKET], prev_in)
+        value_in = node.inputs[MASK_VALUE]
+        _clear_links(tree, value_in)
+        if image is not None:
+            tree.links.new(image.outputs['Color'], value_in)
+            image.location = (x, y - 250)
+        node.location = (x, y)
+        y -= 650
+        prev = node
+    if prev is not None:
+        tree.links.new(prev.outputs[MASK_SOCKET], dst)
 
 
 def add_layer_node(mat, name, folder=False):
@@ -343,11 +433,63 @@ def add_layer_node(mat, name, folder=False):
     return node
 
 
-def add_mask_node(mat, layer_node, image):
+def add_mask_node(mat, label, image):
+    """Create a mask's group node and its image node (Non-Color). Returns (group, image)."""
     tree = mat.node_tree
-    n = tree.nodes.new('ShaderNodeTexImage')
-    n.image = image
-    n.label = f"{layer_node.label} Mask"
-    n.interpolation = 'Linear'
-    tree.links.new(n.outputs['Color'], layer_node.inputs[MASK_SOCKET])
-    return n
+    img_node = tree.nodes.new('ShaderNodeTexImage')
+    img_node.image = image
+    img_node.label = label
+    img_node.interpolation = 'Linear'
+    img_node.width = 240
+    node = tree.nodes.new('ShaderNodeGroup')
+    node.node_tree = ensure_mask_group()
+    node.label = label
+    node.width = 240
+    return node, img_node
+
+
+def needs_migration(mat):
+    """True if the material has entries from before uids and mask entries existed."""
+    return any(not e.uid or (e.kind != 'MASK' and e.mask_node_name)
+               for e in mat.essence.layers)
+
+
+def migrate(mat):
+    """Turn the old single mask stored on a layer or folder into a mask entry. Must run
+    before the layer groups are upgraded, since that drops the old adjustment inputs."""
+    if mat.node_tree is None or not needs_migration(mat):
+        return False
+    tree = mat.node_tree
+    layers = mat.essence.layers
+    stack.ensure_uids(layers)
+    for i in range(len(layers)):
+        e = layers[i]
+        if e.kind == 'MASK' or not e.mask_node_name:
+            continue
+        owner_node = tree.nodes.get(e.node_name)
+        old_image = e.mask_node_name
+        img = tree.nodes.get(old_image)
+        node = tree.nodes.new('ShaderNodeGroup')
+        node.node_tree = ensure_mask_group()
+        node.width = 240
+        node.label = node.name
+        if owner_node is not None:
+            for sock in (MASK_INVERT, MASK_BRIGHTNESS, MASK_CONTRAST):
+                old = owner_node.inputs.get(sock)
+                if old is not None:
+                    node.inputs[sock].default_value = old.default_value
+        owner_uid = e.uid
+        owner_name = e.name
+        m = layers.add()
+        m.kind = 'MASK'
+        m.uid = stack.new_uid()
+        m.parent = owner_uid
+        m.name = "Mask"
+        m.node_name = node.name
+        m.mask_node_name = old_image
+        node.label = f"{owner_name} Mask"
+        if img is not None:
+            img.label = f"{owner_name} Mask"
+        layers[i].mask_node_name = ""
+    stack.Tree(layers).apply()
+    return True

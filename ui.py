@@ -23,26 +23,58 @@ def _active(mat):
     return e, node
 
 
+def _depth(layers, item):
+    """Indent level of a list row: folders 0, their layers 1, masks one more than the
+    owner."""
+    if item.kind == 'MASK':
+        owner = next((e for e in layers if e.uid == item.parent), None)
+        return (_depth(layers, owner) if owner is not None else 0) + 1
+    return 1 if item.parent else 0
+
+
 class ESSENCE_UL_layers(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_prop, index):
-        row = layout.row(align=True)
-        if item.parent:
-            row.separator(factor=2.0)
-        row.prop(item, "name", text="", emboss=False,
-                 icon='FILE_FOLDER' if item.kind == 'FOLDER' else 'NODETREE')
-        node = None
         tree = item.id_data.node_tree
-        if item.mask_node_name and tree is not None:
-            node = tree.nodes.get(item.mask_node_name)
-        img = getattr(node, "image", None)
-        if img is not None:
-            try:
-                img.preview_ensure()
-                row.label(text="", icon_value=img.preview.icon_id)
-                return
-            except Exception:  # noqa: BLE001
-                pass
-        row.label(text="", icon='MOD_MASK' if item.mask_node_name else 'BLANK1')
+        row = layout.row(align=True)
+        depth = _depth(data.layers, item)
+        if depth:
+            row.separator(factor=2.0 * depth)
+        node = tree.nodes.get(item.node_name) if tree is not None else None
+
+        if item.kind == 'MASK':
+            img_node = tree.nodes.get(item.mask_node_name) if tree is not None else None
+            img = getattr(img_node, "image", None)
+            icon_id = 0
+            if img is not None:
+                try:
+                    img.preview_ensure()
+                    icon_id = img.preview.icon_id
+                except Exception:  # noqa: BLE001
+                    pass
+            if icon_id:
+                row.label(text="", icon_value=icon_id)
+            else:
+                row.label(text="", icon='MOD_MASK')
+            row.prop(item, "name", text="", emboss=False)
+            enable = node.inputs.get(nodes.MASK_ENABLE) if node is not None else None
+            if enable is not None:
+                row.prop(enable, "default_value", text="", emboss=False,
+                         icon='HIDE_OFF' if enable.default_value else 'HIDE_ON')
+            return
+
+        if item.kind == 'FOLDER':
+            row.prop(item, "name", text="", emboss=False, icon='FILE_FOLDER')
+            return
+
+        # Layer: a swatch of its color, then the name.
+        color = node.inputs.get("Color B") if node is not None else None
+        if color is not None:
+            sub = row.row(align=True)
+            sub.ui_units_x = 1.3
+            sub.prop(color, "default_value", text="")
+        else:
+            row.label(text="", icon='NODETREE')
+        row.prop(item, "name", text="", emboss=False)
 
 
 def _stack(self, context):
@@ -58,12 +90,17 @@ def _stack(self, context):
         col.operator("essence.add_folder", icon='NEWFOLDER')
         return
     s = mat.essence
+    if nodes.needs_migration(mat):
+        box = layout.box()
+        box.label(text="Made with an older Essence", icon='INFO')
+        box.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
     row = layout.row()
     row.template_list("ESSENCE_UL_layers", "", s, "layers", s, "active_index",
-                      rows=5, sort_reverse=True, sort_lock=True)
+                      rows=8, sort_reverse=True, sort_lock=True)
     col = row.column(align=True)
     col.operator("essence.add_layer", icon='ADD', text="")
     col.operator("essence.add_folder", icon='NEWFOLDER', text="")
+    col.menu("ESSENCE_MT_add_mask", icon='MOD_MASK', text="")
     col.operator("essence.remove_layer", icon='REMOVE', text="")
     col.separator()
     col.operator("essence.move_layer", icon='TRIA_UP', text="").direction = 'UP'
@@ -72,50 +109,62 @@ def _stack(self, context):
     col.operator("essence.rebuild", icon='FILE_REFRESH', text="")
 
 
+def _props_poll(cls, context):
+    mat = _mat(context)
+    if mat is None or not mat.essence.layers:
+        return False
+    e, _ = _active(mat)
+    return e is not None and e.kind in ('LAYER', 'FOLDER')
+
+
+def _mask_poll(cls, context):
+    mat = _mat(context)
+    if mat is None or not mat.essence.layers:
+        return False
+    e, _ = _active(mat)
+    return e is not None and e.kind == 'MASK'
+
+
 def _props(self, context):
     layout = self.layout
     mat = _mat(context)
-    if mat is None or not mat.essence.layers:
-        return
     e, node = _active(mat)
-    if e is None:
-        return
     if node is None:
         layout.label(text="Layer node missing from graph", icon='ERROR')
         return
     layout.prop(e, "name", text="Name")
     if e.kind == 'FOLDER':
-        layout.label(text="Folder: the mask limits all layers inside", icon='INFO')
-        return
-    col = layout.column(align=True)
-    for ch in CHANNELS:
-        enable = node.inputs[f"{ch.label} Enable"]
-        row = col.row(align=True)
-        row.prop(enable, "default_value", text="",
-                 icon='CHECKBOX_HLT' if enable.default_value else 'CHECKBOX_DEHLT',
-                 emboss=False)
-        sub = row.row(align=True)
-        sub.active = enable.default_value
-        sub.prop(node.inputs[f"{ch.label} B"], "default_value", text=ch.label)
+        layout.label(text="The folder's masks limit all layers inside", icon='INFO')
+    else:
+        col = layout.column(align=True)
+        for ch in CHANNELS:
+            enable = node.inputs[f"{ch.label} Enable"]
+            row = col.row(align=True)
+            row.prop(enable, "default_value", text="",
+                     icon='CHECKBOX_HLT' if enable.default_value else 'CHECKBOX_DEHLT',
+                     emboss=False)
+            sub = row.row(align=True)
+            sub.active = enable.default_value
+            sub.prop(node.inputs[f"{ch.label} B"], "default_value", text=ch.label)
+    n = sum(1 for m in mat.essence.layers if m.kind == 'MASK' and m.parent == e.uid)
+    layout.menu("ESSENCE_MT_add_mask", icon='MOD_MASK',
+                text="Add Mask" if n == 0 else f"Add Mask ({n})")
 
 
 def _mask(self, context):
     layout = self.layout
     mat = _mat(context)
-    if mat is None or not mat.essence.layers:
-        return
     e, node = _active(mat)
-    if e is None or node is None:
-        return
-    if not e.mask_node_name:
-        col = layout.column(align=True)
-        col.operator("essence.add_mask", text="Paint Mask", icon='BRUSH_DATA').source = 'PAINT'
-        col.operator("essence.add_mask", text="Image Mask", icon='IMAGE_DATA').source = 'IMAGE'
-        return
-    mask_node = mat.node_tree.nodes.get(e.mask_node_name)
-    if mask_node is None:
+    tree = mat.node_tree
+    owner = next((x for x in mat.essence.layers if x.uid == e.parent), None)
+    mask_node = tree.nodes.get(e.mask_node_name) if tree else None
+    if mask_node is None or node is None:
         layout.label(text="Mask node missing from graph", icon='ERROR')
+        layout.operator("essence.remove_layer", icon='X')
         return
+    layout.prop(e, "name", text="Name")
+    if owner is not None:
+        layout.label(text=f"Masks {owner.name}", icon='MOD_MASK')
     # Thumbnail grid of every image in the file, with Open (load from disk) and unlink.
     layout.template_ID_preview(mask_node, "image", open="image.open", rows=3, cols=5)
     img = mask_node.image
@@ -131,14 +180,14 @@ def _mask(self, context):
         col.prop(node.inputs[nodes.MASK_BRIGHTNESS], "default_value", text="Brightness")
         col.prop(node.inputs[nodes.MASK_CONTRAST], "default_value", text="Contrast")
     else:
-        layout.operator("essence.rebuild", text="Upgrade Layer Group", icon='FILE_REFRESH')
+        layout.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
     if context.active_object.mode == 'TEXTURE_PAINT':
         layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
     else:
         row = layout.row()
         row.enabled = img is not None
         row.operator("essence.paint_mask", icon='BRUSH_DATA')
-    layout.operator("essence.remove_mask", icon='X')
+    layout.operator("essence.remove_layer", text="Remove Mask", icon='X')
 
 
 def _material(self, context):
@@ -195,8 +244,8 @@ def _export(self, context):
 
 _PANELS = (
     ("LAYERS", "Layers", _stack, None),
-    ("PROPS", "Layer Properties", _props, None),
-    ("MASK", "Mask", _mask, None),
+    ("PROPS", "Layer Properties", _props, _props_poll),
+    ("MASK", "Mask Properties", _mask, _mask_poll),
     ("MATERIAL", "Material", _material, None),
     ("BAKE", "Bake", _bake, None),
     ("EXPORT", "Export", _export, None),
@@ -205,19 +254,18 @@ _PANELS = (
 classes = [ESSENCE_UL_layers]
 
 for space, tag in SPACES:
-    for key, label, draw, _ in _PANELS:
-        cls = type(
-            f"ESSENCE_PT_{key.lower()}_{tag.lower()}",
-            (bpy.types.Panel,),
-            {
-                "bl_idname": f"ESSENCE_PT_{key.lower()}_{tag.lower()}",
-                "bl_label": label,
-                "bl_space_type": space,
-                "bl_region_type": 'UI',
-                "bl_category": "Essence",
-                "draw": draw,
-            },
-        )
+    for key, label, draw, poll in _PANELS:
+        attrs = {
+            "bl_idname": f"ESSENCE_PT_{key.lower()}_{tag.lower()}",
+            "bl_label": label,
+            "bl_space_type": space,
+            "bl_region_type": 'UI',
+            "bl_category": "Essence",
+            "draw": draw,
+        }
+        if poll is not None:
+            attrs["poll"] = classmethod(poll)
+        cls = type(f"ESSENCE_PT_{key.lower()}_{tag.lower()}", (bpy.types.Panel,), attrs)
         classes.append(cls)
 
 
