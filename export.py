@@ -129,7 +129,7 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             m.location = (x, y)
             return m.outputs[0], [m]
 
-        start_mode = context.mode
+        start_mode = context.active_object.mode if context.active_object else 'OBJECT'
         if start_mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
         orig_selection = list(context.selected_objects)
@@ -215,7 +215,7 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             if orig_active is not None:
                 context.view_layer.objects.active = orig_active
             if start_mode != 'OBJECT':
-                bpy.ops.object.mode_set(mode='EDIT' if start_mode.startswith('EDIT_') else start_mode)
+                bpy.ops.object.mode_set(mode=start_mode)
 
         msg = f"Exported {', '.join(written)} to {folder}"
         if notes:
