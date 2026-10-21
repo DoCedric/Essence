@@ -1,3 +1,5 @@
+import uuid
+
 import bpy
 from bpy.props import EnumProperty, IntProperty
 
@@ -35,12 +37,56 @@ class ESSENCE_OT_add_layer(_Base, bpy.types.Operator):
         nodes.ensure_tree(mat)
         name = f"Layer {len(s.layers) + 1}"
         node = nodes.add_layer_node(mat, name)
+        # Insert above the active entry. With a folder active, the layer goes inside it
+        # as its top child; with a child active, it joins that child's folder.
+        n = len(s.layers)
+        parent = ""
+        target = 0
+        if n:
+            cur = s.layers[s.active_index]
+            if cur.kind == 'FOLDER':
+                parent = cur.uid
+                target = s.active_index  # just below the folder entry
+            else:
+                parent = cur.parent
+                target = s.active_index + 1
         e = s.layers.add()
         e.node_name = node.name
         e.name = name
-        # Insert above the active layer.
-        target = min(s.active_index + 1, len(s.layers) - 1) if len(s.layers) > 1 else 0
-        s.layers.move(len(s.layers) - 1, target)
+        e.parent = parent
+        s.layers.move(n, target)
+        nodes.rebuild_stack(mat)
+        s.active_index = target
+        return {'FINISHED'}
+
+
+class ESSENCE_OT_add_folder(_Base, bpy.types.Operator):
+    bl_idname = "essence.add_folder"
+    bl_label = "Add Folder"
+    bl_description = ("Add an empty folder above the active entry. Move layers into it with "
+                      "the up/down arrows. The folder's mask limits everything inside")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        mat = _material(context, create=True)
+        s = mat.essence
+        nodes.ensure_tree(mat)
+        node = nodes.add_layer_node(mat, "", folder=True)
+        n = len(s.layers)
+        target = 0
+        if n:
+            cur = s.layers[s.active_index]
+            target = s.active_index + 1
+            if cur.parent:  # above the folder holding the active layer
+                target = _unit_end(s.layers, s.active_index) + 1
+        name = f"Folder {sum(1 for x in s.layers if x.kind == 'FOLDER') + 1}"
+        node.label = name
+        e = s.layers.add()
+        e.kind = 'FOLDER'
+        e.uid = uuid.uuid4().hex[:8]
+        e.node_name = node.name
+        e.name = name
+        s.layers.move(n, target)
         nodes.rebuild_stack(mat)
         s.active_index = target
         return {'FINISHED'}
@@ -49,6 +95,7 @@ class ESSENCE_OT_add_layer(_Base, bpy.types.Operator):
 class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
     bl_idname = "essence.remove_layer"
     bl_label = "Remove Layer"
+    bl_description = "Remove the active layer, or ungroup and remove the active folder"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -62,6 +109,10 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
         i = s.active_index
         e = s.layers[i]
         tree = mat.node_tree
+        if e.kind == 'FOLDER':  # removing a folder ungroups its layers
+            for c in s.layers:
+                if c.parent == e.uid:
+                    c.parent = ""
         for n in (e.node_name, e.mask_node_name):
             node = tree.nodes.get(n) if n else None
             if node is not None:
@@ -70,6 +121,83 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
         s.active_index = max(0, min(i, len(s.layers) - 1))
         nodes.rebuild_stack(mat)
         return {'FINISHED'}
+
+
+def _block_start(layers, h):
+    """Index of the first child of the folder whose entry is at `h` (`h` if empty)."""
+    s = h
+    while s > 0 and layers[s - 1].parent == layers[h].uid:
+        s -= 1
+    return s
+
+
+def _unit_end(layers, i):
+    """Index of the topmost entry of the top-level unit whose lowest entry is `i`: the
+    folder entry if `i` is a child, otherwise `i` itself."""
+    e = layers[i]
+    if not e.parent:
+        return i
+    j = i
+    while layers[j].kind != 'FOLDER' or layers[j].uid != e.parent:
+        j += 1
+    return j
+
+
+def _unit_size(layers, i):
+    """Size of the top-level unit whose topmost entry is `i`."""
+    return i - _block_start(layers, i) + 1 if layers[i].kind == 'FOLDER' else 1
+
+
+def _move(layers, i, up):
+    """Move entry `i` one step up or down. Layers cross folder borders: moving up into
+    a folder joins it as its bottom child, moving down into one as its top child, and
+    moving past the end leaves it. Folders move as whole blocks. Returns the entry's new
+    index, or None if it cannot move."""
+    n = len(layers)
+    e = layers[i]
+    if e.kind == 'FOLDER':
+        start = _block_start(layers, i)
+        if up:
+            if i + 1 >= n:
+                return None
+            m = _unit_end(layers, i + 1) - i
+            for k in range(m):
+                layers.move(i + 1 + k, start + k)
+            return i + m
+        if start == 0:
+            return None
+        m = _unit_size(layers, start - 1)
+        for _ in range(m):
+            layers.move(start - m, i)
+        return i - m
+    if up:
+        if i + 1 >= n:
+            return None
+        nxt = layers[i + 1]
+        if e.parent:
+            if nxt.parent != e.parent:  # next is the folder entry: step out above it
+                e.parent = ""
+            layers.move(i, i + 1)
+            return i + 1
+        if nxt.kind == 'FOLDER' or nxt.parent:  # step into the folder above
+            e.parent = nxt.uid if nxt.kind == 'FOLDER' else nxt.parent
+            return i
+        layers.move(i, i + 1)
+        return i + 1
+    if i == 0:
+        return None
+    below = layers[i - 1]
+    if e.parent:
+        if below.parent == e.parent:
+            layers.move(i, i - 1)
+            return i - 1
+        e.parent = ""  # bottom child steps out below the folder
+        return i
+    folder_uid = below.uid if below.kind == 'FOLDER' else ""  # read before the move
+    layers.move(i, i - 1)
+    if folder_uid:  # step into the folder below as its top child
+        layers[i - 1].parent = folder_uid
+    return i - 1
 
 
 class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
@@ -89,10 +217,9 @@ class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
         s = mat.essence
         i = s.active_index
         # The list is stored bottom-to-top; "up" in the UI means a higher index.
-        j = i + 1 if self.direction == 'UP' else i - 1
-        if not 0 <= j < len(s.layers):
+        j = _move(s.layers, i, self.direction == 'UP')
+        if j is None:
             return {'CANCELLED'}
-        s.layers.move(i, j)
         nodes.rebuild_stack(mat)
         s.active_index = j
         return {'FINISHED'}
@@ -248,9 +375,9 @@ class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
         mat = _material(context)
         if mat is None or mat.node_tree is None:
             return {'CANCELLED'}
-        group = nodes.ensure_layer_group()
         for e in mat.essence.layers:
             n = mat.node_tree.nodes.get(e.node_name)
+            group = nodes.group_for(e)
             if n is not None and n.node_tree is not group:
                 n.node_tree = group
         nodes.rebuild_stack(mat)
@@ -258,7 +385,7 @@ class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
 
 
 classes = (
-    ESSENCE_OT_add_layer, ESSENCE_OT_remove_layer, ESSENCE_OT_move_layer,
+    ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer, ESSENCE_OT_move_layer,
     ESSENCE_OT_add_mask, ESSENCE_OT_remove_mask,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_paint_mask, ESSENCE_OT_exit_paint, ESSENCE_OT_rebuild,
 )

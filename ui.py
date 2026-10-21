@@ -26,7 +26,10 @@ def _active(mat):
 class ESSENCE_UL_layers(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_prop, index):
         row = layout.row(align=True)
-        row.prop(item, "name", text="", emboss=False, icon='NODETREE')
+        if item.parent:
+            row.separator(factor=2.0)
+        row.prop(item, "name", text="", emboss=False,
+                 icon='FILE_FOLDER' if item.kind == 'FOLDER' else 'NODETREE')
         node = None
         tree = item.id_data.node_tree
         if item.mask_node_name and tree is not None:
@@ -50,7 +53,9 @@ def _stack(self, context):
         return
     mat = ob.active_material
     if mat is None or not mat.essence.layers:
-        layout.operator("essence.add_layer", icon='ADD')
+        col = layout.column(align=True)
+        col.operator("essence.add_layer", icon='ADD')
+        col.operator("essence.add_folder", icon='NEWFOLDER')
         return
     s = mat.essence
     row = layout.row()
@@ -58,6 +63,7 @@ def _stack(self, context):
                       rows=5, sort_reverse=True, sort_lock=True)
     col = row.column(align=True)
     col.operator("essence.add_layer", icon='ADD', text="")
+    col.operator("essence.add_folder", icon='NEWFOLDER', text="")
     col.operator("essence.remove_layer", icon='REMOVE', text="")
     col.separator()
     col.operator("essence.move_layer", icon='TRIA_UP', text="").direction = 'UP'
@@ -78,6 +84,9 @@ def _props(self, context):
         layout.label(text="Layer node missing from graph", icon='ERROR')
         return
     layout.prop(e, "name", text="Name")
+    if e.kind == 'FOLDER':
+        layout.label(text="Folder: the mask limits all layers inside", icon='INFO')
+        return
     col = layout.column(align=True)
     for ch in CHANNELS:
         enable = node.inputs[f"{ch.label} Enable"]

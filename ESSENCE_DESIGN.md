@@ -81,6 +81,13 @@ Map types *(built, untested)*:
 - The shared "Essence Layer" node group carries a version (currently 3: 2 added the Enable inputs, 3 the mask adjustments). Outdated groups upgrade on Rebuild or Add Layer, and the upgrade preserves each layer's input values by socket name.
 - Blender node groups have no variable number of inputs, so a stack of N layers is N group instances in a chain. This is accepted.
 
+### Folders *(built, untested)*
+A folder holds layers and has its own mask, which limits the combined effect of everything inside (like a Substance Painter folder). One level only: folders do not nest.
+- **Node structure:** the layers inside a folder chain as normal, starting from the stack below the folder. A **folder node** (shared node group "Essence Folder", version 1) then lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is already `A + sum of inner heights`, so a folder mask of 0 leaves the height below untouched. The folder node's outputs continue the chain like a layer's. An empty folder passes the stack through.
+- **Folder node inputs:** A and B per channel, Mask, Mask Invert, Mask Brightness, Mask Contrast. No per-channel Enable (decided for v1; can be added later). The mask is optional and uses the same image slot, adjustments and paint workflow as a layer mask.
+- **Data:** the layer list stays flat and bottom-to-top. A folder entry sits directly above its children, which carry the folder's `uid` as `parent`.
+- **UI:** children are indented under the folder in the list. Add Folder creates an empty folder above the active entry. Add Layer with a folder active adds into it. The up/down arrows move a layer within its folder and across folder borders (up into a folder joins as its bottom child, down into one as its top child, past the end leaves it); a folder moves as a block. Removing a folder ungroups its layers.
+
 ### Layer Properties
 - The layer's Bump value is a slider from -1 to 1: positive raises the surface, negative carves into it, 0 has no effect. Height is therefore signed.
 - For height textures the same range maps to black = -1, mid grey = 0, white = 1 (as in Substance Painter). Height images use the Non-Color color space, and a new height image starts as mid grey (a flat surface).

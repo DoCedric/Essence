@@ -1,5 +1,6 @@
 import bpy
-from bpy.props import CollectionProperty, IntProperty, PointerProperty, StringProperty
+from bpy.props import (CollectionProperty, EnumProperty, IntProperty, PointerProperty,
+                       StringProperty)
 
 
 def _name_update(self, context):
@@ -15,8 +16,15 @@ def _name_update(self, context):
 
 
 class EssenceLayer(bpy.types.PropertyGroup):
-    """Thin index into the node tree. Values live on the group node's sockets."""
+    """Thin index into the node tree. Values live on the group node's sockets.
+
+    The list is stored bottom-to-top. A folder entry sits directly above its children,
+    which point at it through `parent` (the folder's `uid`). Folders do not nest."""
     name: StringProperty(name="Name", update=_name_update)
+    kind: EnumProperty(items=[('LAYER', "Layer", ""), ('FOLDER', "Folder", "")],
+                       default='LAYER')
+    uid: StringProperty()      # set on folders
+    parent: StringProperty()   # uid of the containing folder, empty at top level
     node_name: StringProperty()
     mask_node_name: StringProperty()
 

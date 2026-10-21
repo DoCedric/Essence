@@ -10,6 +10,8 @@ MASK_CONTRAST = "Mask Contrast"
 
 GROUP_NAME = "Essence Layer"
 GROUP_VERSION = 3  # 2: per-channel Enable inputs, 3: mask invert/brightness/contrast
+FOLDER_GROUP_NAME = "Essence Folder"
+FOLDER_GROUP_VERSION = 1
 VERSION_KEY = "essence_version"
 BUMP_NODE_NAME = "Essence Bump"
 NORMAL_NODE_NAME = "Essence Normal Map"
@@ -38,7 +40,12 @@ def _new_socket(iface, name, in_out, ch):
     return s
 
 
-def _build_group(ng):
+def _build_group(ng, folder=False):
+    """Build the layer group, or the folder group (`folder=True`).
+
+    The folder group has the same A/B/Mask/mask-adjustment interface but no Enable inputs,
+    and lerps every channel (A = stack below the folder, B = result of the folder's
+    layers), so the folder mask limits the combined effect of everything inside."""
     iface = ng.interface
     iface.clear()
     ng.nodes.clear()
@@ -58,7 +65,7 @@ def _build_group(ng):
         s.default_value = 0.0
         s.min_value = -100.0  # same range as Blender's Brightness/Contrast node
         s.max_value = 100.0
-    for ch in CHANNELS:
+    for ch in CHANNELS if not folder else ():
         en = iface.new_socket(f"{ch.label} Enable", in_out='INPUT',
                               socket_type='NodeSocketBool')
         en.default_value = True
@@ -97,14 +104,18 @@ def _build_group(ng):
         b = n_in.outputs[f"{ch.label} B"]
         y = -i * 200
         # Effective factor = mask * enable. Disabled channel -> factor 0 -> A leaks through.
-        fac = nodes.new('ShaderNodeMath')
-        fac.operation = 'MULTIPLY'
-        fac.location = (-200, y)
-        fac.label = f"{ch.label} Factor"
-        links.new(mask_out, fac.inputs[0])
-        links.new(n_in.outputs[f"{ch.label} Enable"], fac.inputs[1])
-        factor = fac.outputs[0]
-        if ch.blend == 'MIX':
+        blend = 'MIX' if folder else ch.blend
+        if folder:
+            factor = mask_out
+        else:
+            fac = nodes.new('ShaderNodeMath')
+            fac.operation = 'MULTIPLY'
+            fac.location = (-200, y)
+            fac.label = f"{ch.label} Factor"
+            links.new(mask_out, fac.inputs[0])
+            links.new(n_in.outputs[f"{ch.label} Enable"], fac.inputs[1])
+            factor = fac.outputs[0]
+        if blend == 'MIX':
             node = nodes.new('ShaderNodeMix')
             is_color = ch.socket_type == 'NodeSocketColor'
             node.data_type = 'RGBA' if is_color else 'FLOAT'
@@ -114,7 +125,7 @@ def _build_group(ng):
             links.new(a, _by_ident(node.inputs, f"A_{suffix}"))
             links.new(b, _by_ident(node.inputs, f"B_{suffix}"))
             result = _by_ident(node.outputs, f"Result_{suffix}")
-        elif ch.blend == 'ADD':
+        elif blend == 'ADD':
             # A + B * mask
             node = nodes.new('ShaderNodeMath')
             node.operation = 'MULTIPLY_ADD'
@@ -123,24 +134,37 @@ def _build_group(ng):
             links.new(a, node.inputs[2])
             result = node.outputs[0]
         else:
-            raise ValueError(f"Unknown blend method {ch.blend}")
+            raise ValueError(f"Unknown blend method {blend}")
         node.location = (0, y)
-        node.label = f"{ch.label} ({ch.blend.title()})"
+        node.label = f"{ch.label} ({blend.title()})"
         links.new(result, n_out.inputs[ch.label])
+
+
+def _ensure_group(name, version, folder):
+    ng = bpy.data.node_groups.get(name)
+    if ng is not None and ng.get(VERSION_KEY) == version:
+        return ng
+    if ng is None:
+        ng = bpy.data.node_groups.new(name, 'ShaderNodeTree')
+    saved = _snapshot_values(ng)
+    _build_group(ng, folder)
+    ng[VERSION_KEY] = version
+    _restore_values(saved)
+    return ng
 
 
 def ensure_layer_group():
     """Return the shared layer node group, (re)building it if missing or outdated."""
-    ng = bpy.data.node_groups.get(GROUP_NAME)
-    if ng is not None and ng.get(VERSION_KEY) == GROUP_VERSION:
-        return ng
-    if ng is None:
-        ng = bpy.data.node_groups.new(GROUP_NAME, 'ShaderNodeTree')
-    saved = _snapshot_values(ng)
-    _build_group(ng)
-    ng[VERSION_KEY] = GROUP_VERSION
-    _restore_values(saved)
-    return ng
+    return _ensure_group(GROUP_NAME, GROUP_VERSION, False)
+
+
+def ensure_folder_group():
+    """Return the shared folder node group, (re)building it if missing or outdated."""
+    return _ensure_group(FOLDER_GROUP_NAME, FOLDER_GROUP_VERSION, True)
+
+
+def group_for(entry):
+    return ensure_folder_group() if entry.kind == 'FOLDER' else ensure_layer_group()
 
 
 def _snapshot_values(ng):
@@ -248,9 +272,9 @@ def rebuild_stack(mat):
     """Wire the layer nodes of `mat` into a chain and into the shader."""
     tree = mat.node_tree
     layers = mat.essence.layers
-    nodes = [tree.nodes.get(e.node_name) for e in layers]
-    nodes = [n for n in nodes if n is not None]
-    if not nodes:
+    entries = [(e, tree.nodes.get(e.node_name)) for e in layers]
+    entries = [(e, n) for e, n in entries if n is not None]
+    if not entries:
         return
 
     bsdf = find_principled(tree)
@@ -260,15 +284,37 @@ def rebuild_stack(mat):
     px, py = bsdf.location.x, bsdf.location.y
     bump.location = (px - 250, py - 700)
 
-    prev = None
-    count = len(nodes)
-    for i, node in enumerate(nodes):
-        node.location = (px - 300 - (count - i) * 260, py)
+    # The list is bottom-to-top and a folder entry sits directly above its children.
+    # Children chain from the stack below the folder; the folder node then lerps
+    # between that stack (A) and the end of the children's chain (B).
+    def link_chain(node, a_src, b_src=None):
         for ch in CHANNELS:
             a = node.inputs[f"{ch.label} A"]
             _clear_links(tree, a)
-            if prev is not None:
-                tree.links.new(prev.outputs[ch.label], a)
+            if a_src is not None:
+                tree.links.new(a_src.outputs[ch.label], a)
+            if b_src is not None:
+                b = node.inputs[f"{ch.label} B"]
+                _clear_links(tree, b)
+                tree.links.new(b_src.outputs[ch.label], b)
+
+    prev = None
+    base = None        # chain tail below the folder currently being filled
+    open_uid = ""
+    count = len(entries)
+    for i, (e, node) in enumerate(entries):
+        node.location = (px - 300 - (count - i) * 260, py)
+        if e.kind == 'FOLDER':
+            if open_uid == e.uid and e.uid:
+                link_chain(node, base, prev)
+            else:  # empty folder: passes the stack through
+                link_chain(node, prev, prev)
+            open_uid = ""
+        else:
+            if e.parent != open_uid:
+                open_uid = e.parent
+                base = prev
+            link_chain(node, prev)
         prev = node
 
     for ch in CHANNELS:
@@ -288,10 +334,10 @@ def rebuild_stack(mat):
             mask_node.location = (layer_node.location.x - 40, layer_node.location.y - 420)
 
 
-def add_layer_node(mat, name):
+def add_layer_node(mat, name, folder=False):
     tree = ensure_tree(mat)
     node = tree.nodes.new('ShaderNodeGroup')
-    node.node_tree = ensure_layer_group()
+    node.node_tree = ensure_folder_group() if folder else ensure_layer_group()
     node.label = name
     node.width = 240
     return node
