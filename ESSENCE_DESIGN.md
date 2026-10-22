@@ -1,10 +1,35 @@
 # Essence
 
-A Blender addon that brings a Substance Painter-style texturing workflow into Blender, built entirely on top of Blender's own shader graph.
+A Blender addon that brings a Substance Painter-class texturing workflow into Blender, built entirely on top of Blender's own shader graph, baking, texture paint, asset and compositing systems.
 
-> Status: v0.1 in development. This document lists what is decided and what is built. Anything uncertain lives under "Open Questions" or "Verify". Items marked *(built, untested)* are implemented but have not yet been validated in Blender.
+> Status: v0.1 in development. Everything marked *built* is implemented but **has not yet been run in Blender** (see "Verify"). This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
 
 **Target:** Blender 5.2.2 (latest). No support for older versions.
+
+---
+
+## How to read this document
+
+**Status markers**
+
+| Marker | Meaning |
+|---|---|
+| ✅ | Built in the addon (untested in Blender unless stated) |
+| 🟡 | Partly built, gap described |
+| ⬜ | Not started |
+| 🚫 | Deliberately out of scope (see "Out of scope") |
+
+**Priority tiers** (used in every feature table and in the Master Roadmap)
+
+| Tier | Meaning |
+|---|---|
+| **P0 Essential** | Without it the addon is not a usable PBR texturing workflow, or the foundation breaks as it grows |
+| **P1 Core** | Expected by anyone coming from Substance Painter; the "full workflow" line |
+| **P2 Important** | Large productivity or quality gain, but a workable workflow exists without it |
+| **P3 Nice to have** | Polish and convenience |
+| **P4 Trivial** | Small extras, do when passing by |
+
+**Cost class** (see principle 8): **L** live shader nodes (evaluated by Blender per pixel), **B** baked or cached image (Cycles bake or compositor, evaluated on demand), **O** orchestration only (Python builds or edits Blender data, never touches pixels).
 
 ---
 
@@ -14,98 +39,109 @@ A Blender addon that brings a Substance Painter-style texturing workflow into Bl
 Essence does not use a proprietary layer system hidden behind its own data model. Layers, masks and channel setups are expressed as ordinary Blender shader nodes. The addon's UI is a convenient front end over the node tree, not a replacement for it.
 
 ### 2. Deconstructable by anyone who knows Blender
-A user with Blender knowledge must be able to open the shader editor, look at what Essence generated, understand it, and modify it by hand. Nothing the addon builds should be a black box.
+A user with Blender knowledge must be able to open the shader editor, look at what Essence generated, understand it, and modify it by hand. Nothing the addon builds should be a black box. Anything a user wires by hand (a Noise node into a layer's color input) must keep working through Rebuild.
 
 ### 3. Layers are a workflow concept built from nodes
-We keep the familiar layer/mask mental model from Substance Painter, but "layers" are not traditional stacked raster layers. They are node groups/structures in the shader graph that influence PBR channels.
+We keep the familiar layer/mask mental model from Substance Painter, but "layers" are node groups/structures in the shader graph that influence PBR channels.
 
 ### 4. Per-channel control
 Layers and masks can influence different channels of the PBR setup independently, rather than every layer affecting everything at once.
 
 ### 5. Channels are blended, not shaders
-Layers blend PBR channel values (color, roughness, metallic, bump) and feed a single shader. We avoid Add Shader / Mix Shader for layering because of the expected performance cost.
+Layers blend PBR channel values (color, roughness, metallic, height, normal, ...) and feed a single shader. We avoid Add Shader / Mix Shader for layering because of the expected performance cost.
 
 ### 6. Native Blender UI only
-Essence uses Blender's own panels, lists and properties. We do not build a custom UI layer on top of Blender (no custom overlays, drawn widgets or modal interface in the style of RetopoFlow). If Blender's UI system limits what we can do, we work within the limit.
+Essence uses Blender's own panels, lists, properties, asset browser and editors. We do not build a custom UI layer on top of Blender (no custom overlays, drawn widgets or modal interface in the style of RetopoFlow). If Blender's UI system limits what we can do, we work within the limit.
 
 ### 7. Build for scalability
-v1 is deliberately small (four channels, one blend method per channel), but nothing in the code or the generated node structure should assume that stays true. Concretely:
-- Channels are defined as data (name, socket type, blend method, default value), not hard-coded in the node-building logic. Adding a channel (emission, normal map, AO, ...) should mean adding a definition, not rewriting the layer builder.
-- Blend method is a per-channel property of a layer, even though v1 only exposes the default one. Letting the user pick a blend mode later must not require restructuring layers.
+Nothing in the code or the generated node structure should assume today's feature set stays true. Concretely:
+- Channels are defined as data (name, socket type, blend method, default value, target socket), not hard-coded in the node-building logic. Adding a channel means adding a definition, not rewriting the layer builder.
+- Blend mode is a per-channel property of a layer. Letting the user pick one must not require restructuring layers.
 - Generated node groups carry a version, so layers made by an older Essence can be detected and upgraded.
 - The layer node has a stable, documented set of inputs and outputs so that added channels extend it rather than replace it.
+- Export targets, mask generators and layer presets are data (presets and assets), not code paths.
+
+### 8. Use Blender's infrastructure; never build a program inside the program
+This is the rule for deciding *how* every feature below is built. Before writing code for a feature, ask which Blender system already does it:
+
+| Need | Use Blender's | Never |
+|---|---|---|
+| Per-pixel evaluation | Shader nodes (GPU, EEVEE/Cycles) | Python loops over pixels, own GPU shaders |
+| Painting | Texture Paint mode, brush assets, stencils, symmetry, undo | Own brush engine or modal paint tool |
+| Baking | Cycles bake (selected-to-active, cage, margin) | Own ray caster |
+| Image filters (blur, sharpen, edge) | Compositor, run as an explicit bake step | Per-frame Python filters |
+| Presets, smart materials, mask generators, grunge, alphas | Asset Browser / asset shelf / catalogs, node group assets | Own library browser or file format |
+| Lighting and look dev | World, HDRIs, Material Preview, Cycles | Own viewport or lighting rig |
+| Color management, file formats, UDIM | Image datablocks and colorspaces | Own image IO |
+| Undo, save, project | `.blend`, global undo, operators with REGISTER+UNDO | Own project file or undo stack |
+| Library of procedural patterns | Texture nodes, node group assets | Re-implementing Designer graphs |
+
+Corollaries:
+- **Python orchestrates, Blender computes.** Python creates nodes, sets properties, calls bake and export operators. It never touches pixels, with the single exception of small packing/readback steps in export (already the case today).
+- **Every feature declares its cost class** (L / B / O). Live (L) features must be cheap enough to evaluate per pixel in a deep stack. Anything that needs neighbouring pixels (blur, sharpen, edge detect, dilation, slope blur) cannot be live in a shader graph and is a **B** feature: an explicit "bake/refresh" step that writes an image, never a hidden recompute.
+- **No macro-button clones.** A UI element is only added when it exposes a property or operator of real Blender data. If a feature cannot be expressed as nodes, assets or a Blender operator, it is out of scope rather than faked.
+- **Viewport mesh-dependent generators read baked maps.** The AO node, Pointiness and Bevel node are Cycles-only. Generators that react to geometry (edge wear, dirt, curvature) read baked mesh maps (Essence's bake section), exactly as Substance does, so they work live in EEVEE.
 
 ---
 
-## Features
+## Part A. What exists today (v0.1)
 
 ### Baking
-Ported from the Artistant addon's bake pipeline (Cycles; selected objects; one image per object named `<object>_<Map>`, reused and overwritten on re-bake so references such as mask slots stay valid; images are packed; a dedicated unconnected image node `Essence_Bake_<MAP>` holds the target in the material). All bake settings Essence touches are saved and restored.
+Ported from the Artistant addon's bake pipeline (Cycles; selected objects; one image per object named `<object>_<Map>`, reused and overwritten on re-bake so references such as mask slots stay valid; images are packed; a dedicated unconnected image node `Essence_Bake_<MAP>` holds the target in the material). All bake settings Essence touches are saved and restored. Samples, margin and size are exposed in the Bake panel.
 
-Map types *(built, untested)*:
+Map types ✅ *(built, untested)*:
 - **Ambient Occlusion**: native Cycles AO pass.
 - **World Gradient**: black to white along world Z, spanning the combined world bounding box of the selected low-poly objects. Baked through a temporary Emission override of the surface.
-- **Normal (Tangent)**: native Cycles normal pass, tangent space, OpenGL (+Y). Flat on a single object. After a bake it is wired into the shader (see Channel Blending > Normal map).
+- **Normal (Tangent)**: native Cycles normal pass, tangent space, OpenGL (+Y). Flat on a single object. After a bake it is wired into the shader (see Normal map).
 - **Normal (World)**: world-space mesh normal remapped to 0-1, baked through the Emission override. Ignores the material's bump.
 
 **Bake on high** (single object, no high-poly) is the default when no High Poly collection is set.
 
-**Bake from high to low** *(built, untested)*: set a **High Poly** collection (children included, meshes only) and bake the selected low-poly objects. Works for every map type.
+**Bake from high to low** ✅: set a **High Poly** collection (children included, meshes only) and bake the selected low-poly objects. Works for every map type.
 - Selected-to-active, no cage. Ray start offset (Extrusion) defaults to 2% of the low-poly's bounding-box diagonal, overridable; max ray distance is twice the extrusion.
 - High-poly objects are never bake targets, even if selected. Hidden or unselectable high-poly objects are made visible for the bake and restored afterwards; a high-poly excluded or hidden by its collection is a clear error.
 - For emission-based maps Cycles reads the shader from the high-poly, so the temporary Emission override is applied to the high-poly materials too (a temporary material if one has none).
 
-**Baking groups**: not started. Manage sets of objects and bake settings as groups.
-
 ### Layers and Masks
-- Create layers that influence different channels of the PBR shader.
-- Create masks that control where those layers apply.
-- All layers and masks are built from shader graph nodes (see Design Philosophy).
-- A mask is an **image slot** *(built, untested)*: either a new blank paint image (white reveals, black hides; size set in the redo panel) or any image already in the file, picked from Blender's thumbnail grid (`template_ID_preview`, with Open and unlink). The two are interchangeable at any time.
-- Masks should be Non-Color. If a picked image is not, the panel warns and offers a one-click Set Non-Color instead of changing the image silently (it may be used elsewhere).
-- Mask adjustments *(built, untested)*: **Invert**, **Brightness** and **Contrast** (same ranges as Blender's Brightness/Contrast node, -100 to 100), per mask. Order inside the mask node: invert, then brightness/contrast, then clamp to 0-1, so Brightness always brightens the mask the user sees.
-- **Mask stack** *(built, untested)*: a layer or folder can have any number of masks, stacked on top of each other. Each mask is a row in the layer list, indented under its owner and shown with its thumbnail, like Substance Painter. Masks multiply together (the effect shows only where every enabled mask is white). Each mask row has an eye toggle that disables it (a disabled mask counts as white), and masks reorder with the up/down arrows within their owner. More blend modes between masks (add, subtract, ...) are a future extension of the mask node.
-- **Selection decides the panel.** Selecting a layer or folder shows its properties (channel values and enables) and an Add Mask menu (white, black or image mask). Selecting a mask shows only the mask properties (image, invert, brightness, contrast, paint, remove). A layer never shows both at once.
-- Masks can be painted in Blender's Texture Paint mode. A Paint Mask button makes the selected mask's image the active image node and enters Texture Paint in Material mode; an Exit button leaves it. Painting on a picked image edits that image.
+- Layers influence different channels of the PBR shader; masks control where they apply. All are built from shader graph nodes.
+- A mask is an **image slot** ✅: either a new blank paint image (white reveals, black hides; size set in the redo panel) or any image already in the file, picked from Blender's thumbnail grid (`template_ID_preview`, with Open and unlink). The two are interchangeable at any time.
+- Masks should be Non-Color. If a picked image is not, the panel warns and offers a one-click Set Non-Color instead of changing the image silently.
+- Mask adjustments ✅: **Invert**, **Brightness** and **Contrast** (same ranges as Blender's Brightness/Contrast node, -100 to 100), per mask. Order inside the mask node: invert, then brightness/contrast, then clamp to 0-1.
+- **Mask stack** ✅: a layer or folder can have any number of masks. Each mask is a row in the layer list, indented under its owner with its thumbnail. Masks multiply together. Each mask row has an eye toggle (a disabled mask counts as white) and masks reorder within their owner.
+- **Selection decides the panel.** Selecting a layer or folder shows its properties and an Add Mask menu (white, black or image mask). Selecting a mask shows only the mask properties. A layer never shows both at once.
+- Masks can be painted in Texture Paint mode. A Paint Mask button makes the selected mask's image the active image node and enters Texture Paint in Material mode; an Exit button leaves it.
 
 ### PBR Channels (v1)
-- Color
-- Roughness
-- Metallic
-- Bump (height)
+Color, Roughness, Metallic, Bump (height). Defined in `channels.py` as data.
 
 ### Layer Structure
 - One **layer node** (a node group) per layer, chained: each layer's output feeds the next layer's A inputs, and the layer's own channel values are the B inputs.
-- Inputs per layer: A and B for Color, Roughness, Metallic and Bump, plus a Mask (the already combined result of the layer's mask stack) and the settings below.
-- **Per-channel enable** *(built, untested)*: each channel has an Enable checkbox input. The effective blend factor for a channel is `mask * enable`, so a disabled channel passes the layers below straight through ("leaks"), like Substance Painter. A layer can therefore affect only roughness, only color, and so on.
-- **Mask nodes** *(built, untested)*: each mask is one instance of the shared "Essence Mask" node group (version 1). Inputs: Value (the mask image), Previous (the masks before it in the stack), Mask Invert, Mask Brightness, Mask Contrast, Enable. Output: Mask = adjusted value (or 1 when disabled) * Previous. The image node feeds Value and the last mask node of the stack feeds the layer's Mask input, so the whole stack is a visible chain of nodes below the layer.
-- Outputs per layer: Color, Roughness, Metallic and Bump (height). Each layer node therefore has a Bump output, and the end of the stack has a single Bump node (see Channel Blending).
-- The shared "Essence Layer" node group carries a version (currently 4: 2 added the Enable inputs, 3 the mask adjustments, 4 moved the mask adjustments to the mask nodes). Outdated groups upgrade on Rebuild or Add Layer, and the upgrade preserves each layer's input values by socket name. Layers made before mask stacks existed (one mask stored on the layer) are converted to a mask entry first, so their adjustments are kept.
+- Inputs per layer: A and B for each channel, a Mask (the already combined result of the layer's mask stack), and a per-channel Enable.
+- **Per-channel enable** ✅: effective blend factor for a channel is `mask * enable`, so a disabled channel passes the layers below straight through, like Substance Painter.
+- **Mask nodes** ✅: each mask is one instance of the shared "Essence Mask" node group (version 1). Inputs: Value, Previous, Mask Invert, Mask Brightness, Mask Contrast, Enable. Output: `adjusted value (or 1 when disabled) * Previous`. The whole stack is a visible chain of nodes below the layer.
+- Outputs per layer: one per channel. The end of the stack has a single Bump node (see Channel Blending).
+- The shared "Essence Layer" node group carries a version (currently 4). Outdated groups upgrade on Rebuild or Add Layer, preserving each layer's input values by socket name. Pre-mask-stack layers are converted first.
 - Blender node groups have no variable number of inputs, so a stack of N layers is N group instances in a chain. This is accepted.
+- **Current limitation:** a layer channel's B input is a constant value in the UI. Textures or procedurals can be wired in by hand in the node editor but there is no panel for it. This is the largest functional gap (see Master Roadmap, P0).
 
-### Folders *(built, untested)*
-A folder holds layers and has its own mask stack, which limits the combined effect of everything inside (like a Substance Painter folder). One level only: folders do not nest.
-- **Node structure:** the layers inside a folder chain as normal, starting from the stack below the folder. A **folder node** (shared node group "Essence Folder", version 1) then lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is already `A + sum of inner heights`, so a folder mask of 0 leaves the height below untouched. The folder node's outputs continue the chain like a layer's. An empty folder passes the stack through.
-- **Folder node inputs:** A and B per channel, Mask. No per-channel Enable (decided for v1; can be added later). The folder's masks are mask nodes exactly like a layer's.
-- **Data:** the layer list stays flat and bottom-to-top. Every entry has a `uid`, a `kind` (layer, folder or mask) and a `parent` (the owner's uid). Everything an entry owns sits directly below it in the list, so with the list drawn reversed an owner is followed by its masks and, for a folder, its layers. All reordering goes through the tree helpers in `stack.py`.
-- **UI:** children are indented under the folder and masks under their owner. Add Folder creates an empty folder above the active entry. Add Layer with a folder active adds into it. The up/down arrows move a layer within its folder and across folder borders (up into a folder joins as its bottom child, down into one as its top child, past the end leaves it); a folder moves as a block and masks reorder within their owner. Removing a folder ungroups its layers; removing a layer or folder removes its masks.
+### Folders ✅
+A folder holds layers and has its own mask stack, which limits the combined effect of everything inside. One level only.
+- **Node structure:** layers inside a folder chain as normal, starting from the stack below. A **folder node** (shared node group "Essence Folder", version 2) lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is `A + sum of inner heights`. An empty folder passes the stack through.
+- **Data:** the layer list stays flat and bottom-to-top. Every entry has a `uid`, a `kind` (layer, folder or mask) and a `parent` (the owner's uid). All reordering goes through the tree helpers in `stack.py`.
+- **UI:** children indented under the folder, masks under their owner. Add Folder creates an empty folder above the active entry. Add Layer with a folder active adds into it. Up/down arrows move a layer within and across folder borders; a folder moves as a block. Removing a folder ungroups its layers; removing a layer or folder removes its masks.
 
 ### Layer Properties
-- The layer's Bump value is a slider from -1 to 1: positive raises the surface, negative carves into it, 0 has no effect. Height is therefore signed.
-- For height textures the same range maps to black = -1, mid grey = 0, white = 1 (as in Substance Painter). Height images use the Non-Color color space, and a new height image starts as mid grey (a flat surface).
+- The layer's Bump value is a signed slider from -1 to 1: positive raises, negative carves, 0 has no effect.
+- For height textures the same range maps to black = -1, mid grey = 0, white = 1 (as in Substance Painter). Height images are Non-Color, and a new height image starts mid grey.
 
 ### User Interface
-- All Essence UI lives in the sidebar (N panel), using standard Blender panels, UI lists and properties.
-- It aims to be as close to Substance Painter's workflow as that allows.
-- Panel order: Layers (stack list with masks, add layer/folder/mask, remove, move, rebuild), then either Layer Properties (value and enable checkbox per channel, Add Mask) or Mask Properties (image picker, invert/brightness/contrast, paint), depending on what is selected, then Material (Normal Map Strength, Bump Strength and Distance), Bake, Export.
-- Available in both the 3D Viewport sidebar and the UV/Image Editor sidebar.
-- No custom workspace, no custom drawn UI (see Design Philosophy). A left-hand panel layout is not pursued for now because addons may not be able to place panels there; it can be revisited later if Blender allows it.
+- All Essence UI lives in the sidebar (N panel) using standard Blender panels, UI lists and properties, in both the 3D Viewport and the UV/Image Editor.
+- Panel order: Layers, then Layer Properties or Mask Properties depending on selection, then Material (Normal Map Strength, Bump Strength and Distance), Bake, Export.
+- No custom workspace, no custom drawn UI. A left-hand panel layout is not pursued because addons may not be able to place panels there.
 
 ### Painting
-- Painting is only done on masks. Layer channel values are set through the properties panel, not painted.
-- Selecting a mask and pressing paint enters Texture Paint mode targeting that mask. Whether this happens through a button or automatically on selection depends on how the UI ends up.
+- Painting is only done on masks; layer channel values are set through the properties panel. (This changes in the dream scope, see Part B, Painting.)
 - While painting, the viewport shows the final material, not the mask alone.
-- A toggle to view the mask itself can be added.
 
 ### Channel Blending (v1)
 
@@ -119,20 +155,18 @@ Each layer blends its channels onto the result of the layers below it, with the 
 | Bump | float height | Add | `A + B * mask` |
 
 Notes:
-- **Color, roughness, metallic: Mix.** Where the mask is 1 the layer replaces what is below, where it is 0 the layer has no effect, and values in between blend. This is the straightforward "layer with a mask" behavior. Use the Mix node (Color type for color, Float type for roughness and metallic) with the mask as Factor.
-- **Masks are data, not color.** Mask images use the Non-Color color space. Only color-carrying images (base color textures) use sRGB.
-- **Bump: Add, not Mix.** Bump is treated as a height value that accumulates across layers, not as something a layer replaces. Substance Painter does the same: its height channel defaults to the Linear Dodge (Add) blend mode, and height is stored as signed values where mid grey is zero, so a layer can raise or lower the surface. A mask of 0 therefore leaves the height untouched, which is what we want. Mix would instead pull the height toward the layer's value and fight with the layers below.
-- **Bump value range.** A layer's Bump slider runs from -1 to 1 (negative carves, positive raises).
-- **Bump scale is a separate multiplier.** A layer's height contribution is `B * mask` and can be scaled per layer (`B * strength * mask`) before it is added. This can be expressed with a Math node (Multiply Add) or with the Mix node's Add mode as in the current prototype; both give the same result. Overall height intensity is controlled once, at the end of the stack.
-- **One Bump node, at the end of the stack.** All layers' heights are summed into a single height value, which feeds one Bump node (Strength, Distance), whose Normal output goes to the shader's Normal input. We do not put a Bump node in every layer. Chained Bump nodes would each re-evaluate the height network feeding them and compound with each other, so a single node after accumulation is both more correct and cheaper. See "Verify".
-- The Mix node's blend-mode options (Add, Multiply, ...) exist only for the Color type, which is why the prototype's bump channel uses a Color-type Add. It works, but a Math node is cleaner for a float channel.
+- **Color, roughness, metallic: Mix.** Where the mask is 1 the layer replaces what is below, 0 it has no effect.
+- **Masks are data, not color.** Mask images use Non-Color. Only color-carrying images use sRGB.
+- **Bump: Add, not Mix.** Height accumulates across layers (Substance's height defaults to Linear Dodge/Add, mid grey is zero). A mask of 0 leaves the height untouched.
+- **One Bump node, at the end of the stack.** All heights are summed into a single height value feeding one Bump node (Strength, Distance), whose Normal output goes to the shader's Normal input. Chained Bump nodes would re-evaluate the height network and compound. See "Verify".
+- A layer's height can be scaled per layer (`B * strength * mask`) before it is added; overall intensity is controlled once, at the end of the stack.
 
-### Normal map *(built, untested)*
-A baked tangent-space normal is wired in as: **baked image, Normal Map node (Tangent), Bump node's Normal input, BSDF Normal**. The normal map is evaluated before the bump, as Blender requires, and layer height still feeds the Bump node's Height, so both combine in the single Bump node. A **Normal Map Strength** slider (the Normal Map node's Strength) sits in the Material panel next to the bump settings.
+### Normal map ✅
+A baked tangent-space normal is wired in as: **baked image, Normal Map node (Tangent), Bump node's Normal input, BSDF Normal**. The normal map is evaluated before the bump, as Blender requires, and layer height feeds the Bump node's Height, so both combine in the single Bump node. A **Normal Map Strength** slider sits in the Material panel.
 
-While a Normal (Tangent) bake runs, the BSDF's Normal input is temporarily unlinked, so the bake does not capture the material's own bump or normal map (which would then be applied twice). A low-poly-only tangent bake is therefore flat.
+While a Normal (Tangent) bake runs, the BSDF's Normal input is temporarily unlinked, so the bake does not capture the material's own bump or normal map. A low-poly-only tangent bake is therefore flat.
 
-### Export *(built, untested)*
+### Export ✅
 v1 exports for **Unity HDRP** only, from the active object's active material (needs at least one layer and a UV map). Settings: Format (PNG, TGA, EXR), Resolution (512 to 4096), Folder (default `//Export/`).
 
 | File | Content |
@@ -141,35 +175,368 @@ v1 exports for **Unity HDRP** only, from the active object's active material (ne
 | `<Material>_MaskMap` | R Metallic, G Ambient Occlusion, B Detail Mask (white), A Smoothness (`1 - roughness`). Non-Color. |
 | `<Material>_Normal` | Tangent space, OpenGL (+Y). A real bake of the whole material, so the baked normal map and the layer bump are combined. |
 
-Values are baked from the top layer node's outputs with the Emission trick, so they are exact and unlit. AO comes from an existing `<object>_AO` bake (scaled to the export resolution) and is white if none exists; export does not bake AO itself. Temporary images and nodes are removed afterwards.
+Values are baked from the top layer node's outputs with the Emission trick, so they are exact and unlit. AO comes from an existing `<object>_AO` bake (scaled to the export resolution) and is white if none exists. Temporary images and nodes are removed afterwards.
 
-### Future (noted, not committed)
-- Other export targets (Unity URP: RGB metallic plus alpha smoothness; Unreal, glTF).
-- Bake: Mesh ID and Object Gradient (Artistant has them), a cage object, baking AO from the export action.
-- Image mask channel selection (R/G/B/Alpha) and levels-style remapping.
-- Choosing the blend mode per layer per channel (Multiply, Overlay, Add, Subtract, ...). Covered by the scalability principle above.
-- Normal map channel for baked or imported normals. When added, Blender's rule applies: a Normal Map node has to be evaluated before the Bump node and fed into the Bump node's Normal input, because normal mapping is tied to the mesh's tangents and the bump is applied on top of it. Substance Painter offers Normal Map Combine (Whiteout), Detail (Reoriented Normal Mapping) and Inverse Detail for blending normals; those would be the reference.
+---
+
+## Part B. The dream scope
+
+Full parity target: everything a Substance Painter user does in a texturing session, expressed in Blender's own systems. Each area lists the feature, the Blender infrastructure it should use, its cost class, its status and its priority.
+
+### B1. Channels
+
+Channels are data (`channels.py`). The Principled BSDF already exposes nearly every channel Substance has, so the work is adding definitions plus a few special targets. Only channels enabled for the material are generated (see B12, performance), so unused channels cost nothing.
+
+| Channel | Blender target | Blend | Status | Pri |
+|---|---|---|---|---|
+| Base Color | BSDF Base Color | Mix + blend modes | ✅ | |
+| Roughness | BSDF Roughness | Mix + blend modes | ✅ | |
+| Metallic | BSDF Metallic | Mix + blend modes | ✅ | |
+| Height | Bump node (Height) | Add | ✅ | |
+| Normal (layer-level) | Normal Map node, combined before Bump | Normal Map Combine (Whiteout), Detail (RNM), Inverse Detail, built as math node groups | 🟡 baked normal only, no per-layer normal | P0 |
+| Opacity / Alpha | BSDF Alpha | Mix | ⬜ | P0 |
+| Emission (color + strength) | BSDF Emission Color / Strength | Mix | ⬜ | P0 |
+| Ambient Occlusion | not a BSDF input; kept as an exported channel and optional viewport multiply | Multiply | 🟡 baked and exported, not a layer channel | P1 |
+| Specular level / Specular tint | BSDF Specular IOR Level / Tint | Mix | ⬜ | P1 |
+| Coat (weight, roughness, tint, normal) | BSDF Coat inputs | Mix | ⬜ | P2 |
+| Sheen (weight, roughness, tint) | BSDF Sheen inputs | Mix | ⬜ | P2 |
+| Anisotropy (level, rotation) | BSDF Anisotropic / Rotation | Mix | ⬜ | P2 |
+| Subsurface / Translucency (weight, radius, color) | BSDF Subsurface inputs | Mix | ⬜ | P2 |
+| Transmission / IOR / Absorption | BSDF Transmission Weight, IOR | Mix | ⬜ | P2 |
+| True displacement | Displacement node into Material Output (fed by the same accumulated height) | Add | ⬜ | P2 |
+| Thin film | BSDF Thin Film inputs | Mix | ⬜ | P4 |
+| User channels (custom, exported only; e.g. packed masks) | no shader target, exported via packing presets | Mix | ⬜ | P2 |
+| Glossiness / Specular-glossiness workflow | derived on export (`1 - roughness`) | n/a | 🟡 smoothness only in Unity export | P3 |
+
+Channel-set UI: a per-material **Channels** list (checkbox per channel) decides which channels exist in layers, panels and export. Replaces the fixed four.
+
+### B2. Layer content (what a layer *is*)
+
+Today a layer is "a value per channel". The dream layer has a **source per channel**, like Substance's Fill layer with per-channel textures, and the source kinds below. Sources are shader nodes feeding the B inputs of the layer node, so they stay hand-editable.
+
+| Feature | Blender infra | Cost | Status | Pri |
+|---|---|---|---|---|
+| Uniform value per channel | Socket value | L | ✅ | |
+| **Image texture source per channel** (picker like masks) | Image Texture node, colorspace per channel | L | ⬜ | **P0** |
+| **Procedural source per channel** | Any node group with a color/float output, picked from the asset browser or pointer | L | ⬜ | **P0** |
+| **Projection modes**: UV, Triplanar (box blend), Object/Generated coords, Planar from an Empty, Spherical, Cylindrical | Texture Coordinate + Mapping + Image Texture projection (Box, Flat, Sphere, Tube) | L | ⬜ | P0 (UV, triplanar), P2 (rest) |
+| Mapping controls (tiling, offset, rotation, scale; uniform and per channel) | Mapping node, exposed as layer inputs | L | ⬜ | P0 |
+| **Layer opacity** (overall, plus per-channel opacity beyond the enable checkbox) | Factor multiplier in the layer group | L | ⬜ | **P0** |
+| **Blend mode per channel** (see B3) | Mix node blend types | L | ⬜ | **P0** |
+| Paint layer (channel images painted directly) | Per-channel image + paint slots | B/L | ⬜ | P1 |
+| Layer duplicate / copy / paste / hide / solo | Operators, node group copy | O | ⬜ | P1 |
+| Layer instances (shared content, linked) | Shared node group / shared image datablock | L | ⬜ | P3 |
+| Height blending (layer height drives where it shows, "material layering by height") | Mask generator: Math Compare of heights | L | ⬜ | P2 |
+| Anchor points (use an intermediate stack result as a generator input) | Link from a chosen layer's output socket into a generator node | L | ⬜ | P2 |
+| Decals (image projected from an Empty, with alpha) | Layer with Object-coordinate projection from an Empty + mask | L | ⬜ | P2 |
+| Layer lock (protect from edits) | Flag in `EssenceLayer`, UI disables properties | O | ⬜ | P4 |
+
+**Paint layers vs fill + painted mask.** Blender's brush paints one image at a time, whereas Substance paints all channels in one stroke. The accepted Essence equivalent is a **fill layer (values or textures) with a painted mask**: you "paint with a material" by painting the mask. This is already built and covers most hand-painting. Direct per-channel painting (paint layer) is P1 as an addition, with the stroke going to one channel at a time (selected in the panel), which is Blender's native limit.
+
+### B3. Blending modes
+
+Substance blend modes map almost one to one onto the Mix node (Color type), which already has them. The factor is `mask * opacity * enable`.
+
+| Group | Modes | Status | Pri |
+|---|---|---|---|
+| Basic | Normal (Mix), Multiply, Divide, Add (Linear Dodge), Subtract, Difference, Exclusion | 🟡 Mix and Add only, hard-wired per channel | **P0** |
+| Contrast | Overlay, Soft Light, Hard Light (via Linear/Vivid Light), Linear Light, Pin Light | ⬜ | P1 |
+| Dodge/burn | Color Dodge, Color Burn, Linear Burn, Screen | ⬜ | P1 |
+| Compare | Darken, Lighten | ⬜ | P1 |
+| Color | Hue, Saturation, Color, Value/Luminosity, Tint | ⬜ | P2 |
+| Special | Replace (ignores layers below), Passthrough (folder), Inverse Divide, Hard Mix | ⬜ | P2 |
+| Normal blends | Normal Map Combine (Whiteout), Detail (RNM), Inverse Detail | ⬜ | P1 (needed with the Normal channel) |
+
+Float channels (roughness, metallic, height) use the same modes through the Mix node's RGBA type with grey packing, or Math nodes, whichever is cheaper per mode.
+
+**Implementation direction.** The Mix node's `blend_type` is a node property, not a socket, so it cannot be a layer input. Options, to be decided when built (Open Question 5): (a) a small shared **blend node group per mode** ("Essence Blend Multiply", ...) sitting beside the layer node, swapped by the dropdown, or (b) a layer group variant per blend mode. Both keep the graph readable and avoid a runtime switch that evaluates every mode. (a) is preferred: it is the same shape as the existing shared mask group and costs one extra node per channel.
+
+### B4. Masks
+
+| Feature | Blender infra | Cost | Status | Pri |
+|---|---|---|---|---|
+| Image mask (blank or picked), invert, brightness, contrast, stack, eye toggle, reorder | Image Texture + math nodes | L | ✅ | |
+| Folder masks | same | L | ✅ | |
+| Mask stack blend modes (add, subtract, ...) beyond multiply | Mask group extension | L | ⬜ | P1 |
+| Mask **fill sources**: uniform (white/black) ✅; **procedural/noise**; **gradient**; **baked-map-driven** | Node group presets (see B6) | L | 🟡 | **P0** (picker for procedural) |
+| Mask adjustments: **Levels** (in/out, gamma), **Curves** (RGB Curves), **Threshold/Contrast**, **Color Ramp / Gradient remap**, **Smooth step** | Map Range, Float Curve, Color Ramp nodes | L | 🟡 brightness/contrast only | P1 |
+| Mask **filters needing neighbours**: Blur, Sharpen, Edge detect, Dilate/Erode, Slope blur | Compositor on an image, run as an explicit bake | B | ⬜ | P2 |
+| Mask by selection: Material ID / Color ID / Object ID | Baked ID map + Math Compare, color picker in the panel | L | ⬜ | P1 |
+| Mask by UV island / UV tile | UV-driven node setup or baked island ID | L | ⬜ | P3 |
+| Mask by polygon / mesh face selection ("polygon fill") | Face Maps / vertex group / attribute read through Attribute node | L | ⬜ | P2 |
+| Mask from **vertex group / attribute** | Attribute node | L | ⬜ | P2 |
+| View mask on its own (solo the mask in the viewport) | Debug view, see B9 | O | ⬜ | P1 |
+| Mask → Selection → paint only inside a region (paint masking) | Blender's Face Selection / Mask paint masking in Texture Paint | O | ⬜ | P2 |
+| Channel select for image masks (R/G/B/A, e.g. packed ORM) | Separate Color | L | ⬜ | P2 |
+| Mask copy/paste between layers; mask as a linked (instanced) image | Operators | O | ⬜ | P3 |
+| Mask resolution change / resample | Image scale | O | ⬜ | P3 |
+
+### B5. Folders
+
+| Feature | Status | Pri |
+|---|---|---|
+| One-level folder with mask stack and normal (lerp) blend | ✅ | |
+| **Nested folders** (tree helpers already use `parent`; the chain builder and UI must recurse) | ⬜ | P1 |
+| Folder **Passthrough** mode (inner layers blend straight onto the stack, with the folder mask multiplied into each inner layer's mask: cheaper and what Substance does by default) | ⬜ | P1 |
+| Folder opacity | ⬜ | P1 |
+| Folder blend mode (Normal vs Passthrough only; arbitrary blend modes per folder are P3) | ⬜ | P1 / P3 |
+| Per-channel enable on folders | ⬜ | P3 |
+| Folder collapse / expand in the list | ⬜ | P2 |
+| **Smart material** = a folder (with its masks and layers) saved as an asset and dropped onto an object | Node-group-based assets + Asset Browser; operator to instantiate | O | ⬜ | P1 |
+
+### B6. Generators, procedurals and the asset library
+
+Substance ships thousands of Designer procedurals; Essence does not rebuild that. The strategy is **Blender's texture nodes + a curated asset library**.
+
+| Feature | Blender infra | Cost | Status | Pri |
+|---|---|---|---|---|
+| Procedural noise sources | Noise (fBm, ridged, multifractal, hybrid, hetero), Voronoi (F1, F2, smooth, edge distance), Gabor, Wave, Magic, Gradient, Checker, Brick, White Noise | L | ⬜ (usable by hand) | P0 via picker, see B2 |
+| **Essence asset library**: node group assets with a uniform interface (Value in, Mask/Color out, sliders) in catalogs: Noises, Patterns, Grunge, Gradients, Generators | Asset Browser, asset shelf, catalogs, "Mark as Asset" | L | ⬜ | **P1** |
+| **Grunge / dirt maps** (a bundled image set, 16-bit, Non-Color) | Image datablocks as assets | L | ⬜ | P1 |
+| **Smart masks / generators**: Edge Wear, Dirt, Dust, Leaks, Curvature Wear, Cavity Dirt, Height Gradient, World Gradient/Position Gradient, Ambient Occlusion Mask, Thickness Mask | Node groups consuming baked mesh maps (see B8) + noise + Color Ramp/Levels | L | ⬜ | P1 |
+| Tile generator / Splatter / Shape / Weave | Voronoi with per-cell random offset/rotation as the shader-node approximation; or exact versions as imported images | L/B | ⬜ | P3 |
+| Warp / distortion of any texture | Perturb the vector input with a Noise node before the texture | L | ⬜ | P2 |
+| Randomization (color or value per tile) | White Noise on cell id, Object Info Random | L | ⬜ | P2 |
+| Layer presets (a layer with its channels and masks) | Node group asset | O | ⬜ | P2 |
+| Importing Substance (`.sbsar`) | no Blender infra | 🚫 | |
+
+**Procedural cost.** Procedural nodes are evaluated live at every shading point (every fragment in EEVEE, every sample and bounce in Cycles), unlike Substance, which computes a procedural once into a cached bitmap. The coordinate space (UV vs Object) is not the cost driver; the node is: Noise detail (octaves) scales roughly linearly, Dimensions 2D < 3D < 4D, Voronoi Smooth F1 and Distance to Edge cost more than F1, and distortion adds on top. Guidance for generator assets: default to 2D where the result is flat, keep default detail low, and note the cost in the asset description. For heavy procedural stacks the remedy is **Freeze to image** (B12), a later performance step, not a P0 requirement.
+
+**Interface contract for assets.** A generator asset exposes: `Mask` or `Color` output, inputs named `Scale`, `Contrast`, `Balance`, `Seed`, mesh-map inputs where relevant (`Curvature`, `AO`, `Thickness`, `Position`). Because they are normal node groups, users author their own and drop them in their library.
+
+### B7. Filters and adjustments
+
+Substance has **adjustment layers/filters** (Levels, HSL, Color Balance, Curves, Brightness/Contrast, Invert, Blur, Sharpen, Gradient Map, Threshold, Warp, Directional Warp, Slope Blur, Histogram Scan, ...). Essence treats them as nodes applied at one of three points:
+
+| Where | Meaning | Status | Pri |
+|---|---|---|---|
+| **Adjustment layer**: a stack entry with no content that transforms the channels below it, limited by its own mask stack and opacity (same A/Mask interface as a layer: `A + (f(A) - A) * mask`) | built on the same chain and mask machinery | 🟡 machinery exists; entry type ⬜ | **P1** |
+| **Layer filter**: transforms a layer's own content before blending | node inserted between the source and the B input | ⬜ | P1 |
+| **Mask filter**: transforms a mask value | node inserted inside the mask group | 🟡 invert/brightness/contrast | P1 |
+
+Live (L) adjustments, all single Blender nodes: Levels (Map Range), Brightness/Contrast, Hue/Saturation/Value, Color Balance, RGB Curves, Invert Color, Gamma, Color Ramp (gradient map), Math clamp/threshold, Separate/Combine Color (channel mixing).
+
+Neighbour-based filters (Blur, Sharpen, Edge Detect, Dilate/Erode, Slope Blur, Bevel, Emboss) are **B**: the compositor processes a layer's or mask's image and writes the result to an image that the layer then samples. Presented as a "Filter (baked)" entry with an explicit Refresh button, so the cost is visible. P2.
+
+| Feature | Cost | Status | Pri |
+|---|---|---|---|
+| Adjustment layer entry type | L | ⬜ | P1 |
+| Filter stack on layer / mask | L | ⬜ | P1 |
+| Live adjustment set (levels, HSV, balance, curves, invert, gradient map, threshold) | L | ⬜ | P1 |
+| Baked filter set via compositor (blur, sharpen, edge, dilate/erode) | B | ⬜ | P2 |
+| Normal-aware filters (normal blend, normal from height, height from normal, normal intensity) | L/B | ⬜ | P2 |
+
+### B8. Baking (mesh maps)
+
+Substance's bakers, mapped to Cycles and emission-override tricks. All result images are stored per object as `<object>_<Map>` and are the inputs of generators (B6).
+
+| Map | Method | Status | Pri |
+|---|---|---|---|
+| Ambient Occlusion | Cycles AO pass | ✅ | |
+| Normal (tangent) | Cycles NORMAL | ✅ | |
+| Normal (world) | Emission override | ✅ | |
+| World Gradient / Position Gradient | Emission override | ✅ | |
+| **Curvature** (convex/concave) | Bake normal, derive with compositor; or Pointiness/Bevel via emission override (Cycles) | ⬜ | **P1** |
+| **Position** (object-space XYZ) | Emission override of Geometry Position, with bounding box remap | ⬜ | P1 |
+| **Thickness** | Cycles AO with inverted normals (inside AO) via emission override | ⬜ | P1 |
+| **ID maps**: Material ID, Object/Mesh ID, random color per island | Emission override of Material Index / Object Info Random | ⬜ | P1 (Artistant has Mesh ID, Object Gradient) |
+| **Height from mesh** | Position delta high vs low, along the normal | ⬜ | P1 |
+| World-space direction (up/down/side masks) | Emission override | ⬜ | P2 |
+| Bent normals | Cycles with custom shader | ⬜ | P3 |
+| Opacity (from alpha geometry) | Emission override | ⬜ | P3 |
+| Baked **diffuse/color** (Cycles DIFFUSE, color only) for transferring vertex colors or textures high to low | Cycles bake | ⬜ | P2 |
+| **Cage** object support | Cycles `use_cage`, `cage_object` | ⬜ | **P0** (high to low quality) |
+| Match by name (`_low` / `_high` suffix) as an alternative to a High Poly collection | Collection or name pairing | ⬜ | P2 |
+| **Baking groups** (sets of objects and bake settings) | Scene collection of bake settings | ⬜ | P1 |
+| Multi-object bake into one texture set (shared UV) | Cycles bake to one image | 🟡 one image per object today | P1 |
+| Anti-aliasing / bake supersampling | Cycles samples plus downscale from a larger bake | 🟡 samples only | P2 |
+| Margin / dilation | Cycles margin | ✅ | |
+| **UDIM** bake and paint | Blender UDIM image support | ⬜ | P2 |
+| Bake presets (save settings) | Asset or Scene property | ⬜ | P3 |
+| Mesh map **stale warning** (baked map older than mesh edits) | Mesh modification time check | O | ⬜ | P4 |
+
+**Limitation to document:** a mesh map is per object and per UV layout. A material shared by several objects with different UVs cannot use one baked map. The v1 rule: baked-map-driven features need one object per material (a "texture set"), or objects sharing one UV atlas.
+
+### B9. Painting and viewport
+
+Painting is Blender's Texture Paint. Essence only chooses the target image and configures the mode.
+
+| Feature | Blender infra | Status | Pri |
+|---|---|---|---|
+| Paint a mask | Texture Paint, active image node | ✅ (untested) | |
+| **Enter paint automatically on selecting a mask** | Selection callback (Open Question 1) | ⬜ | P2 |
+| **Paint a layer channel directly** (paint layer) | Active paint slot per channel image | ⬜ | P1 |
+| Brush library: soft, hard, noise, stencils, textures | Blender brush assets (native), no Essence brushes | native | |
+| Symmetry, stencil/texture masks, projection paint, clone, smudge, fill, blur | Native Texture Paint tools | native | |
+| Paint with material (paint a fill layer's mask) | Fill + mask, see B2 | ✅ | |
+| **Paint-through / stencil projection from camera** | Native Texture Paint stencil | native | |
+| Paint on float images for height (no banding) | Create masks and height images as float buffers | ⬜ | **P0** (height, brightness/contrast on 8-bit masks bands) |
+| **Viewport channel solo**: view Color, Roughness, Metallic, Height, Normal, AO, a mask, or any layer's output alone | An "Essence View" switch node group in front of the Material Output (Emission of the chosen socket) | ⬜ | **P1** |
+| Viewport isolate layer ("show only this layer") | same switch | ⬜ | P2 |
+| Texture set / material list with resolution per set | Material slots + per-material essence settings | ⬜ | P1 |
+| Lookdev: HDRI, lights, matcap, Material Preview, Cycles | Native | native | |
+| View transform warning (Standard is accurate for texturing; AgX/Filmic shift colors) | Info label | ⬜ | P4 |
+| Display of UV overlap / texel density | Native UV overlays; Texel density through native Mesh analysis | native | |
+
+### B10. Export
+
+| Feature | Status | Pri |
+|---|---|---|
+| Unity HDRP (BaseMap, MaskMap, Normal) | ✅ | |
+| **Export preset engine**: a preset is data: a list of files, each with a name pattern, channel sources per R/G/B/A, color space, bit depth, invert flags | ⬜ | **P1** |
+| Presets: Unity URP (RGB metallic + A smoothness), Unreal (ORM), glTF (ORM + emissive + normal), generic PBR metal/rough, spec/gloss, Godot, Blender (round trip) | ⬜ | P1 (URP, Unreal, glTF), P3 (rest) |
+| Export all channels (emission, opacity, height, AO, specular, coat, user channels) | ⬜ | P1 (follows B1) |
+| Bit depth (8 / 16 / 32) and formats (PNG, TGA, EXR, TIFF, JPEG) | 🟡 PNG/TGA/EXR 8-bit | P1 |
+| Dilation (padding) on export | ⬜ | P1 |
+| Export bakes AO itself | ⬜ | P2 |
+| Export all materials / all objects / selection | ⬜ | P1 |
+| UDIM export | ⬜ | P2 |
+| Re-export on save, "live link" to the engine folder | Save handler | ⬜ | P3 |
+| Export directly through Blender's glTF exporter with the material wired for it | Native exporter | ⬜ | P2 |
+| Export a Blender-native packed material (flatten the whole stack to a simple image-based Principled material) | Bake + node build | ⬜ | **P1** |
+
+### B11. Layer stack UI
+
+All Blender UIList and panel features only.
+
+| Feature | Status | Pri |
+|---|---|---|
+| Stack list with indent, masks, folders, thumbnails | ✅ | |
+| Per-row eye toggle (masks) | ✅ | |
+| **Per-row eye toggle for layers and folders** | ⬜ | **P0** |
+| **Blend mode and opacity visible on the active layer** | ⬜ | **P0** |
+| Duplicate, copy/paste across materials | ⬜ | P1 |
+| Drag to reorder | ⬜ (UIList has no drag reorder in the API; arrows only) | P4 |
+| Multi-select | ⬜ (native UIList has none) | 🚫 |
+| Search/filter by name | native UIList filter | ⬜ | P3 |
+| Rename in place | ✅ (list name field) | |
+| Layer color tags | ⬜ | P4 |
+| Add menu grouping (Fill, Paint, Adjustment, Generator, Folder, Smart Material) | ⬜ | P1 |
+| Context help text / tooltips on every property | partial | P3 |
+
+### B12. Performance and scalability
+
+Blender evaluates the whole material per pixel, so very deep stacks cost shader compile time (EEVEE) and per-sample cost (Cycles). Essence declares this up front.
+
+| Feature | Blender infra | Status | Pri |
+|---|---|---|---|
+| **Measure** compile time and viewport cost of a 5, 20, 50-layer stack (decide guidance) | EEVEE and Cycles timing | ⬜ | **P0** |
+| Only generate enabled channels (smaller groups) | Per-material channel list | ⬜ | P0 / P1 |
+| **Freeze layer / folder / whole stack to image** (bake the result of a layer or folder to images, swap in an Image Texture, keep the live version for unfreezing). The main remedy for procedural-heavy stacks, since procedurals are evaluated live per shading point (see B6, Procedural cost). Deliberately later: not needed until stacks get heavy. | Emission bake (as export already does) | ⬜ | **P1** (late in the tier) |
+| Draft mode: lower texture resolution, disable heavy generators | Image scale + group toggle | ⬜ | P3 |
+| Disabled layers do not compile (muted nodes, `mute`) | Node mute | ⬜ | P1 |
+| Constant-folding check (are disabled-channel Math nodes with constant inputs free?) | Verify in EEVEE/Cycles | ⬜ | P1 |
+| Group version migration, rebuild | ✅ | |
+| Python-free runtime: the generated material works without the addon installed | Principle 2 | ✅ | |
+
+### B13. Project, texture sets and data
+
+| Feature | Blender infra | Status | Pri |
+|---|---|---|---|
+| Project = `.blend`, autosave, undo | Native | native | |
+| Texture set = a material; per-set resolution, channel list, export preset | `Material.essence` | 🟡 stack only | P1 |
+| Multiple materials / objects, switching sets | Active material | ✅ | |
+| UDIM texture sets | Native | ⬜ | P2 |
+| Link/append a layer stack or material from another `.blend` | Native Append plus rebuild | ⬜ | P2 |
+| Color management per image (sRGB / Non-Color / ACEScg) | Image colorspace | ✅ partly | P2 |
+
+---
+
+## Out of scope
+
+- **Substance Designer graph authoring or `.sbsar` import.** Blender node groups and the asset library cover this; no own graph engine.
+- **Own brush engine, own painting viewport, own modal tools.** Native Texture Paint only.
+- **Own renderer / Iray.** Cycles and EEVEE.
+- **Own project file, library format or undo stack.** `.blend`, assets, global undo.
+- **Multi-select and drag-and-drop in the layer list** beyond what the UIList API offers.
+- **Per-frame Python image processing.** All neighbour-based filtering is an explicit baked step.
+
+---
+
+## Master Roadmap
+
+Ordered from essential to trivial. Within a tier, work top to bottom. Status in brackets.
+
+### P0 Essential
+1. **Validate v0.1 in Blender**: run through the "Verify" list; fix what breaks. Nothing below is safe until this passes. ⬜
+2. **Layer sources per channel**: image texture and procedural/node-group picker for each channel's B input, with colorspace set per channel. 🟡 (wire by hand today)
+3. **Projection and mapping**: UV and triplanar, tiling/offset/rotation as layer inputs. ⬜
+4. **Layer opacity and per-channel opacity** next to the enable checkbox. ⬜
+5. **Blend mode per channel** (dropdown, shared blend node groups, see B3). 🟡 (Mix and Add hard-wired)
+6. **Channels beyond four**: Normal (with Whiteout/RNM blend), Opacity, Emission. The channel list per material. 🟡 (channels are data; special targets missing)
+7. **Per-row eye toggle for layers and folders**; blend mode and opacity shown on the active layer. ⬜
+8. **Cage support and float image buffers** for baking and for height/mask images. ⬜
+9. **Measure performance** of deep stacks and set guidance. ⬜
+
+### P1 Core (the "full workflow" line)
+10. **Adjustment layers and filter stack**: levels, HSV, color balance, curves, invert, gradient map, threshold, channel mix. ⬜
+11. **Mask generators and asset library**: noise, gradient, grunge, edge wear, dirt, curvature wear, height gradient, position gradient, as node group assets in catalogs. ⬜
+12. **More baked maps**: Curvature, Position, Thickness, Material/Object/Color ID, Height from mesh. ⬜
+13. **ID and Color Selection masks.** ⬜
+14. **Nested folders; Passthrough folder mode; folder opacity.** ⬜
+15. **Smart materials**: folder presets as assets, drop onto an object. ⬜
+16. **Paint layers** (direct per-channel painting). ⬜
+17. **Viewport channel/mask/layer solo.** ⬜
+18. **Export preset engine** with URP, Unreal, glTF, all channels, bit depth, dilation, export all materials. ⬜
+19. **Export as a flattened Blender material** (stack baked into a simple image-based Principled material). ⬜
+20. **Remaining blend modes** (contrast, dodge/burn, compare). ⬜
+21. **Freeze to image** for layers, folders and the whole stack (performance step for procedural-heavy stacks; do late in P1, once real stacks show the need). ⬜
+22. **Baking groups; multi-object bake into one image.** ⬜
+23. **Mask stack blend modes; levels/curves on masks; layer duplicate/copy/paste; Add menu grouping.** ⬜
+24. **Specular, AO channels; texture set settings (resolution, channels, export preset).** ⬜
+
+### P2 Important
+25. Compositor-based baked filters (blur, sharpen, edge, dilate/erode, slope blur). ⬜
+26. Decals and Empty-driven projection; spherical/cylindrical/planar. ⬜
+27. Height blending; anchor points. ⬜
+28. Coat, sheen, anisotropy, subsurface, transmission channels; true displacement; user channels. ⬜
+29. Vertex group/attribute and polygon-selection masks; image mask channel select. ⬜
+30. UDIM bake, paint and export. ⬜
+31. Automatic paint entry on mask selection; paint masking by face selection. ⬜
+32. Match-by-name bake pairing; AA supersampling; world-direction and diffuse bake; export bakes AO itself. ⬜
+33. Vector warp and randomization generators; layer presets; per-folder collapse. ⬜
+34. Glossiness/spec workflows; export via Blender's glTF exporter; append stacks from other files; ACES color spaces. ⬜
+
+### P3 Nice to have
+35. Tile generator, splatter, shape, weave approximations. ⬜
+36. Bent normals; opacity bake; UV island masks. ⬜
+37. Layer instances; mask copy/paste; resample masks. ⬜
+38. Draft mode; bake presets; re-export on save (live link); list search; per-folder channel enable; arbitrary folder blend modes. ⬜
+39. Glossiness export for other engines. ⬜
+
+### P4 Trivial
+40. Layer lock; layer color tags; drag reorder if the API allows. ⬜
+41. Stale bake warning; view transform hint. ⬜
 
 ---
 
 ## Open Questions
 
-1. **Painting entry**: currently an explicit Paint Mask / Exit Paint Mode button on the selected mask. Automatic entry on selecting a mask is not built.
-2. **Painting plumbing**: built as active image node plus Material paint mode (see Painting); not yet validated. The toggle to view the mask on its own is not built.
-3. **Sidebar details**: layer list, properties, mask, material, bake and export panels exist in both sidebars; how they should be refined (and how both sidebars share state, which they do through Material and Scene properties) is still open.
+1. **Painting entry**: currently an explicit Paint Mask / Exit button. Automatic entry on selecting a mask is not built.
+2. **Painting plumbing**: built as active image node plus Material paint mode; not validated. The mask-solo toggle is not built.
+3. **Sidebar details**: how the panels should be refined as the feature count grows. Likely: collapsible subpanels per area (Sources, Filters, Masks), Layers panel stays on top.
 4. **Baking groups** and the final shape of the bake section.
+5. **Blend mode wiring**: shared blend group beside the layer (preferred) vs layer group variants. Decide after measuring node count and compile time.
+6. **Layer sources UI**: how the picker for image/procedural per channel stays compact (one popover per channel, or a "Sources" subpanel with a row per channel).
+7. **Channel list vs fixed layer group interface**: Blender groups cannot change the number of sockets per instance. Options: one layer group per channel set (generated per material, cached by set), or one fixed superset with unused channels unlinked. Affects P0 item 6 and the performance goal.
+8. **Compositor use for filters**: confirm that the 5.x compositor (node group based, GPU) can be driven from an addon operator on a single image with an acceptable round trip, and whether it can write to an image datablock directly or needs a File Output/Viewer step.
+9. **Texture set model** for objects sharing a material with different UVs (see the B8 limitation).
+10. **Mesh maps vs live generators**: which generators have a live (Cycles-free) form and which need a baked mesh map. Decide per generator.
 
 ## Verify
 
-Built but never run in Blender (no Blender was available while writing). To confirm on first run:
+Built but never run in Blender. To confirm on first run:
 - Node group interface calls (`interface.new_socket`, `min_value`, `subtype`) and Mix node socket identifiers in 5.2; Bool sockets converting implicitly to float; the Brightness/Contrast identifiers (`Color`, `Bright`, `Contrast`).
 - `template_ID_preview(..., open="image.open")`, and the layer-row thumbnail via `preview_ensure`.
 - Selected-to-active with the High Poly collection, default extrusion quality, and normal orientation (no flipped green).
 - Emission-baked colors matching the viewport (sRGB conversion on the byte-image bake), straight-alpha MaskMap saving, and an unconnected-Height Bump node leaving the baked normal unchanged.
 
-Items researched but not confirmed against the Blender 5.2 documentation:
-- Exact current inputs of the Bump node in 5.2 (Strength, Distance, Height, Normal, Invert, and Filter Width if it still exists) and whether anything changed from 4.x.
-- That a Bump node evaluates its Height input multiple times per shading point in both Cycles and EEVEE, which is the basis for "one Bump node at the end". Test by comparing render time with a per-layer Bump chain versus one Bump node.
+Researched but not confirmed against the Blender 5.2 documentation:
+- Exact current inputs of the Bump node in 5.2 (Strength, Distance, Height, Normal, Invert, Filter Width if it still exists).
+- That a Bump node evaluates its Height input multiple times per shading point in both Cycles and EEVEE (basis for "one Bump node at the end"). Test by comparing render time of a per-layer Bump chain versus one Bump node.
+- Whether a UIList supports drag reordering in 5.2, and what the asset shelf API allows an addon to register (for the library and smart materials).
+- Compositor access from an addon in 5.2 (Open Question 8), UDIM bake support, and whether constant-input Math/Mix nodes are folded away when compiling the GPU shader (disabled channels free or not).
+- That Cycles `cage_object` and `use_cage` behave as expected with the selected-to-active setup Essence uses.
 
 ## Sources
 - [Artistant addon](https://github.com/Cedricvdk/Artistant) (bake pipeline, thumbnails and bake panel layout that Essence's baking is ported from)
@@ -181,3 +548,4 @@ Items researched but not confirmed against the Blender 5.2 documentation:
 - [Blender addon UI scripting guide](https://blog.cg-wire.com/blender-addon-ui-scripting-guide/) (panel space and region types)
 - [DevTalk: addon panels and the Tool tab](https://devtalk.blender.org/t/add-on-panel-missing-from-active-tool-workspace-settings/7349)
 - [Blender 5.2 manual: Bump node](https://docs.blender.org/manual/en/5.2/render/shader_nodes/vector/bump.html)
+- Substance 3D Painter feature set (layer stack, channels, baking, filters, smart materials, export presets), from the Adobe documentation and general knowledge. The Substance documentation was not re-fetched while writing this revision, so feature coverage should be re-checked against it before the roadmap is frozen.
