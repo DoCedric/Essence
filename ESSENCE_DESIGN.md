@@ -258,7 +258,7 @@ Float channels (roughness, metallic, height) use the same modes through the Mix 
 | Image mask (blank or picked), invert, brightness, contrast, stack, eye toggle, reorder | Image Texture + math nodes | L | ✅ | |
 | Folder masks | same | L | ✅ | |
 | Mask stack blend modes (add, subtract, ...) beyond multiply | Mask group extension | L | ⬜ | P1 |
-| Mask **fill sources**: uniform (white/black) ✅; **procedural/noise**; **gradient**; **baked-map-driven** | Node group presets (see B6) | L | 🟡 | **P0** (picker for procedural) |
+| **Mask sources with the same options as a channel source** (Image, Procedural, later Gradient and Baked map): projection (UV, Triplanar, Object), tiling/offset/rotation, Min/Max remap, built on the same `sources.py` machinery and followed by the existing invert/brightness/contrast. Only an Image mask in UV projection can be painted; a procedural or triplanar mask is generated, not paintable (as in Substance) | Source nodes feeding the mask group's Value input | L | 🟡 image only today | **P0** (next to Sprint 2, or Sprint 1b) |
 | Mask adjustments: **Levels** (in/out, gamma), **Curves** (RGB Curves), **Threshold/Contrast**, **Color Ramp / Gradient remap**, **Smooth step** | Map Range, Float Curve, Color Ramp nodes | L | 🟡 brightness/contrast only | P1 |
 | Mask **filters needing neighbours**: Blur, Sharpen, Edge detect, Dilate/Erode, Slope blur | Compositor on an image, run as an explicit bake | B | ⬜ | P2 |
 | Mask by selection: Material ID / Color ID / Object ID | Baked ID map + Math Compare, color picker in the panel | L | ⬜ | P1 |

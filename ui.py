@@ -157,7 +157,8 @@ def _channel(layout, mat, e, node, ch):
         row.operator("essence.rebuild", text="Upgrade", icon='FILE_REFRESH')
         return
     row.prop(src, "kind", text="")
-    if not src.expanded:
+    # A disabled channel has no effect, so its settings stay out of the way.
+    if not src.expanded or not enable.default_value:
         return
 
     col = box.column(align=True)
