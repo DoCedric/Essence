@@ -30,7 +30,7 @@ MASK_GROUP_VERSION = 1
 VERSION_KEY = "essence_version"
 BUMP_NODE_NAME = "Essence Bump"
 NORMAL_NODE_NAME = "Essence Normal Map"
-BAKED_NORMAL_NODE = "Essence_Bake_NORMAL"  # the bake panel target node, see bake.py
+BAKED_NORMAL_NODE = "Essence_Bake_NORMAL"  # the Normal slot, also the bake target
 
 
 # --------------------------------------------------------------------------
@@ -236,10 +236,13 @@ KEY_PROP = "essence_key"
 def ensure_channel_states(mat):
     """One entry per channel in the material's channel list."""
     have = {c.id for c in mat.essence.channels}
-    if all(c.id in have for c in CHANNELS):
+    stale = [i for i, c in enumerate(mat.essence.channels) if c.id not in BY_ID]
+    if all(c.id in have for c in CHANNELS) and not stale:
         return
     sources.SUSPEND = True
     try:
+        for i in reversed(stale):  # channels that no longer exist
+            mat.essence.channels.remove(i)
         for ch in CHANNELS:
             if ch.id not in have:
                 s = mat.essence.channels.add()
@@ -247,6 +250,27 @@ def ensure_channel_states(mat):
                 s.enabled = ch.default_enabled
     finally:
         sources.SUSPEND = False
+
+
+# Mesh map slots: an image node per map, named like the bake panel's target node. A bake fills
+# it, and the user can pick any other image. The Normal slot feeds the shader (see
+# rebuild_stack); AO is read by export; more maps come with the mesh-map sprint.
+MAP_SLOTS = (('NORMAL', "Normal"), ('AO', "Ambient Occlusion"))
+
+
+def map_slot_name(map_id):
+    return f"Essence_Bake_{map_id}"
+
+
+def ensure_map_slots(mat):
+    tree = mat.node_tree
+    for i, (map_id, label) in enumerate(MAP_SLOTS):
+        node = tree.nodes.get(map_slot_name(map_id))
+        if node is None or node.bl_idname != 'ShaderNodeTexImage':
+            node = tree.nodes.new('ShaderNodeTexImage')
+            node.name = map_slot_name(map_id)
+            node.label = map_slot_name(map_id)
+            node.location = (-400, 300 + i * 320)
 
 
 def layer_modes(entry):
@@ -502,18 +526,14 @@ def apply_normal_map(mat, image_node):
 
     image -> Normal Map -> Bump (Normal input) -> BSDF Normal, so the normal map is
     evaluated before the bump (layer height) as Blender requires. Returns the
-    Normal Map node, whose Strength is the user-facing slider. With the Normal channel on,
-    the image becomes the base of the layer stack's normal instead (see rebuild_stack)."""
+    Normal Map node, whose Strength is the user-facing slider."""
     tree = mat.node_tree
     bsdf = find_principled(tree)
     bump = ensure_bump_node(tree, bsdf)
     nm = ensure_normal_node(tree, bump)
     image_node.location = (nm.location.x - 320, nm.location.y)
-    if any(c.id == 'NORMAL' for c in active_channels(mat)):
-        rebuild_stack(mat)
-    else:
-        _clear_links(tree, nm.inputs['Color'])
-        tree.links.new(image_node.outputs['Color'], nm.inputs['Color'])
+    _clear_links(tree, nm.inputs['Color'])
+    tree.links.new(image_node.outputs['Color'], nm.inputs['Color'])
     return nm
 
 
@@ -527,6 +547,7 @@ def rebuild_stack(mat):
     tree = mat.node_tree
     layers = mat.essence.layers
     ensure_channel_states(mat)
+    ensure_map_slots(mat)
     sources.cleanup(tree, {e.uid for e in layers})
     for e in layers:
         if e.kind == 'LAYER' and e.uid:
@@ -543,11 +564,9 @@ def rebuild_stack(mat):
     bsdf = find_principled(tree)
     bump = ensure_bump_node(tree, bsdf)
     targets = {'BSDF': bsdf, 'BUMP': bump}
-    baked = tree.nodes.get(BAKED_NORMAL_NODE)
+    baked = tree.nodes.get(BAKED_NORMAL_NODE)  # the Normal slot of the Mesh Maps
     if baked is not None and (baked.bl_idname != 'ShaderNodeTexImage' or baked.image is None):
         baked = None
-    if 'NORMAL' in active_ids or baked is not None:
-        targets['NORMALMAP'] = ensure_normal_node(tree, bump)
 
     px, py = bsdf.location.x, bsdf.location.y
     bump.location = (px - 250, py - 700)
@@ -555,15 +574,12 @@ def rebuild_stack(mat):
     # The list is bottom-to-top and a folder entry sits directly above its children.
     # Children chain from the stack below the folder; the folder node then lerps
     # between that stack (A) and the end of the children's chain (B).
-    # Where nothing is below, a baked normal map (if any) is the base of the normal channel.
     def link_chain(node, a_src, b_src=None):
         for ch in active:
             a = node.inputs[f"{ch.label} A"]
             _clear_links(tree, a)
             if a_src is not None:
                 tree.links.new(a_src.outputs[ch.label], a)
-            elif ch.id == 'NORMAL' and baked is not None:
-                tree.links.new(baked.outputs['Color'], a)
             if b_src is not None:
                 b = node.inputs[f"{ch.label} B"]
                 _clear_links(tree, b)
@@ -596,10 +612,14 @@ def rebuild_stack(mat):
         _clear_links(tree, dst)
         if ch.id in active_ids:
             tree.links.new(prev.outputs[ch.label], dst)
-    if 'NORMAL' not in active_ids and baked is not None:
-        nm = targets['NORMALMAP']
+    if baked is not None:
+        # The Normal slot: a baked or picked tangent normal map feeds the Normal Map node,
+        # which is evaluated before the bump (the layer height).
+        nm = ensure_normal_node(tree, bump)
         _clear_links(tree, nm.inputs['Color'])
         tree.links.new(baked.outputs['Color'], nm.inputs['Color'])
+    elif tree.nodes.get(NORMAL_NODE_NAME) is not None:
+        _clear_links(tree, tree.nodes[NORMAL_NODE_NAME].inputs['Color'])
 
     for m in layers:
         if m.kind == 'MASK' and m.uid and tree.nodes.get(m.node_name) is not None:

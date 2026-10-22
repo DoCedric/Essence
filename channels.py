@@ -42,10 +42,6 @@ CHANNELS = (
     Channel('BUMP', 'Bump', 'NodeSocketFloat', 'ADD',
             0.0, -1.0, 1.0, 'NONE', target=('BUMP', 'Height'),
             image_range=(-1.0, 1.0), proc_range=(0.0, 1.0)),
-    # A tangent-space normal, carried as its 0-1 color encoding (flat = 0.5, 0.5, 1) and
-    # decoded only inside the blend. The end of the stack feeds a Normal Map node.
-    Channel('NORMAL', 'Normal', 'NodeSocketColor', 'MIX',
-            (0.5, 0.5, 1.0, 1.0), target=('NORMALMAP', 'Color'), default_enabled=False),
     Channel('ALPHA', 'Alpha', 'NodeSocketFloat', 'MIX',
             1.0, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Alpha'), default_enabled=False),
     Channel('EMISSION', 'Emission', 'NodeSocketColor', 'MIX',

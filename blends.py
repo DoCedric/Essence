@@ -3,8 +3,7 @@
 Every mode has the same shape: `result = lerp(A, f(A, B), factor)`, where `f` is the mode's
 formula and `factor` is mask * opacity * enable. Mix is `f = B`, so a mode only has to say
 what `f` is. Color channels use the Mix node's own blend types (which also does the lerp),
-scalar channels (roughness, metallic, height, alpha) use Math nodes, and normal channels
-decode the 0-1 color to a vector, combine and encode again.
+scalar channels (roughness, metallic, height, alpha) use Math nodes.
 
 `build` adds the nodes of one channel's blend to a node group and returns the result socket.
 """
@@ -18,28 +17,19 @@ MODES = {
     'SUBTRACT': ("Subtract", 4, "Subtract the layer from what is below"),
     'DIFFERENCE': ("Difference", 5, "Absolute difference with what is below"),
     'EXCLUSION': ("Exclusion", 6, "Like Difference, with lower contrast"),
-    'WHITEOUT': ("Combine (Whiteout)", 7,
-                 "Add the layer's slopes to the normal below (Normal Map Combine)"),
-    'DETAIL': ("Detail (RNM)", 8,
-               "Lay the layer's normal over the normal below, following its surface "
-               "(Reoriented Normal Mapping)"),
 }
 
 _SIMPLE = ('MIX', 'ADD', 'MULTIPLY', 'DIVIDE', 'SUBTRACT', 'DIFFERENCE', 'EXCLUSION')
-_NORMAL = ('MIX', 'WHITEOUT', 'DETAIL')
 _cache = {}
 
 
 def family(ch):
-    if ch.id == 'NORMAL':
-        return 'NORMAL'
     return 'COLOR' if ch.socket_type == 'NodeSocketColor' else 'SCALAR'
 
 
 def modes_for(ch):
     """Mode ids a channel offers, its default first."""
-    ids = _NORMAL if family(ch) == 'NORMAL' else _SIMPLE
-    return [ch.blend] + [m for m in ids if m != ch.blend] if ch.blend in ids else list(ids)
+    return [ch.blend] + [m for m in _SIMPLE if m != ch.blend]
 
 
 def items_for(ch):
@@ -121,54 +111,6 @@ def _scalar_formula(nodes, links, mode, a, b, loc):
     raise ValueError(f"Unknown scalar blend mode {mode}")
 
 
-def _decode(nodes, links, color, loc):
-    """0-1 color to a -1..1 vector."""
-    return _vec(nodes, links, 'MULTIPLY_ADD', color, (2.0, 2.0, 2.0), (-1.0, -1.0, -1.0),
-                loc=loc)
-
-
-def _encode(nodes, links, vec, loc):
-    n = _vec(nodes, links, 'NORMALIZE', vec, loc=loc)
-    return _vec(nodes, links, 'MULTIPLY_ADD', n, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5),
-                loc=(loc[0] + 180, loc[1]))
-
-
-def _separate(nodes, links, vec, loc):
-    n = nodes.new('ShaderNodeSeparateXYZ')
-    n.location = loc
-    links.new(vec, n.inputs[0])
-    return n.outputs['X'], n.outputs['Y'], n.outputs['Z']
-
-
-def _normal_formula(nodes, links, mode, a, b, loc):
-    """Combine two encoded tangent-space normals. Returns an encoded color."""
-    x, y = loc
-    da = _decode(nodes, links, a, (x - 900, y + 100))
-    db = _decode(nodes, links, b, (x - 900, y - 100))
-    if mode == 'WHITEOUT':  # (a.xy + b.xy, a.z * b.z)
-        ax, ay, az = _separate(nodes, links, da, (x - 700, y + 100))
-        bx, by, bz = _separate(nodes, links, db, (x - 700, y - 100))
-        sx = _math(nodes, links, 'ADD', ax, bx, loc=(x - 500, y + 150))
-        sy = _math(nodes, links, 'ADD', ay, by, loc=(x - 500, y + 50))
-        sz = _math(nodes, links, 'MULTIPLY', az, bz, loc=(x - 500, y - 50))
-        c = nodes.new('ShaderNodeCombineXYZ')
-        c.location = (x - 300, y + 50)
-        links.new(sx, c.inputs['X'])
-        links.new(sy, c.inputs['Y'])
-        links.new(sz, c.inputs['Z'])
-        return _encode(nodes, links, c.outputs['Vector'], (x - 100, y + 50))
-    if mode == 'DETAIL':  # t = a + (0,0,1), u = b * (-1,-1,1), r = t * dot(t,u) / t.z - u
-        t = _vec(nodes, links, 'ADD', da, (0.0, 0.0, 1.0), loc=(x - 700, y + 100))
-        u = _vec(nodes, links, 'MULTIPLY', db, (-1.0, -1.0, 1.0), loc=(x - 700, y - 100))
-        d = _vec(nodes, links, 'DOT_PRODUCT', t, u, loc=(x - 500, y))
-        tz = _separate(nodes, links, t, (x - 500, y + 150))[2]
-        k = _math(nodes, links, 'DIVIDE', d, tz, loc=(x - 300, y))
-        s = _vec(nodes, links, 'SCALE', t, scale=k, loc=(x - 120, y))
-        r = _vec(nodes, links, 'SUBTRACT', s, u, loc=(x + 60, y))
-        return _encode(nodes, links, r, (x + 240, y))
-    raise ValueError(f"Unknown normal blend mode {mode}")
-
-
 def build(nodes, links, ch, mode, a, b, factor, loc):
     """Add the nodes that blend `b` over `a` by `factor` for channel `ch`; return the result
     socket. `loc` is where the last node goes, the formula nodes sit to its left."""
@@ -176,15 +118,6 @@ def build(nodes, links, ch, mode, a, b, factor, loc):
     x, y = loc
     if fam == 'COLOR':
         n, out = _mix(nodes, links, 'RGBA', a, b, factor, loc, blend_type=mode)
-        n.label = f"{ch.label} ({MODES[mode][0]})"
-        return out
-    if fam == 'NORMAL':
-        if mode == 'MIX':
-            n, out = _mix(nodes, links, 'RGBA', a, b, factor, loc)
-            n.label = f"{ch.label} ({MODES[mode][0]})"
-            return out
-        f = _normal_formula(nodes, links, mode, a, b, (x - 300, y))
-        n, out = _mix(nodes, links, 'RGBA', a, f, factor, loc)
         n.label = f"{ch.label} ({MODES[mode][0]})"
         return out
     # scalar

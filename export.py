@@ -15,6 +15,7 @@ import numpy as np
 from bpy.props import EnumProperty, StringProperty
 
 from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials
+from . import nodes
 from .channels import BY_ID, active_channels
 
 FORMATS = (
@@ -199,7 +200,8 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             self._bake(obj, mat, normal, 'NORMAL')
 
             # Mask map: R metallic, G AO, B detail mask, A smoothness.
-            ao_src = bpy.data.images.get(f"{obj.name}_AO")
+            ao_node = mat.node_tree.nodes.get(nodes.map_slot_name('AO'))
+            ao_src = getattr(ao_node, "image", None) or bpy.data.images.get(f"{obj.name}_AO")
             if ao_src is not None:
                 ao = ao_src.copy()
                 temps.append(ao)

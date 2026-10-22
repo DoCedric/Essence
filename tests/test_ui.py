@@ -76,8 +76,6 @@ def test_draw_layer_with_every_source_and_channel(addon):
     layer = next(e for e in mat.essence.layers if e.kind == 'LAYER')
     for s in layer.sources:
         for kind in ('VALUE', 'IMAGE', 'PROCEDURAL'):
-            if s.channel == 'NORMAL' and kind == 'PROCEDURAL':
-                continue
             s.kind = kind
             _select(mat, layer.name)
             _draw(ui._props, ob)

@@ -299,17 +299,41 @@ def _material(self, context):
         if 'EMISSION' in on and bsdf is not None:
             box.prop(bsdf.inputs['Emission Strength'], "default_value",
                      text="Emission Strength")
-    normal = tree.nodes.get(nodes.NORMAL_NODE_NAME)
     bump = tree.nodes.get(nodes.BUMP_NODE_NAME)
-    if normal is None and bump is None:
-        layout.label(text="Add a layer or bake a normal map first")
+    if bump is None:
+        layout.label(text="Add a layer first")
         return
     col = layout.column(align=True)
-    if normal is not None:
-        col.prop(normal.inputs['Strength'], "default_value", text="Normal Map Strength")
     if bump is not None:
         col.prop(bump.inputs['Strength'], "default_value", text="Bump Strength")
         col.prop(bump.inputs['Distance'], "default_value", text="Bump Distance")
+
+
+def _maps(self, context):
+    """The mesh map slots: baked here or picked from any image."""
+    layout = self.layout
+    mat = _mat(context)
+    if mat is None or mat.node_tree is None:
+        return
+    tree = mat.node_tree
+    found = False
+    for map_id, label in nodes.MAP_SLOTS:
+        node = tree.nodes.get(nodes.map_slot_name(map_id))
+        if node is None:
+            continue
+        found = True
+        box = layout.box()
+        box.label(text=label)
+        box.template_ID(node, "image", open="image.open")
+        if node.image is not None and node.image.colorspace_settings.name != 'Non-Color':
+            box.label(text="Maps should be Non-Color", icon='ERROR')
+            box.operator("essence.map_non_color").map_id = map_id
+        if map_id == 'NORMAL':
+            nm = tree.nodes.get(nodes.NORMAL_NODE_NAME)
+            if nm is not None:
+                box.prop(nm.inputs['Strength'], "default_value", text="Strength")
+    if not found:
+        layout.label(text="Add a layer first")
 
 
 def _bake(self, context):
@@ -349,6 +373,7 @@ _PANELS = (
     ("LAYERS", "Layers", _stack, None),
     ("PROPS", "Layer Properties", _props, _props_poll),
     ("MASK", "Mask Properties", _mask, _mask_poll),
+    ("MAPS", "Mesh Maps", _maps, None),
     ("MATERIAL", "Material", _material, None),
     ("BAKE", "Bake", _bake, None),
     ("EXPORT", "Export", _export, None),

@@ -265,6 +265,24 @@ class ESSENCE_OT_source_colorspace(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_map_non_color(_Base, bpy.types.Operator):
+    bl_idname = "essence.map_non_color"
+    bl_label = "Set Non-Color"
+    bl_description = ("Set the map image's color space to Non-Color. This changes the image "
+                      "itself, so other users of it are affected")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    map_id: StringProperty()
+
+    def execute(self, context):
+        mat = _material(context)
+        node = mat.node_tree.nodes.get(nodes.map_slot_name(self.map_id)) if mat else None
+        if node is None or node.image is None:
+            return {'CANCELLED'}
+        node.image.colorspace_settings.name = 'Non-Color'
+        return {'FINISHED'}
+
+
 class ESSENCE_OT_paint_mask(_Base, bpy.types.Operator):
     bl_idname = "essence.paint_mask"
     bl_label = "Paint Mask"
@@ -348,7 +366,7 @@ class ESSENCE_MT_add_mask(bpy.types.Menu):
 classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask,
-    ESSENCE_OT_mask_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
+    ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,
     ESSENCE_OT_rebuild, ESSENCE_MT_add_mask,
 )

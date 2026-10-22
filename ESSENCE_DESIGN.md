@@ -112,7 +112,7 @@ Map types ✅ *(built, untested)*:
 - Masks can be painted in Texture Paint mode (Image source with the UV projection only; procedural, value and triplanar masks are generated and not paintable). Switching a mask away from Image remembers its image (kept alive with a fake user) and restores it when you switch back. A Paint Mask button makes the selected mask's image the active image node and enters Texture Paint in Material mode; an Exit button leaves it.
 
 ### PBR Channels (v1)
-Color, Roughness, Metallic and Bump (height) are on by default. Normal, Alpha and Emission exist and are switched on in the material's **Channels** list (Material panel). All are defined in `channels.py` as data. See "Group variants" below for how the channel set and blend modes reach the layer node.
+Color, Roughness, Metallic and Bump (height) are on by default. Alpha and Emission exist and are switched on in the material's **Channels** list (Material panel). All are defined in `channels.py` as data. There is deliberately no Normal channel: a material has one normal map, which is a **mesh map slot** (see Mesh maps below), and fine surface detail that tiles (fabric, scratches) goes through the Height channel, as in Substance. See "Group variants" below for how the channel set and blend modes reach the layer node.
 
 ### Layer Structure
 - One **layer node** (a node group) per layer, chained: each layer's output feeds the next layer's A inputs, and the layer's own channel values are the B inputs.
@@ -136,7 +136,7 @@ A folder holds layers and has its own mask stack, which limits the combined effe
 
 ### User Interface
 - All Essence UI lives in the sidebar (N panel) using standard Blender panels, UI lists and properties, in both the 3D Viewport and the UV/Image Editor.
-- Panel order: Layers, then Layer Properties or Mask Properties depending on selection, then Material (Normal Map Strength, Bump Strength and Distance), Bake, Export.
+- Panel order: Layers, then Layer Properties or Mask Properties depending on selection, then Mesh Maps (the Normal and AO slots), Material (channels, Emission Strength, Bump Strength and Distance), Bake, Export.
 - No custom workspace, no custom drawn UI. A left-hand panel layout is not pursued because addons may not be able to place panels there.
 
 ### Painting
@@ -161,8 +161,8 @@ Notes:
 - **One Bump node, at the end of the stack.** All heights are summed into a single height value feeding one Bump node (Strength, Distance), whose Normal output goes to the shader's Normal input. Chained Bump nodes would re-evaluate the height network and compound. See "Verify".
 - A layer's height can be scaled per layer (`B * strength * mask`) before it is added; overall intensity is controlled once, at the end of the stack.
 
-### Normal map ✅
-A baked tangent-space normal is wired in as: **baked image, Normal Map node (Tangent), Bump node's Normal input, BSDF Normal**. The normal map is evaluated before the bump, as Blender requires, and layer height feeds the Bump node's Height, so both combine in the single Bump node. A **Normal Map Strength** slider sits in the Material panel.
+### Mesh maps and the Normal slot ✅
+The **Mesh Maps** panel has one slot per map (Normal and Ambient Occlusion for now; curvature, thickness, position and ID join with the mesh-map sprint, and generators will read from them). A slot is an image node named `Essence_Bake_<MAP>`: a bake fills it, or the user picks any image. The **Normal** slot is wired as **image, Normal Map node (Tangent), Bump node's Normal input, BSDF Normal**: the normal map is evaluated before the bump, as Blender requires, and layer height feeds the Bump node's Height, so both combine in the single Bump node. An empty slot feeds nothing. The Normal Map **Strength** sits in the slot. Export reads the AO slot for the MaskMap.
 
 While a Normal (Tangent) bake runs, the BSDF's Normal input is temporarily unlinked, so the bake does not capture the material's own bump or normal map. A low-poly-only tangent bake is therefore flat.
 
@@ -193,7 +193,7 @@ Channels are data (`channels.py`). The Principled BSDF already exposes nearly ev
 | Roughness | BSDF Roughness | Mix + blend modes | ✅ | |
 | Metallic | BSDF Metallic | Mix + blend modes | ✅ | |
 | Height | Bump node (Height) | Add | ✅ | |
-| Normal (layer-level) | Normal Map node, combined before Bump. The channel carries the 0-1 encoded tangent normal and decodes it only inside the blend | Normal (replace), Combine (Whiteout), Detail (RNM). The baked normal is the base of the stack. Image or value source (no procedural) ✅ | ✅ | Inverse Detail P1 |
+| Normal | Not a layer channel: one normal map per material, see Mesh maps. Layer detail goes through Bump | | 🚫 as a channel (decided; avoids a per-layer normal blend cost) | |
 | Opacity / Alpha | BSDF Alpha | Mix + blend modes | ✅ BaseMap alpha on export | |
 | Emission (color + strength) | BSDF Emission Color; strength set to 1 when the channel is switched on | Mix + blend modes | ✅ own file on export | |
 | Ambient Occlusion | not a BSDF input; kept as an exported channel and optional viewport multiply | Multiply | 🟡 baked and exported, not a layer channel | P1 |
@@ -245,7 +245,7 @@ Substance blend modes map almost one to one onto the Mix node (Color type), whic
 | Compare | Darken, Lighten | ⬜ | P1 |
 | Color | Hue, Saturation, Color, Value/Luminosity, Tint | ⬜ | P2 |
 | Special | Replace (ignores layers below), Passthrough (folder), Inverse Divide, Hard Mix | ⬜ | P2 |
-| Normal blends | Normal Map Combine (Whiteout), Detail (RNM), Inverse Detail | 🟡 Whiteout and Detail done, checked against a reference formula | P1 (Inverse Detail) |
+| Normal blends (Whiteout, Detail RNM) | Dropped together with the Normal channel. A normal map combine node can come back if a use appears | | 🚫 | |
 
 Float channels (roughness, metallic, height) use the same modes through the Mix node's RGBA type with grey packing, or Math nodes, whichever is cheaper per mode.
 
@@ -463,7 +463,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 3. **Projection and mapping**: UV and triplanar, tiling/offset/rotation as layer inputs. ✅
 4. **Layer opacity and per-channel opacity** next to the enable checkbox. ✅
 5. **Blend mode per channel** (dropdown per channel, one group variant per combination, see B3). ✅
-6. **Channels beyond four**: Normal (with Whiteout/RNM blend), Alpha, Emission, and the channel list per material. ✅
+6. **Channels beyond four**: Alpha, Emission and the channel list per material. ✅ (Normal became the Normal mesh map slot instead of a channel.)
 7. **Per-row eye toggle for layers and folders**; blend mode and opacity shown on the active layer. ✅
 8. **Cage support and float image buffers** for baking and for height/mask images. ⬜
 9. **Measure performance** of deep stacks and set guidance. ⬜

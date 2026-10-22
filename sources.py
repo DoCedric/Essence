@@ -23,12 +23,10 @@ PROC_VERSION = 1
 KINDS = [('VALUE', "Value", "A plain value", 'NONE', 0),
          ('IMAGE', "Image", "An image texture", 'NONE', 1),
          ('PROCEDURAL', "Procedural", "A procedural texture", 'NONE', 2)]
-# A normal has no procedural source: a procedural makes a height, which is the Bump channel.
-KINDS_NORMAL = KINDS[:2]
 
 
 def kind_items(src):
-    return KINDS_NORMAL if src.channel == 'NORMAL' else KINDS
+    return KINDS
 PROJECTIONS = [('UV', "UV", "Use the UV map"),
                ('TRIPLANAR', "Triplanar",
                 "Project along the object's axes and blend the sides, with no UV map needed. "
@@ -158,6 +156,10 @@ def ensure_entries(entry):
             s = entry.sources.add()
             s.channel = ch.id
             s.uid = entry.uid
+            changed = True
+    for i in reversed(range(len(entry.sources))):  # channels that no longer exist
+        if entry.sources[i].channel not in SOURCE_BY_ID:
+            entry.sources.remove(i)
             changed = True
     global SUSPEND
     SUSPEND = True

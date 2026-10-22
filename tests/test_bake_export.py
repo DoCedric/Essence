@@ -153,7 +153,8 @@ def test_export_unity_exr(addon):
         close(n[2], 1.0, 0.05, "Normal z")
         leftovers = [i.name for i in bpy.data.images if i.name.startswith("__essence_")]
         check(not leftovers, f"temp images left behind: {leftovers}")
-        nodes = [n_.name for n_ in mat.node_tree.nodes if n_.bl_idname == 'ShaderNodeTexImage']
+        nodes = [n_.name for n_ in mat.node_tree.nodes if n_.bl_idname == 'ShaderNodeTexImage'
+             and not n_.name.startswith("Essence_Bake_")]
         check(not nodes, f"temp nodes left behind: {nodes}")
     finally:
         shutil.rmtree(folder, ignore_errors=True)
