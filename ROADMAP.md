@@ -20,7 +20,7 @@ Goal: everything currently marked "built, untested" is either verified or fixed.
 - [x] Export Unity HDRP: files exist, channel values match, MaskMap packing, straight alpha, temp data cleaned up. [H]
 - [x] Fix every (nothing needed fixing) failure found; bump versions where needed.
 - [x] Update design doc "Verify" section and status markers with the results.
-- [ ] **Milestone checklist for the user** [G]: panels render in both sidebars, layer list rows and thumbnails, mask picker grid, Paint Mask enters/exits Texture Paint and painting changes the mask, viewport looks right, bake panel flow.
+- [x] **Milestone checklist for the user** [G] (confirmed working by the user): panels render in both sidebars, layer list rows and thumbnails, mask picker grid, Paint Mask enters/exits Texture Paint and painting changes the mask, viewport looks right, bake panel flow.
 
 Acceptance: `tests/run_all.py` passes headless; user checklist answered.
 
