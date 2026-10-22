@@ -38,15 +38,6 @@ def _owner(mat, e):
     return next((x for x in mat.essence.layers if x.uid == e.parent), None)
 
 
-def _frozen(op, mat):
-    """True (after reporting) if the active entry is frozen. Frozen layers cannot be edited."""
-    e = _active(mat)
-    if e is not None and e.frozen:
-        op.report({'ERROR'}, "This layer is frozen. Unfreeze it first")
-        return True
-    return False
-
-
 class _Base:
     @classmethod
     def poll(cls, context):
@@ -64,8 +55,6 @@ class ESSENCE_OT_add_layer(_Base, bpy.types.Operator):
     def execute(self, context):
         mat = _material(context, create=True, migrate=True)
         s = mat.essence
-        if _frozen(self, mat):
-            return {'CANCELLED'}
         nodes.ensure_tree(mat)
         name = f"Layer {sum(1 for x in s.layers if x.kind == 'LAYER') + 1}"
         node = nodes.add_layer_node(mat, name)
@@ -96,8 +85,6 @@ class ESSENCE_OT_add_folder(_Base, bpy.types.Operator):
     def execute(self, context):
         mat = _material(context, create=True, migrate=True)
         s = mat.essence
-        if _frozen(self, mat):
-            return {'CANCELLED'}
         nodes.ensure_tree(mat)
         name = f"Folder {sum(1 for x in s.layers if x.kind == 'FOLDER') + 1}"
         node = nodes.add_layer_node(mat, name, folder=True)
@@ -132,8 +119,6 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
     def execute(self, context):
         mat = _material(context, migrate=True)
         s = mat.essence
-        if _frozen(self, mat):
-            return {'CANCELLED'}
         i = s.active_index
         e = _active(mat)
         if e is None:
@@ -166,8 +151,6 @@ class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
     def execute(self, context):
         mat = _material(context, migrate=True)
         s = mat.essence
-        if _frozen(self, mat):
-            return {'CANCELLED'}
         e = _active(mat)
         if e is None:
             return {'CANCELLED'}
@@ -209,8 +192,6 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
     def execute(self, context):
         mat = _material(context, migrate=True)
         s = mat.essence
-        if _frozen(self, mat):
-            return {'CANCELLED'}
         cur = _active(mat)
         owner = _owner(mat, cur) if cur is not None else None
         if owner is None:
