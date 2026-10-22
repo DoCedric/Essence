@@ -27,13 +27,13 @@ Acceptance: `tests/run_all.py` passes headless; user checklist answered.
 ## Sprint 1: Layer sources, mapping, opacity (`sprint-1-sources`)
 Goal: a layer channel can be driven by an image or procedural, mapped and opacity-controlled, all from the panel.
 
-- [ ] Design check: layer group interface for sources and opacity (stop and ask if it needs an Open Question decision, 6 or 7).
-- [ ] Layer Opacity input (overall) and per-channel opacity; factor = mask * opacity * enable. Group version bump with migration. [H]
-- [ ] Per-channel source: Value / Image / Procedural node group; picker UI; colorspace set per channel (sRGB for color, Non-Color for data). [H]
-- [ ] Mapping: UV and triplanar projection, tiling/offset/rotation as layer inputs. [H]
-- [ ] Rebuild preserves hand-wired source nodes. [H]
-- [ ] Per-row eye toggle for layers and folders; opacity shown on the active layer. [H]/[G]
-- [ ] Design doc and roadmap updated.
+- [x] Design check: option 1 (Source row per channel in Layer Properties) chosen by the user; layer group interface needed only Opacity and Visible inputs, sources are nodes beside the layer.
+- [x] Layer Opacity input (overall) and per-channel opacity; factor = mask * opacity * enable (also Visible). Group version bump with migration. [H]
+- [x] Per-channel source: Value / Image / Procedural (Noise, Voronoi, Wave, Checker, Gradient); picker UI; colorspace check per channel. [H]
+- [x] Mapping: UV, Triplanar and Object projection, tiling/offset/rotation exposed. [H]
+- [x] Rebuild and group upgrades preserve hand-wired links and sources. [H]
+- [x] Per-row eye toggle for layers and folders; opacity shown on the active layer. [H] (blend mode display waits for Sprint 2)
+- [x] Design doc and roadmap updated.
 - [ ] **Milestone checklist** [G]: source picker usability, triplanar look, row toggles.
 
 ## Sprint 2: Blend modes and channels (`sprint-2-blend-channels`)

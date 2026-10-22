@@ -2,7 +2,7 @@
 
 A Blender addon that brings a Substance Painter-class texturing workflow into Blender, built entirely on top of Blender's own shader graph, baking, texture paint, asset and compositing systems.
 
-> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (24 tests: stack operators, blend math against real baked pixels, bake, export, group upgrades). **Not yet verified: everything that needs the GUI** (panels, thumbnails, Texture Paint, viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
+> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (39 tests: stack operators, layer sources, blend math against real baked pixels, bake, export, group upgrades). **Not yet verified: everything that needs the GUI** (panels, thumbnails, Texture Paint, viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
 
 **Target:** Blender 5.2.2 (latest). No support for older versions.
 
@@ -116,17 +116,17 @@ Color, Roughness, Metallic, Bump (height). Defined in `channels.py` as data.
 
 ### Layer Structure
 - One **layer node** (a node group) per layer, chained: each layer's output feeds the next layer's A inputs, and the layer's own channel values are the B inputs.
-- Inputs per layer: A and B for each channel, a Mask (the already combined result of the layer's mask stack), and a per-channel Enable.
+- Inputs per layer: A and B for each channel, a Mask (the already combined result of the layer's mask stack), a per-channel Enable, a per-channel Opacity, a layer Opacity and a Visible toggle (the eye). The blend factor of a channel is `mask * Visible * layer Opacity * channel Opacity * Enable`.
 - **Per-channel enable** ✅: effective blend factor for a channel is `mask * enable`, so a disabled channel passes the layers below straight through, like Substance Painter.
 - **Mask nodes** ✅: each mask is one instance of the shared "Essence Mask" node group (version 1). Inputs: Value, Previous, Mask Invert, Mask Brightness, Mask Contrast, Enable. Output: `adjusted value (or 1 when disabled) * Previous`. The whole stack is a visible chain of nodes below the layer.
 - Outputs per layer: one per channel. The end of the stack has a single Bump node (see Channel Blending).
-- The shared "Essence Layer" node group carries a version (currently 4). Outdated groups upgrade on Rebuild or Add Layer, preserving each layer's input values by socket name. Pre-mask-stack layers are converted first.
+- The shared "Essence Layer" node group carries a version (currently 5: 5 added Opacity, per-channel Opacity and Visible). Outdated groups upgrade on Rebuild or Add Layer, preserving each layer's input values by socket name. Pre-mask-stack layers are converted first.
 - Blender node groups have no variable number of inputs, so a stack of N layers is N group instances in a chain. This is accepted.
-- **Current limitation:** a layer channel's B input is a constant value in the UI. Textures or procedurals can be wired in by hand in the node editor but there is no panel for it. This is the largest functional gap (see Master Roadmap, P0).
+- **Layer sources** ✅ *(verified headless)*: each channel of a layer has a source, chosen in the Layer Properties panel: **Value** (the B socket), **Image** or **Procedural**. Image and procedural sources are ordinary nodes placed above the layer node and wired into its B input: `Texture Coordinate -> Mapping -> Image Texture or procedural group -> Map Range (float channels) or Color Ramp (color, procedurals) -> B`. They are tagged with custom properties (`essence_source`, `essence_role`) so Essence finds them again, and everything stays editable in the node editor. Float channels get a Min/Max (the Map Range output range; bump images map black = -1, mid grey = 0, white = 1). Images warn when their color space does not suit the channel (sRGB for color, Non-Color for data) and offer a one-click fix. **Projection:** UV, Triplanar (box projection on object coordinates) and Object. **Mapping:** tiling, offset and rotation from the Mapping node. **Procedurals** are wrapped node groups with a uniform interface (`Vector`, their own controls, `Contrast`, output `Fac`): Noise, Voronoi, Wave, Checker, Gradient (shared groups "Essence Proc ...", version 1). A hand-wired link into any B input survives Rebuild and group upgrades.
 
 ### Folders ✅
 A folder holds layers and has its own mask stack, which limits the combined effect of everything inside. One level only.
-- **Node structure:** layers inside a folder chain as normal, starting from the stack below. A **folder node** (shared node group "Essence Folder", version 2) lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is `A + sum of inner heights`. An empty folder passes the stack through.
+- **Node structure:** layers inside a folder chain as normal, starting from the stack below. A **folder node** (shared node group "Essence Folder", version 3: 3 added Visible) lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is `A + sum of inner heights`. An empty folder passes the stack through.
 - **Data:** the layer list stays flat and bottom-to-top. Every entry has a `uid`, a `kind` (layer, folder or mask) and a `parent` (the owner's uid). All reordering goes through the tree helpers in `stack.py`.
 - **UI:** children indented under the folder, masks under their owner. Add Folder creates an empty folder above the active entry. Add Layer with a folder active adds into it. Up/down arrows move a layer within and across folder borders; a folder moves as a block. Removing a folder ungroups its layers; removing a layer or folder removes its masks.
 
@@ -217,11 +217,11 @@ Today a layer is "a value per channel". The dream layer has a **source per chann
 | Feature | Blender infra | Cost | Status | Pri |
 |---|---|---|---|---|
 | Uniform value per channel | Socket value | L | ✅ | |
-| **Image texture source per channel** (picker like masks) | Image Texture node, colorspace per channel | L | ⬜ | **P0** |
-| **Procedural source per channel** | Any node group with a color/float output, picked from the asset browser or pointer | L | ⬜ | **P0** |
-| **Projection modes**: UV, Triplanar (box blend), Object/Generated coords, Planar from an Empty, Spherical, Cylindrical | Texture Coordinate + Mapping + Image Texture projection (Box, Flat, Sphere, Tube) | L | ⬜ | P0 (UV, triplanar), P2 (rest) |
-| Mapping controls (tiling, offset, rotation, scale; uniform and per channel) | Mapping node, exposed as layer inputs | L | ⬜ | P0 |
-| **Layer opacity** (overall, plus per-channel opacity beyond the enable checkbox) | Factor multiplier in the layer group | L | ⬜ | **P0** |
+| **Image texture source per channel** (picker like masks) | Image Texture node, colorspace per channel | L | ✅ | |
+| **Procedural source per channel** | Any node group with a color/float output, picked from the asset browser or pointer | L | ✅ (built-in procedurals as wrapped groups; asset-browser picking comes with the asset library) | |
+| **Projection modes**: UV, Triplanar (box blend), Object/Generated coords, Planar from an Empty, Spherical, Cylindrical | Texture Coordinate + Mapping + Image Texture projection (Box, Flat, Sphere, Tube) | L | 🟡 UV, Triplanar and Object done | P2 (planar from an Empty, spherical, cylindrical) |
+| Mapping controls (tiling, offset, rotation, scale; uniform and per channel) | Mapping node, exposed as layer inputs | L | ✅ tiling, offset, rotation | |
+| **Layer opacity** (overall, plus per-channel opacity beyond the enable checkbox) | Factor multiplier in the layer group | L | ✅ | |
 | **Blend mode per channel** (see B3) | Mix node blend types | L | ⬜ | **P0** |
 | Paint layer (channel images painted directly) | Per-channel image + paint slots | B/L | ⬜ | P1 |
 | Layer duplicate / copy / paste / hide / solo | Operators, node group copy | O | ⬜ | P1 |
@@ -403,8 +403,8 @@ All Blender UIList and panel features only.
 |---|---|---|
 | Stack list with indent, masks, folders, thumbnails | ✅ | |
 | Per-row eye toggle (masks) | ✅ | |
-| **Per-row eye toggle for layers and folders** | ⬜ | **P0** |
-| **Blend mode and opacity visible on the active layer** | ⬜ | **P0** |
+| **Per-row eye toggle for layers and folders** | ✅ | |
+| **Blend mode and opacity visible on the active layer** | 🟡 opacity shown, blend mode not built yet | **P0** (with blend modes) |
 | Duplicate, copy/paste across materials | ⬜ | P1 |
 | Drag to reorder | ⬜ (UIList has no drag reorder in the API; arrows only) | P4 |
 | Multi-select | ⬜ (native UIList has none) | 🚫 |
@@ -459,12 +459,12 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 
 ### P0 Essential
 1. **Validate v0.1 in Blender**: run through the "Verify" list; fix what breaks. Nothing below is safe until this passes. ⬜
-2. **Layer sources per channel**: image texture and procedural/node-group picker for each channel's B input, with colorspace set per channel. 🟡 (wire by hand today)
-3. **Projection and mapping**: UV and triplanar, tiling/offset/rotation as layer inputs. ⬜
-4. **Layer opacity and per-channel opacity** next to the enable checkbox. ⬜
+2. **Layer sources per channel**: image texture and procedural/node-group picker for each channel's B input, with colorspace set per channel. ✅
+3. **Projection and mapping**: UV and triplanar, tiling/offset/rotation as layer inputs. ✅
+4. **Layer opacity and per-channel opacity** next to the enable checkbox. ✅
 5. **Blend mode per channel** (dropdown, shared blend node groups, see B3). 🟡 (Mix and Add hard-wired)
 6. **Channels beyond four**: Normal (with Whiteout/RNM blend), Opacity, Emission. The channel list per material. 🟡 (channels are data; special targets missing)
-7. **Per-row eye toggle for layers and folders**; blend mode and opacity shown on the active layer. ⬜
+7. **Per-row eye toggle for layers and folders**; blend mode and opacity shown on the active layer. 🟡 eye toggles and opacity done, blend mode with item 5
 8. **Cage support and float image buffers** for baking and for height/mask images. ⬜
 9. **Measure performance** of deep stacks and set guidance. ⬜
 

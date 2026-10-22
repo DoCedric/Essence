@@ -1,7 +1,7 @@
 import bpy
 
 from .channels import CHANNELS
-from . import nodes
+from . import nodes, sources
 from .bake import HIGH_MAPS
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
@@ -62,19 +62,28 @@ class ESSENCE_UL_layers(bpy.types.UIList):
                          icon='HIDE_OFF' if enable.default_value else 'HIDE_ON')
             return
 
+        vis = node.inputs.get(nodes.VISIBLE) if node is not None else None
+
+        def eye():
+            if vis is not None:
+                row.prop(vis, "default_value", text="", emboss=False,
+                         icon='HIDE_OFF' if vis.default_value else 'HIDE_ON')
+
         if item.kind == 'FOLDER':
             row.prop(item, "name", text="", emboss=False, icon='FILE_FOLDER')
+            eye()
             return
 
         # Layer: a swatch of its color, then the name.
         color = node.inputs.get("Color B") if node is not None else None
-        if color is not None:
+        if color is not None and not color.is_linked:
             sub = row.row(align=True)
             sub.ui_units_x = 1.3
             sub.prop(color, "default_value", text="")
         else:
             row.label(text="", icon='NODETREE')
         row.prop(item, "name", text="", emboss=False)
+        eye()
 
 
 def _stack(self, context):
@@ -125,6 +134,74 @@ def _mask_poll(cls, context):
     return e is not None and e.kind == 'MASK'
 
 
+def _mapping(layout, node):
+    col = layout.column(align=True)
+    col.prop(node.inputs['Scale'], "default_value", text="Tiling")
+    col.prop(node.inputs['Location'], "default_value", text="Offset")
+    col.prop(node.inputs['Rotation'], "default_value", text="Rotation")
+
+
+def _channel(layout, mat, e, node, ch):
+    """One channel of a layer: enable, source kind, then the controls of that source."""
+    src = sources.get_source(e, ch.id)
+    box = layout.box()
+    enable = node.inputs[f"{ch.label} Enable"]
+    row = box.row(align=True)
+    if src is not None:
+        row.prop(src, "expanded", text="", emboss=False,
+                 icon='TRIA_DOWN' if src.expanded else 'TRIA_RIGHT')
+    row.prop(enable, "default_value", text="", emboss=False,
+             icon='CHECKBOX_HLT' if enable.default_value else 'CHECKBOX_DEHLT')
+    row.label(text=ch.label)
+    if src is None:
+        row.operator("essence.rebuild", text="Upgrade", icon='FILE_REFRESH')
+        return
+    row.prop(src, "kind", text="")
+    if not src.expanded:
+        return
+
+    col = box.column(align=True)
+    col.active = enable.default_value
+    col.prop(node.inputs[f"{ch.label} Opacity"], "default_value", text="Opacity", slider=True)
+    b = node.inputs[f"{ch.label} B"]
+    found = sources.source_nodes(mat.node_tree, e.uid, ch.id)
+    if src.kind == 'VALUE':
+        if b.is_linked:
+            col.label(text="Driven by nodes in the node editor", icon='NODETREE')
+        else:
+            col.prop(b, "default_value", text="Value")
+        return
+
+    tex = found.get('TEXTURE')
+    if tex is None or 'MAPPING' not in found:
+        col.operator("essence.rebuild", text="Source nodes missing, rebuild",
+                     icon='FILE_REFRESH')
+        return
+    if src.kind == 'IMAGE':
+        col.template_ID(tex, "image", open="image.open")
+        if tex.image is not None and tex.image.colorspace_settings.name != ch.colorspace:
+            sub = col.box()
+            sub.label(text=f"This channel expects {ch.colorspace}", icon='ERROR')
+            sub.operator("essence.source_colorspace",
+                         text=f"Set {ch.colorspace}").channel = ch.id
+    else:
+        col.prop(src, "proc_type", text="Type")
+        for s in tex.inputs:
+            if s.name != "Vector" and not s.is_linked:
+                col.prop(s, "default_value", text=s.name)
+    remap = found.get('REMAP')
+    if remap is not None:
+        sub = col.column(align=True)
+        sub.prop(remap.inputs['To Min'], "default_value", text="Min")
+        sub.prop(remap.inputs['To Max'], "default_value", text="Max")
+    ramp = found.get('RAMP')
+    if ramp is not None:
+        col.template_color_ramp(ramp, "color_ramp")
+    col.separator()
+    col.prop(src, "projection", text="Projection")
+    _mapping(col, found['MAPPING'])
+
+
 def _props(self, context):
     layout = self.layout
     mat = _mat(context)
@@ -135,17 +212,12 @@ def _props(self, context):
     layout.prop(e, "name", text="Name")
     if e.kind == 'FOLDER':
         layout.label(text="The folder's masks limit all layers inside", icon='INFO')
+    elif nodes.OPACITY not in node.inputs:
+        layout.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
     else:
-        col = layout.column(align=True)
+        layout.prop(node.inputs[nodes.OPACITY], "default_value", text="Opacity", slider=True)
         for ch in CHANNELS:
-            enable = node.inputs[f"{ch.label} Enable"]
-            row = col.row(align=True)
-            row.prop(enable, "default_value", text="",
-                     icon='CHECKBOX_HLT' if enable.default_value else 'CHECKBOX_DEHLT',
-                     emboss=False)
-            sub = row.row(align=True)
-            sub.active = enable.default_value
-            sub.prop(node.inputs[f"{ch.label} B"], "default_value", text=ch.label)
+            _channel(layout, mat, e, node, ch)
     n = sum(1 for m in mat.essence.layers if m.kind == 'MASK' and m.parent == e.uid)
     layout.menu("ESSENCE_MT_add_mask", icon='MOD_MASK',
                 text="Add Mask" if n == 0 else f"Add Mask ({n})")

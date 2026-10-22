@@ -2,7 +2,7 @@
 
 import bpy
 
-from . import stack
+from . import sources, stack
 from .channels import CHANNELS, MASK_SOCKET
 
 MASK_INVERT = "Mask Invert"
@@ -16,9 +16,13 @@ MASK_PREVIOUS = "Previous"
 GROUP_NAME = "Essence Layer"
 # 2: per-channel Enable inputs, 3: mask invert/brightness/contrast,
 # 4: mask adjustments moved to the mask group (a layer has a stack of masks)
-GROUP_VERSION = 4
+# 5: layer Opacity and per-channel Opacity inputs, Visible (eye toggle)
+GROUP_VERSION = 5
+OPACITY = "Opacity"
+VISIBLE = "Visible"
 FOLDER_GROUP_NAME = "Essence Folder"
-FOLDER_GROUP_VERSION = 2
+# 3: Visible (eye toggle)
+FOLDER_GROUP_VERSION = 3
 MASK_GROUP_NAME = "Essence Mask"
 MASK_GROUP_VERSION = 1
 VERSION_KEY = "essence_version"
@@ -49,6 +53,15 @@ def _new_socket(iface, name, in_out, ch):
     return s
 
 
+def _opacity_socket(iface, name):
+    s = iface.new_socket(name, in_out='INPUT', socket_type='NodeSocketFloat')
+    s.default_value = 1.0
+    s.min_value = 0.0
+    s.max_value = 1.0
+    s.subtype = 'FACTOR'
+    return s
+
+
 def _build_group(ng, folder=False):
     """Build the layer group, or the folder group (`folder=True`).
 
@@ -67,7 +80,12 @@ def _build_group(ng, folder=False):
     mask.min_value = 0.0
     mask.max_value = 1.0
     mask.subtype = 'FACTOR'
+    vis_in = iface.new_socket(VISIBLE, in_out='INPUT', socket_type='NodeSocketBool')
+    vis_in.default_value = True
+    if not folder:
+        _opacity_socket(iface, OPACITY)
     for ch in CHANNELS if not folder else ():
+        _opacity_socket(iface, f"{ch.label} Opacity")
         en = iface.new_socket(f"{ch.label} Enable", in_out='INPUT',
                               socket_type='NodeSocketBool')
         en.default_value = True
@@ -82,6 +100,24 @@ def _build_group(ng, folder=False):
 
     # The mask arrives already adjusted and combined by the mask nodes feeding it.
     mask_out = n_in.outputs[MASK_SOCKET]
+    # The eye toggle: a hidden layer or folder has no effect (factor 0).
+    vis = nodes.new('ShaderNodeMath')
+    vis.operation = 'MULTIPLY'
+    vis.label = "Visible"
+    vis.location = (-800, 150)
+    links.new(mask_out, vis.inputs[0])
+    links.new(n_in.outputs[VISIBLE], vis.inputs[1])
+    mask_out = vis.outputs[0]
+    if not folder:
+        # Layer opacity scales the mask once for every channel.
+        lop = nodes.new('ShaderNodeMath')
+        lop.operation = 'MULTIPLY'
+        lop.label = "Layer Opacity"
+        lop.location = (-600, 150)
+        links.new(mask_out, lop.inputs[0])
+        links.new(n_in.outputs[OPACITY], lop.inputs[1])
+        mask_out = lop.outputs[0]
+        lop.location = (-600, 150)
 
     for i, ch in enumerate(CHANNELS):
         a = n_in.outputs[f"{ch.label} A"]
@@ -92,11 +128,17 @@ def _build_group(ng, folder=False):
         if folder:
             factor = mask_out
         else:
+            cop = nodes.new('ShaderNodeMath')
+            cop.operation = 'MULTIPLY'
+            cop.location = (-400, y)
+            cop.label = f"{ch.label} Opacity"
+            links.new(mask_out, cop.inputs[0])
+            links.new(n_in.outputs[f"{ch.label} Opacity"], cop.inputs[1])
             fac = nodes.new('ShaderNodeMath')
             fac.operation = 'MULTIPLY'
             fac.location = (-200, y)
             fac.label = f"{ch.label} Factor"
-            links.new(mask_out, fac.inputs[0])
+            links.new(cop.outputs[0], fac.inputs[0])
             links.new(n_in.outputs[f"{ch.label} Enable"], fac.inputs[1])
             factor = fac.outputs[0]
         if blend == 'MIX':
@@ -204,12 +246,14 @@ def _ensure_group(name, version, folder):
         for mat in bpy.data.materials:
             migrate(mat)
     saved = _snapshot_values(ng)
+    saved_links = _snapshot_links(ng)
     if name == MASK_GROUP_NAME:
         _build_mask_group(ng)
     else:
         _build_group(ng, folder)
     ng[VERSION_KEY] = version
     _restore_values(saved)
+    _restore_links(saved_links)
     return ng
 
 
@@ -249,6 +293,35 @@ def _snapshot_values(ng):
                         saved.append((mat.name, n.name, s.name,
                                       tuple(v) if hasattr(v, "__len__") else v))
     return saved
+
+
+def _snapshot_links(ng):
+    """Links into every instance of `ng`, so the ones the user or a layer source wired by
+    hand (e.g. into a B input) survive an interface rebuild, which drops them."""
+    saved = []
+    for mat in bpy.data.materials:
+        if mat.node_tree is None:
+            continue
+        for l in mat.node_tree.links:
+            n = l.to_node
+            if n.type == 'GROUP' and n.node_tree is ng:
+                saved.append((mat.name, l.from_node.name, l.from_socket.name,
+                              n.name, l.to_socket.name))
+    return saved
+
+
+def _restore_links(saved):
+    for mat_name, from_node, from_sock, to_node, to_sock in saved:
+        mat = bpy.data.materials.get(mat_name)
+        tree = mat.node_tree if mat else None
+        a = tree.nodes.get(from_node) if tree else None
+        b = tree.nodes.get(to_node) if tree else None
+        if a is None or b is None:
+            continue
+        out = a.outputs.get(from_sock)
+        inp = b.inputs.get(to_sock)
+        if out is not None and inp is not None and not inp.is_linked:
+            tree.links.new(out, inp)
 
 
 def _restore_values(saved):
@@ -341,6 +414,7 @@ def rebuild_stack(mat):
     layers = mat.essence.layers
     entries = [(e, tree.nodes.get(e.node_name)) for e in layers if e.kind != 'MASK']
     entries = [(e, n) for e, n in entries if n is not None]
+    sources.cleanup(tree, {e.uid for e in layers})
     if not entries:
         return
 
@@ -392,6 +466,9 @@ def rebuild_stack(mat):
 
     for e, node in entries:
         _link_masks(tree, layers, e, node)
+        if e.kind == 'LAYER' and e.uid:
+            sources.ensure_entries(e)
+            sources.layout(tree, e, node)
 
 
 def _link_masks(tree, layers, owner, owner_node):

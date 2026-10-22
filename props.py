@@ -1,6 +1,8 @@
 import bpy
-from bpy.props import (CollectionProperty, EnumProperty, IntProperty, PointerProperty,
-                       StringProperty)
+from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, IntProperty,
+                       PointerProperty, StringProperty)
+
+from . import sources
 
 
 def _name_update(self, context):
@@ -11,6 +13,30 @@ def _name_update(self, context):
         node = mat.node_tree.nodes.get(n) if n else None
         if node is not None:
             node.label = self.name
+
+
+def _source_update(self, context):
+    """A source setting changed: rebuild that channel's source nodes."""
+    mat = self.id_data
+    if mat.node_tree is None:
+        return
+    entry = next((e for e in mat.essence.layers if e.uid == self.uid), None)
+    if entry is not None:
+        sources.apply(mat, entry, self.channel)
+
+
+class EssenceSource(bpy.types.PropertyGroup):
+    """What drives one channel of a layer (see sources.py). The nodes carry the values."""
+    channel: StringProperty()
+    uid: StringProperty()  # uid of the layer entry that owns it
+    kind: EnumProperty(name="Source", items=sources.KINDS, default='VALUE',
+                       update=_source_update)
+    projection: EnumProperty(name="Projection", items=sources.PROJECTIONS, default='UV',
+                             update=_source_update)
+    proc_type: EnumProperty(name="Type", items=sources.PROC_ITEMS, default='NOISE',
+                            update=_source_update)
+    expanded: BoolProperty(name="Expanded", default=True,
+                           description="Show this channel's settings")
 
 
 class EssenceLayer(bpy.types.PropertyGroup):
@@ -28,6 +54,7 @@ class EssenceLayer(bpy.types.PropertyGroup):
     parent: StringProperty()   # uid of the owner (folder or layer), empty at top level
     node_name: StringProperty()
     mask_node_name: StringProperty()
+    sources: CollectionProperty(type=EssenceSource)  # layers only, one per channel
 
 
 def _active_update(self, context):
@@ -46,7 +73,7 @@ class EssenceMaterial(bpy.types.PropertyGroup):
     active_index: IntProperty(update=_active_update)
 
 
-classes = (EssenceLayer, EssenceMaterial)
+classes = (EssenceSource, EssenceLayer, EssenceMaterial)
 
 
 def register():

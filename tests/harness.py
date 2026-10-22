@@ -92,8 +92,11 @@ def sample_socket(ob, mat, socket, size=8):
     bpy.context.scene.render.bake.margin = 0
     bpy.ops.object.bake(type='EMIT')
     px = list(img.pixels)
-    mid = (size // 2 * size + size // 2) * 4
-    value = tuple(px[mid:mid + 4])
+    # Mean of the 2x2 block around the exact center, so UV 0.5 reads as 0.5.
+    c = size // 2
+    block = [px[((y * size) + x) * 4:((y * size) + x) * 4 + 4]
+             for y in (c - 1, c) for x in (c - 1, c)]
+    value = tuple(sum(p[i] for p in block) / 4 for i in range(4))
 
     tree.nodes.remove(tex)
     tree.nodes.remove(emit)

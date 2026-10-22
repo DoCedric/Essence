@@ -19,17 +19,26 @@ class Channel:
     subtype: str = 'NONE'
     # (node kind, socket name) the end of the stack is wired into.
     target: Tuple[str, str] = ('BSDF', '')
+    # Layer sources (see sources.py): color space of an image feeding this channel, and the
+    # value range that a float channel's image (0 to 1) or procedural (0 to 1) is mapped to.
+    colorspace: str = 'Non-Color'
+    image_range: Tuple[float, float] = (0.0, 1.0)
+    proc_range: Tuple[float, float] = (0.0, 1.0)
 
 
 CHANNELS = (
     Channel('COLOR', 'Color', 'NodeSocketColor', 'MIX',
-            (0.8, 0.8, 0.8, 1.0), target=('BSDF', 'Base Color')),
+            (0.8, 0.8, 0.8, 1.0), target=('BSDF', 'Base Color'), colorspace='sRGB'),
     Channel('ROUGHNESS', 'Roughness', 'NodeSocketFloat', 'MIX',
             0.5, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Roughness')),
     Channel('METALLIC', 'Metallic', 'NodeSocketFloat', 'MIX',
             0.0, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Metallic')),
+    # Height images follow Substance: black = -1, mid grey = 0, white = 1.
     Channel('BUMP', 'Bump', 'NodeSocketFloat', 'ADD',
-            0.0, -1.0, 1.0, 'NONE', target=('BUMP', 'Height')),
+            0.0, -1.0, 1.0, 'NONE', target=('BUMP', 'Height'),
+            image_range=(-1.0, 1.0), proc_range=(0.0, 1.0)),
 )
+
+BY_ID = {c.id: c for c in CHANNELS}
 
 MASK_SOCKET = "Mask"

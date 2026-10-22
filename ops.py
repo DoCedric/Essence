@@ -1,7 +1,8 @@
 import bpy
-from bpy.props import EnumProperty, IntProperty
+from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import nodes, stack
+from . import nodes, sources, stack
+from .channels import BY_ID
 
 
 def _material(context, create=False, migrate=False):
@@ -241,6 +242,29 @@ class ESSENCE_OT_mask_non_color(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_source_colorspace(_Base, bpy.types.Operator):
+    bl_idname = "essence.source_colorspace"
+    bl_label = "Fix Color Space"
+    bl_description = ("Set the source image's color space to what this channel expects "
+                      "(sRGB for color, Non-Color for data). This changes the image itself, "
+                      "so other users of it are affected")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    channel: StringProperty()
+
+    def execute(self, context):
+        mat = _material(context)
+        e = _active(mat) if mat is not None else None
+        ch = BY_ID.get(self.channel)
+        if e is None or ch is None:
+            return {'CANCELLED'}
+        tex = sources.source_nodes(mat.node_tree, e.uid, ch.id).get('TEXTURE')
+        if tex is None or tex.bl_idname != 'ShaderNodeTexImage' or tex.image is None:
+            return {'CANCELLED'}
+        tex.image.colorspace_settings.name = ch.colorspace
+        return {'FINISHED'}
+
+
 class ESSENCE_OT_paint_mask(_Base, bpy.types.Operator):
     bl_idname = "essence.paint_mask"
     bl_label = "Paint Mask"
@@ -321,7 +345,8 @@ class ESSENCE_MT_add_mask(bpy.types.Menu):
 classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask,
-    ESSENCE_OT_mask_non_color, ESSENCE_OT_paint_mask, ESSENCE_OT_exit_paint,
+    ESSENCE_OT_mask_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
+    ESSENCE_OT_exit_paint,
     ESSENCE_OT_rebuild, ESSENCE_MT_add_mask,
 )
 
