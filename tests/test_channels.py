@@ -112,6 +112,44 @@ def test_blend_mode_combined_with_channel_change(addon):
     check("Roughness:Multiply" in ng.name and "+Emission" in ng.name, ng.name)
 
 
+def test_export_alpha_and_emission(addon):
+    import os
+    import shutil
+    import tempfile
+    ob = make_plane()
+    mat, e = _layer(ob)
+    _state(mat, 'ALPHA').enabled = True
+    _state(mat, 'EMISSION').enabled = True
+    node = _node(mat, e)
+    node.inputs['Alpha B'].default_value = 0.4
+    node.inputs['Emission B'].default_value = (0.2, 0.6, 1.0, 1.0)
+    node.inputs['Color B'].default_value = (0.5, 0.5, 0.5, 1.0)
+    folder = tempfile.mkdtemp(prefix="essence_export_")
+    try:
+        sc = bpy.context.scene
+        sc.essence_export_format = 'OPEN_EXR'
+        sc.essence_export_size = '512'
+        sc.essence_export_dir = folder
+        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export failed")
+        stem = bpy.path.clean_name(mat.name)
+
+        def load(suffix):
+            img = bpy.data.images.load(os.path.join(folder, f"{stem}_{suffix}.exr"))
+            img.colorspace_settings.name = 'Non-Color'
+            w, h = img.size
+            i = ((h // 2) * w + w // 2) * 4
+            return list(img.pixels)[i:i + 4]
+
+        base = load("BaseMap")
+        close(base[0], 0.5, 0.02, "base color")
+        close(base[3], 0.4, 0.02, "BaseMap alpha is the opacity")
+        em = load("Emission")
+        for got, want in zip(em[:3], (0.2, 0.6, 1.0)):
+            close(got, want, 0.02, "emission color")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def test_export_still_works_without_metallic(addon):
     import os
     import shutil

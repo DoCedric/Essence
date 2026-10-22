@@ -1,6 +1,6 @@
 import bpy
 
-from .channels import CHANNELS, MASK_SOURCE
+from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
 from . import nodes, sources
 from .bake import HIGH_MAPS
 
@@ -163,6 +163,7 @@ def _channel(layout, mat, e, node, ch):
 
     col = box.column(align=True)
     col.active = enable.default_value
+    col.prop(src, "blend", text="Blend")
     col.prop(node.inputs[f"{ch.label} Opacity"], "default_value", text="Opacity", slider=True)
     _source_controls(col, mat, e, src, ch, node.inputs[f"{ch.label} B"])
 
@@ -230,7 +231,7 @@ def _props(self, context):
         layout.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
     else:
         layout.prop(node.inputs[nodes.OPACITY], "default_value", text="Opacity", slider=True)
-        for ch in CHANNELS:
+        for ch in active_channels(mat):
             _channel(layout, mat, e, node, ch)
     n = sum(1 for m in mat.essence.layers if m.kind == 'MASK' and m.parent == e.uid)
     layout.menu("ESSENCE_MT_add_mask", icon='MOD_MASK',
@@ -284,6 +285,13 @@ def _material(self, context):
     if mat is None or mat.node_tree is None:
         return
     tree = mat.node_tree
+    if mat.essence.channels:
+        box = layout.box()
+        box.label(text="Channels")
+        col = box.column(align=True)
+        for state in mat.essence.channels:
+            ch = BY_ID[state.id]
+            col.prop(state, "enabled", text=ch.label)
     normal = tree.nodes.get(nodes.NORMAL_NODE_NAME)
     bump = tree.nodes.get(nodes.BUMP_NODE_NAME)
     if normal is None and bump is None:

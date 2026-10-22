@@ -2,7 +2,7 @@
 
 A Blender addon that brings a Substance Painter-class texturing workflow into Blender, built entirely on top of Blender's own shader graph, baking, texture paint, asset and compositing systems.
 
-> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (47 tests: stack operators, layer and mask sources, blend math against real baked pixels, bake, export, group upgrades). **Not yet verified: everything that needs the GUI** (panels, thumbnails, Texture Paint, viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
+> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (76 tests: stack operators, layer and mask sources, blend modes and channels checked against real baked pixels, bake, export, group upgrades, and the panel draw logic against a recording layout). **Not yet verified: everything that needs the GUI** (how panels look and feel, thumbnails, Texture Paint, the viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
 
 **Target:** Blender 5.2.2 (latest). No support for older versions.
 
@@ -112,7 +112,7 @@ Map types ✅ *(built, untested)*:
 - Masks can be painted in Texture Paint mode (Image source with the UV projection only; procedural, value and triplanar masks are generated and not paintable). Switching a mask away from Image remembers its image (kept alive with a fake user) and restores it when you switch back. A Paint Mask button makes the selected mask's image the active image node and enters Texture Paint in Material mode; an Exit button leaves it.
 
 ### PBR Channels (v1)
-Color, Roughness, Metallic, Bump (height). Defined in `channels.py` as data.
+Color, Roughness, Metallic and Bump (height) are on by default. Normal, Alpha and Emission exist and are switched on in the material's **Channels** list (Material panel). All are defined in `channels.py` as data. See "Group variants" below for how the channel set and blend modes reach the layer node.
 
 ### Layer Structure
 - One **layer node** (a node group) per layer, chained: each layer's output feeds the next layer's A inputs, and the layer's own channel values are the B inputs.
@@ -193,9 +193,9 @@ Channels are data (`channels.py`). The Principled BSDF already exposes nearly ev
 | Roughness | BSDF Roughness | Mix + blend modes | ✅ | |
 | Metallic | BSDF Metallic | Mix + blend modes | ✅ | |
 | Height | Bump node (Height) | Add | ✅ | |
-| Normal (layer-level) | Normal Map node, combined before Bump | Normal Map Combine (Whiteout), Detail (RNM), Inverse Detail, built as math node groups | 🟡 baked normal only, no per-layer normal | P0 |
-| Opacity / Alpha | BSDF Alpha | Mix | ⬜ | P0 |
-| Emission (color + strength) | BSDF Emission Color / Strength | Mix | ⬜ | P0 |
+| Normal (layer-level) | Normal Map node, combined before Bump. The channel carries the 0-1 encoded tangent normal and decodes it only inside the blend | Normal (replace), Combine (Whiteout), Detail (RNM). The baked normal is the base of the stack. Image or value source (no procedural) ✅ | ✅ | Inverse Detail P1 |
+| Opacity / Alpha | BSDF Alpha | Mix + blend modes | ✅ BaseMap alpha on export | |
+| Emission (color + strength) | BSDF Emission Color; strength set to 1 when the channel is switched on | Mix + blend modes | ✅ own file on export | |
 | Ambient Occlusion | not a BSDF input; kept as an exported channel and optional viewport multiply | Multiply | 🟡 baked and exported, not a layer channel | P1 |
 | Specular level / Specular tint | BSDF Specular IOR Level / Tint | Mix | ⬜ | P1 |
 | Coat (weight, roughness, tint, normal) | BSDF Coat inputs | Mix | ⬜ | P2 |
@@ -208,7 +208,7 @@ Channels are data (`channels.py`). The Principled BSDF already exposes nearly ev
 | User channels (custom, exported only; e.g. packed masks) | no shader target, exported via packing presets | Mix | ⬜ | P2 |
 | Glossiness / Specular-glossiness workflow | derived on export (`1 - roughness`) | n/a | 🟡 smoothness only in Unity export | P3 |
 
-Channel-set UI: a per-material **Channels** list (checkbox per channel) decides which channels exist in layers, panels and export. Replaces the fixed four.
+Channel-set UI ✅: a per-material **Channels** list (checkbox per channel, in the Material panel) decides which channels exist in layers, panels and export. Switching a channel off removes its sockets and source nodes from every layer, unlinks it from the shader, and switching it on again brings its sources back. If the list turns out to be too much it can be removed later without touching the layer builder.
 
 ### B2. Layer content (what a layer *is*)
 
@@ -222,7 +222,7 @@ Today a layer is "a value per channel". The dream layer has a **source per chann
 | **Projection modes**: UV, Triplanar (box blend), Object/Generated coords, Planar from an Empty, Spherical, Cylindrical | Texture Coordinate + Mapping + Image Texture projection (Box, Flat, Sphere, Tube) | L | 🟡 UV, Triplanar and Object done | P2 (planar from an Empty, spherical, cylindrical) |
 | Mapping controls (tiling, offset, rotation, scale; uniform and per channel) | Mapping node, exposed as layer inputs | L | ✅ tiling, offset, rotation | |
 | **Layer opacity** (overall, plus per-channel opacity beyond the enable checkbox) | Factor multiplier in the layer group | L | ✅ | |
-| **Blend mode per channel** (see B3) | Mix node blend types | L | ⬜ | **P0** |
+| **Blend mode per channel** (see B3) | Mix node blend types, Math formulas | L | ✅ | |
 | Paint layer (channel images painted directly) | Per-channel image + paint slots | B/L | ⬜ | P1 |
 | Layer duplicate / copy / paste / hide / solo | Operators, node group copy | O | ⬜ | P1 |
 | Layer instances (shared content, linked) | Shared node group / shared image datablock | L | ⬜ | P3 |
@@ -239,17 +239,17 @@ Substance blend modes map almost one to one onto the Mix node (Color type), whic
 
 | Group | Modes | Status | Pri |
 |---|---|---|---|
-| Basic | Normal (Mix), Multiply, Divide, Add (Linear Dodge), Subtract, Difference, Exclusion | 🟡 Mix and Add only, hard-wired per channel | **P0** |
+| Basic | Normal (Mix), Multiply, Divide, Add (Linear Dodge), Subtract, Difference, Exclusion | ✅ | |
 | Contrast | Overlay, Soft Light, Hard Light (via Linear/Vivid Light), Linear Light, Pin Light | ⬜ | P1 |
 | Dodge/burn | Color Dodge, Color Burn, Linear Burn, Screen | ⬜ | P1 |
 | Compare | Darken, Lighten | ⬜ | P1 |
 | Color | Hue, Saturation, Color, Value/Luminosity, Tint | ⬜ | P2 |
 | Special | Replace (ignores layers below), Passthrough (folder), Inverse Divide, Hard Mix | ⬜ | P2 |
-| Normal blends | Normal Map Combine (Whiteout), Detail (RNM), Inverse Detail | ⬜ | P1 (needed with the Normal channel) |
+| Normal blends | Normal Map Combine (Whiteout), Detail (RNM), Inverse Detail | 🟡 Whiteout and Detail done, checked against a reference formula | P1 (Inverse Detail) |
 
 Float channels (roughness, metallic, height) use the same modes through the Mix node's RGBA type with grey packing, or Math nodes, whichever is cheaper per mode.
 
-**Implementation direction.** The Mix node's `blend_type` is a node property, not a socket, so it cannot be a layer input. Options, to be decided when built (Open Question 5): (a) a small shared **blend node group per mode** ("Essence Blend Multiply", ...) sitting beside the layer node, swapped by the dropdown, or (b) a layer group variant per blend mode. Both keep the graph readable and avoid a runtime switch that evaluates every mode. (a) is preferred: it is the same shape as the existing shared mask group and costs one extra node per channel.
+**Group variants** ✅. The Mix node's `blend_type` is a node property, not a socket, so it cannot be a layer input. The layer node therefore uses a **group variant**: one generated node group per distinct combination of channel set and blend modes, swapped on the node when the dropdown changes (values and links are kept by socket name). A layer is still one node and only the combinations in use exist. Naming is readable: the plain material uses "Essence Layer", others add what differs, e.g. "Essence Layer +Emission Roughness:Multiply" (a hash when it would be too long). Every mode has the shape `lerp(A, f(A, B), factor)`: color channels use the Mix node's own blend types (clamped to 0-1), scalar channels use Math formulas, normal channels decode, combine and re-encode. The group key is stored on the group (`essence_key`) so upgrades rebuild every variant. Folders use a variant per channel set only (they always lerp).
 
 ### B4. Masks
 
@@ -462,9 +462,9 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 2. **Layer sources per channel**: image texture and procedural/node-group picker for each channel's B input, with colorspace set per channel. ✅
 3. **Projection and mapping**: UV and triplanar, tiling/offset/rotation as layer inputs. ✅
 4. **Layer opacity and per-channel opacity** next to the enable checkbox. ✅
-5. **Blend mode per channel** (dropdown, shared blend node groups, see B3). 🟡 (Mix and Add hard-wired)
-6. **Channels beyond four**: Normal (with Whiteout/RNM blend), Opacity, Emission. The channel list per material. 🟡 (channels are data; special targets missing)
-7. **Per-row eye toggle for layers and folders**; blend mode and opacity shown on the active layer. 🟡 eye toggles and opacity done, blend mode with item 5
+5. **Blend mode per channel** (dropdown per channel, one group variant per combination, see B3). ✅
+6. **Channels beyond four**: Normal (with Whiteout/RNM blend), Alpha, Emission, and the channel list per material. ✅
+7. **Per-row eye toggle for layers and folders**; blend mode and opacity shown on the active layer. ✅
 8. **Cage support and float image buffers** for baking and for height/mask images. ⬜
 9. **Measure performance** of deep stacks and set guidance. ⬜
 
@@ -516,9 +516,9 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 2. **Painting plumbing**: built as active image node plus Material paint mode; not validated. The mask-solo toggle is not built.
 3. **Sidebar details**: how the panels should be refined as the feature count grows. Likely: collapsible subpanels per area (Sources, Filters, Masks), Layers panel stays on top.
 4. **Baking groups** and the final shape of the bake section.
-5. **Blend mode wiring**: shared blend group beside the layer (preferred) vs layer group variants. Decide after measuring node count and compile time.
+5. ~~**Blend mode wiring**~~ Decided: layer group variants (see B3, "Group variants").
 6. **Layer sources UI**: how the picker for image/procedural per channel stays compact (one popover per channel, or a "Sources" subpanel with a row per channel).
-7. **Channel list vs fixed layer group interface**: Blender groups cannot change the number of sockets per instance. Options: one layer group per channel set (generated per material, cached by set), or one fixed superset with unused channels unlinked. Affects P0 item 6 and the performance goal.
+7. ~~**Channel list vs fixed layer group interface**~~ Decided: the channel set is part of the same group variant key, so a material only has the sockets of its channels.
 8. **Compositor use for filters**: confirm that the 5.x compositor (node group based, GPU) can be driven from an addon operator on a single image with an acceptable round trip, and whether it can write to an image datablock directly or needs a File Output/Viewer step.
 9. **Texture set model** for objects sharing a material with different UVs (see the B8 limitation).
 10. **Mesh maps vs live generators**: which generators have a live (Cycles-free) form and which need a baked mesh map. Decide per generator.

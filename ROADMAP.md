@@ -41,12 +41,12 @@ Goal: a layer channel can be driven by an image or procedural, mapped and opacit
 ## Sprint 2: Blend modes and channels (`sprint-2-blend-channels`)
 Goal: per-channel blend modes and the channel set grows beyond four.
 
-- [ ] Decide blend wiring (Open Question 5): measure node count and compile time of both options headless, then ask the user. [ask]
-- [ ] Blend node groups for the basic modes (Multiply, Divide, Add, Subtract, Difference, Exclusion) and dropdown per channel. [H]
-- [ ] Decide channel-list structure (Open Question 7). [ask]
-- [ ] Channels: Opacity (Alpha), Emission; per-material channel list. [H]
-- [ ] Normal channel with Whiteout/RNM blend as math node groups. [H]
-- [ ] Export and panels follow the channel list. [H]
+- [x] Decide blend wiring (Open Question 5): layer group variants chosen by the user. [ask]
+- [x] Blend library for the basic modes (Multiply, Divide, Add, Subtract, Difference, Exclusion) and a dropdown per channel, built as group variants. [H]
+- [x] Decide channel-list structure (Open Question 7): same variant key; checkbox list in the Material panel. [ask]
+- [x] Channels: Alpha, Emission; per-material channel list. [H]
+- [x] Normal channel with Whiteout/RNM blend (baked normal is the base). [H]
+- [x] Export and panels follow the channel list (BaseMap alpha, Emission file). [H]
 - [ ] **Milestone checklist** [G].
 
 ## Sprint 3: Bake quality and performance baseline (`sprint-3-bake-perf`)

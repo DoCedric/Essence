@@ -15,7 +15,7 @@ import numpy as np
 from bpy.props import EnumProperty, StringProperty
 
 from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials
-from .channels import BY_ID
+from .channels import BY_ID, active_channels
 
 FORMATS = (
     ('PNG', "PNG", "8-bit PNG", 'png'),
@@ -170,13 +170,30 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             bake.normal_space = 'TANGENT'
             bake.normal_r, bake.normal_g, bake.normal_b = 'POS_X', 'POS_Y', 'POS_Z'
 
-            base = new_image("base", color=True)
+            active = {c.id for c in active_channels(mat)}
+            base = new_image("base", color=True, alpha='ALPHA' in active)
             metal = new_image("metal")
             smooth = new_image("smooth")
             normal = new_image("normal")
             temps += [base, metal, smooth, normal]
 
             self._bake(obj, mat, base, 'EMIT', channel('COLOR'))
+            if 'ALPHA' in active:
+                alpha = new_image("alpha")
+                temps.append(alpha)
+                self._bake(obj, mat, alpha, 'EMIT', channel('ALPHA'))
+                base.alpha_mode = 'CHANNEL_PACKED'
+                px = _pixels(base)
+                px[3::4] = _pixels(alpha)[0::4]
+                base.pixels.foreach_set(px)
+                base.update()
+                notes.append("opacity is in the BaseMap alpha")
+            extra = []
+            if 'EMISSION' in active:
+                emission = new_image("emission", color=True)
+                temps.append(emission)
+                self._bake(obj, mat, emission, 'EMIT', channel('EMISSION'))
+                extra.append((emission, "Emission"))
             self._bake(obj, mat, metal, 'EMIT', channel('METALLIC'))
             self._bake(obj, mat, smooth, 'EMIT', smoothness)
             self._bake(obj, mat, normal, 'NORMAL')
@@ -204,7 +221,7 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             mask.pixels.foreach_set(out.ravel())
             mask.update()
 
-            for img, suffix in ((base, "BaseMap"), (mask, "MaskMap"), (normal, "Normal")):
+            for img, suffix in [(base, "BaseMap"), (mask, "MaskMap"), (normal, "Normal")] + extra:
                 p = path(suffix)
                 img.filepath_raw = p
                 img.file_format = fmt
