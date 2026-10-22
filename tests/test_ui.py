@@ -138,3 +138,18 @@ def test_material_panel_emission_strength_and_transform(addon):
     src.show_transform = True
     log = _draw(ui._props, ob)
     check(any(k.get("text") == "Tiling" for n, a, k in log), "transform missing when expanded")
+
+
+def test_panels_survive_stale_channel_data(addon):
+    """A file from before Normal stopped being a channel still lists it until a rebuild."""
+    from essence import ui
+    ob, mat = _setup(addon)
+    state = mat.essence.channels.add()
+    state.id = 'NORMAL'
+    layer = next(e for e in mat.essence.layers if e.kind == 'LAYER')
+    s = layer.sources.add()
+    s.channel = 'NORMAL'
+    s.uid = layer.uid
+    mat.essence.active_index = [e.name for e in mat.essence.layers].index(layer.name)
+    for fn in (ui._material, ui._props, ui._stack, ui._maps):
+        _draw(fn, ob)

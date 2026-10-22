@@ -314,7 +314,8 @@ def _material(self, context):
         box.label(text="Channels")
         grid = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
         for state in mat.essence.channels:
-            grid.prop(state, "enabled", text=BY_ID[state.id].label)
+            if state.id in BY_ID:  # a file from an older Essence may list a removed channel
+                grid.prop(state, "enabled", text=BY_ID[state.id].label)
         on = {c.id for c in active_channels(mat)}
         bsdf = next((n for n in tree.nodes if n.bl_idname == 'ShaderNodeBsdfPrincipled'), None)
         if 'EMISSION' in on and bsdf is not None:
