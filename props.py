@@ -121,6 +121,7 @@ class EssenceLayer(bpy.types.PropertyGroup):
     parent: StringProperty()   # uid of the owner (folder or layer), empty at top level
     node_name: StringProperty()
     mask_node_name: StringProperty()
+    frozen: BoolProperty()  # baked into the frozen images, left out of the chain (freeze.py)
     sources: CollectionProperty(type=EssenceSource)  # layers only, one per channel
     source: PointerProperty(type=EssenceSource)      # masks only, see sources.py
 
@@ -139,6 +140,8 @@ def _active_update(self, context):
 class EssenceMaterial(bpy.types.PropertyGroup):
     layers: CollectionProperty(type=EssenceLayer)
     channels: CollectionProperty(type=EssenceChannelState)
+    freeze_uid: StringProperty()       # top-level layer or folder the freeze reaches up to
+    freeze_channels: StringProperty()  # channel ids the frozen images cover
     active_index: IntProperty(update=_active_update)
 
 

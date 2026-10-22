@@ -49,6 +49,14 @@ Goal: per-channel blend modes and the channel set grows beyond four.
 - [x] Export and panels follow the channel list (BaseMap alpha, Emission file). [H]
 - [ ] **Milestone checklist** [G].
 
+## Sprint 2b: Mesh map slots and Freeze (`sprint-2-blend-channels`)
+Added after the Sprint 2 GUI check.
+
+- [x] Normal is a mesh map slot (Mesh Maps panel, Normal and AO slots) instead of a layer channel. [H]
+- [x] Freeze to image: bake the stack up to a layer or folder, protect frozen entries, Unfreeze, refreeze, save/reload. [H]
+- [x] UI polish from the check: Emission Strength, collapsible Transform, 3-column channel list.
+- [ ] **Milestone checklist** [G]: freeze and unfreeze speed and look, frozen row display, Mesh Maps panel.
+
 ## Sprint 3: Bake quality and performance baseline (`sprint-3-bake-perf`)
 - [ ] Cage object support (selected-to-active). [H]
 - [ ] Float image buffers for height and masks. [H]

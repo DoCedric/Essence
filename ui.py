@@ -36,6 +36,9 @@ class ESSENCE_UL_layers(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_prop, index):
         tree = item.id_data.node_tree
         row = layout.row(align=True)
+        if item.frozen:  # baked into the frozen images, see freeze.py
+            row.active = False
+            row.label(text="", icon='FREEZE')
         depth = _depth(data.layers, item)
         if depth:
             row.separator(factor=2.0 * depth)
@@ -116,6 +119,16 @@ def _stack(self, context):
     col.operator("essence.move_layer", icon='TRIA_DOWN', text="").direction = 'DOWN'
     col.separator()
     col.operator("essence.rebuild", icon='FILE_REFRESH', text="")
+    row = layout.row(align=True)
+    row.operator("essence.freeze", icon='FREEZE')
+    row.prop(context.scene, "essence_freeze_size", text="")
+    if s.freeze_uid:
+        top = next((x for x in s.layers if x.uid == s.freeze_uid), None)
+        box = layout.box()
+        box.label(text=f"Frozen up to {top.name if top else '?'}", icon='FREEZE')
+        if set(s.freeze_channels.split(",")) != {c.id for c in active_channels(mat)}:
+            box.label(text="Channels changed since freezing: freeze again", icon='ERROR')
+        box.operator("essence.unfreeze", icon='X')
 
 
 def _props_poll(cls, context):
@@ -228,6 +241,10 @@ def _props(self, context):
         layout.label(text="Layer node missing from graph", icon='ERROR')
         return
     layout.prop(e, "name", text="Name")
+    if e.frozen:
+        layout.label(text="Frozen: unfreeze to edit", icon='FREEZE')
+        layout.operator("essence.unfreeze", icon='X')
+        return
     if e.kind == 'FOLDER':
         layout.label(text="The folder's masks limit all layers inside", icon='INFO')
     elif nodes.OPACITY not in node.inputs:
@@ -252,6 +269,10 @@ def _mask(self, context):
         layout.operator("essence.remove_layer", icon='X')
         return
     layout.prop(e, "name", text="Name")
+    if e.frozen:
+        layout.label(text="Frozen: unfreeze to edit", icon='FREEZE')
+        layout.operator("essence.unfreeze", icon='X')
+        return
     if owner is not None:
         layout.label(text=f"Masks {owner.name}", icon='MOD_MASK')
     src = sources.get_source(e, 'MASK')

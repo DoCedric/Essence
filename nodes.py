@@ -30,6 +30,7 @@ MASK_GROUP_VERSION = 1
 VERSION_KEY = "essence_version"
 BUMP_NODE_NAME = "Essence Bump"
 NORMAL_NODE_NAME = "Essence Normal Map"
+FROZEN_KEY = "essence_frozen"  # on the frozen image nodes, see freeze.py
 BAKED_NORMAL_NODE = "Essence_Bake_NORMAL"  # the Normal slot, also the bake target
 
 
@@ -554,10 +555,18 @@ def rebuild_stack(mat):
             sources.ensure_entries(e)
     for e in layers:
         refresh_entry(mat, e)  # the group variant must match the channel set and blend modes
-    entries = [(e, tree.nodes.get(e.node_name)) for e in layers if e.kind != 'MASK']
+    # Frozen entries stay in the list but are not part of the chain: the images that replace
+    # them (see freeze.py) are the base the first live entry blends onto.
+    frozen = {n[FROZEN_KEY]: n for n in tree.nodes if FROZEN_KEY in n}
+    entries = [(e, tree.nodes.get(e.node_name)) for e in layers
+               if e.kind != 'MASK' and not e.frozen]
     entries = [(e, n) for e, n in entries if n is not None]
-    if not entries:
+    if not entries and not frozen:
         return
+
+    def frozen_socket(ch):
+        node = frozen.get(ch.id)
+        return node.outputs['Color'] if node is not None else None
 
     active = active_channels(mat)
     active_ids = {c.id for c in active}
@@ -580,6 +589,8 @@ def rebuild_stack(mat):
             _clear_links(tree, a)
             if a_src is not None:
                 tree.links.new(a_src.outputs[ch.label], a)
+            elif frozen_socket(ch) is not None:
+                tree.links.new(frozen_socket(ch), a)
             if b_src is not None:
                 b = node.inputs[f"{ch.label} B"]
                 _clear_links(tree, b)
@@ -610,8 +621,11 @@ def rebuild_stack(mat):
             continue
         dst = targets[kind].inputs[sock_name]
         _clear_links(tree, dst)
-        if ch.id in active_ids:
-            tree.links.new(prev.outputs[ch.label], dst)
+        if ch.id not in active_ids:
+            continue
+        out = prev.outputs[ch.label] if prev is not None else frozen_socket(ch)
+        if out is not None:
+            tree.links.new(out, dst)
     if baked is not None:
         # The Normal slot: a baked or picked tangent normal map feeds the Normal Map node,
         # which is evaluated before the bump (the layer height).

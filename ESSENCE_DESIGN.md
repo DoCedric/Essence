@@ -2,7 +2,7 @@
 
 A Blender addon that brings a Substance Painter-class texturing workflow into Blender, built entirely on top of Blender's own shader graph, baking, texture paint, asset and compositing systems.
 
-> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (76 tests: stack operators, layer and mask sources, blend modes and channels checked against real baked pixels, bake, export, group upgrades, and the panel draw logic against a recording layout). **Not yet verified: everything that needs the GUI** (how panels look and feel, thumbnails, Texture Paint, the viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
+> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (84 tests: stack operators, layer and mask sources, blend modes and channels checked against real baked pixels, bake, export, group upgrades, and the panel draw logic against a recording layout). **Not yet verified: everything that needs the GUI** (how panels look and feel, thumbnails, Texture Paint, the viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
 
 **Target:** Blender 5.2.2 (latest). No support for older versions.
 
@@ -165,6 +165,14 @@ Notes:
 The **Mesh Maps** panel has one slot per map (Normal and Ambient Occlusion for now; curvature, thickness, position and ID join with the mesh-map sprint, and generators will read from them). A slot is an image node named `Essence_Bake_<MAP>`: a bake fills it, or the user picks any image. The **Normal** slot is wired as **image, Normal Map node (Tangent), Bump node's Normal input, BSDF Normal**: the normal map is evaluated before the bump, as Blender requires, and layer height feeds the Bump node's Height, so both combine in the single Bump node. An empty slot feeds nothing. The Normal Map **Strength** sits in the slot. Export reads the AO slot for the MaskMap.
 
 While a Normal (Tangent) bake runs, the BSDF's Normal input is temporarily unlinked, so the bake does not capture the material's own bump or normal map. A low-poly-only tangent bake is therefore flat.
+
+### Freeze ✅
+**Freeze** (Layers panel) bakes everything from the bottom of the stack up to and including the active layer or folder into images, one per active channel (half float, Non-Color, at the size chosen next to the button). The frozen entries stay in the list and keep their nodes, so **Unfreeze** brings them back exactly, but they are left out of the chain: the first live layer above blends onto the frozen images (sampled with the object's UV map) and Blender skips nodes that no longer reach the output. A 14-layer test stack went from about 247 shader nodes to 8.
+- **Unit:** the freeze boundary is a top-level layer or folder. Freezing a layer inside a folder freezes the whole folder, with its children and masks.
+- **Refreeze:** freezing higher bakes the new boundary (the chain still includes the old frozen base) and replaces the old images.
+- **Protection:** frozen rows show a snowflake and are greyed. They cannot be edited, moved, removed or given masks, and nothing can be added while a frozen entry is active; the panels offer Unfreeze instead.
+- **Channels:** the frozen images cover the channels active at freeze time. If the channel set changes afterwards the panel says to freeze again.
+- **Limits:** one object per material, since the images follow one UV layout. The images are packed into the file.
 
 ### Export ✅
 v1 exports for **Unity HDRP** only, from the active object's active material (needs at least one layer and a UV map). Settings: Format (PNG, TGA, EXR), Resolution (512 to 4096), Folder (default `//Export/`).
@@ -422,7 +430,7 @@ Blender evaluates the whole material per pixel, so very deep stacks cost shader 
 |---|---|---|---|
 | **Measure** compile time and viewport cost of a 5, 20, 50-layer stack (decide guidance) | EEVEE and Cycles timing | ⬜ | **P0** |
 | Only generate enabled channels (smaller groups) | Per-material channel list | ⬜ | P0 / P1 |
-| **Freeze layer / folder / whole stack to image** (bake the result of a layer or folder to images, swap in an Image Texture, keep the live version for unfreezing). The main remedy for procedural-heavy stacks, since procedurals are evaluated live per shading point (see B6, Procedural cost). Deliberately later: not needed until stacks get heavy. | Emission bake (as export already does) | ⬜ | **P1** (late in the tier) |
+| **Freeze layer / folder / whole stack to image** ✅ (see Freeze). The main remedy for deep and procedural-heavy stacks: Blender recompiles the whole material shader on every structural change, and the Bump node evaluates its height network three times | Emission bake (as export already does) | B | ✅ | |
 | Draft mode: lower texture resolution, disable heavy generators | Image scale + group toggle | ⬜ | P3 |
 | Disabled layers do not compile (muted nodes, `mute`) | Node mute | ⬜ | P1 |
 | Constant-folding check (are disabled-channel Math nodes with constant inputs free?) | Verify in EEVEE/Cycles | ⬜ | P1 |
@@ -480,7 +488,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 18. **Export preset engine** with URP, Unreal, glTF, all channels, bit depth, dilation, export all materials. ⬜
 19. **Export as a flattened Blender material** (stack baked into a simple image-based Principled material). ⬜
 20. **Remaining blend modes** (contrast, dodge/burn, compare). ⬜
-21. **Freeze to image** for layers, folders and the whole stack (performance step for procedural-heavy stacks; do late in P1, once real stacks show the need). ⬜
+21. **Freeze to image** for layers, folders and the whole stack. ✅ Brought forward after a 14-layer stack took about 7 seconds to recompile on every added layer.
 22. **Baking groups; multi-object bake into one image.** ⬜
 23. **Mask stack blend modes; levels/curves on masks; layer duplicate/copy/paste; Add menu grouping.** ⬜
 24. **Specular, AO channels; texture set settings (resolution, channels, export preset).** ⬜
