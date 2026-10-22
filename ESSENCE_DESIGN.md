@@ -2,7 +2,7 @@
 
 A Blender addon that brings a Substance Painter-class texturing workflow into Blender, built entirely on top of Blender's own shader graph, baking, texture paint, asset and compositing systems.
 
-> Status: v0.1 in development. Everything marked *built* is implemented but **has not yet been run in Blender** (see "Verify"). This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
+> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (24 tests: stack operators, blend math against real baked pixels, bake, export, group upgrades). **Not yet verified: everything that needs the GUI** (panels, thumbnails, Texture Paint, viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
 
 **Target:** Blender 5.2.2 (latest). No support for older versions.
 
@@ -525,11 +525,18 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 
 ## Verify
 
-Built but never run in Blender. To confirm on first run:
-- Node group interface calls (`interface.new_socket`, `min_value`, `subtype`) and Mix node socket identifiers in 5.2; Bool sockets converting implicitly to float; the Brightness/Contrast identifiers (`Color`, `Bright`, `Contrast`).
+**Verified headless (Blender 5.2.2, `tests/run_all.py`, Sprint 0):**
+- Node group interface calls, Mix socket identifiers, Bool sockets converting to float, Brightness/Contrast identifiers (and that brightness brightens, negative darkens).
+- Layer, folder and mask operators (add, move across folder borders, remove, ungroup), list stays in canonical order, save/reload round trip.
+- Blend math against real baked pixel values: mask lerp, bump add, mask invert, mask stack multiply, disabled mask = white, channel enable leak, folder lerp (incl. bump).
+- Group version upgrade keeps socket values; legacy single-mask layers migrate to mask entries.
+- Bake: AO, World Gradient (cube and zero-height plane), Normal (world, tangent), settings restored afterwards, tangent bake wires Normal Map into Bump into BSDF, high-to-low normal bake with a High Poly collection (tilted plane leaves the expected mark, high-poly is not a target).
+- Export (Unity HDRP, EXR): BaseMap, MaskMap (R metallic, G white without AO, B white, A smoothness) and Normal values, temp images and nodes cleaned up, and the exported normal equals the baked normal when layer height is zero.
+
+**Still to confirm in the GUI (milestone checklist):**
 - `template_ID_preview(..., open="image.open")`, and the layer-row thumbnail via `preview_ensure`.
-- Selected-to-active with the High Poly collection, default extrusion quality, and normal orientation (no flipped green).
-- Emission-baked colors matching the viewport (sRGB conversion on the byte-image bake), straight-alpha MaskMap saving, and an unconnected-Height Bump node leaving the baked normal unchanged.
+- Panels, bake panel flow, Texture Paint entry and exit, normal orientation judged by eye (no flipped green) on a real high-poly.
+- Emission-baked colors matching the viewport (sRGB conversion on the byte-image bake) and straight-alpha MaskMap saving in PNG/TGA (EXR verified).
 
 Researched but not confirmed against the Blender 5.2 documentation:
 - Exact current inputs of the Bump node in 5.2 (Strength, Distance, Height, Normal, Invert, Filter Width if it still exists).

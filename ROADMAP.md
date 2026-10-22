@@ -9,17 +9,17 @@ Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone
 ## Sprint 0: Validate v0.1 (`sprint-0-validate`)
 Goal: everything currently marked "built, untested" is either verified or fixed. No new features.
 
-- [ ] Test harness: `tests/harness.py` loads the repo as a package, registers it, helpers for scratch scenes (mesh with UVs, material, assert helpers, non-zero exit on failure).
-- [ ] Registration test: addon registers and unregisters cleanly in 5.2. [H]
-- [ ] Node group build: layer, folder and mask groups build; interface sockets, min/max, subtypes, Mix socket identifiers, Bool to float, Brightness/Contrast identifiers (design doc "Verify"). [H]
-- [ ] Stack operators: add layer, folder, mask (white, black, image), move (across folder borders), remove, rebuild; list data stays consistent with node links. [H]
-- [ ] Blend math: evaluate a 3-layer stack with masks by baking to pixels and compare against the formulas (mix, add, folder lerp, mask stack multiply, enable leak). [H]
-- [ ] Group version upgrade: open data made with older group versions, upgrade keeps socket values. [H]
-- [ ] Bake: AO, World Gradient, Normal tangent/world on a single object, then high to low with a High Poly collection; settings restored afterwards. [H]
-- [ ] Bump/normal check: unconnected Height leaves the baked normal unchanged; Normal Map before Bump wiring. [H]
-- [ ] Export Unity HDRP: files exist, channel values match, MaskMap packing, straight alpha, temp data cleaned up. [H]
-- [ ] Fix every failure found; bump versions where needed.
-- [ ] Update design doc "Verify" section and status markers with the results.
+- [x] Test harness: `tests/harness.py` loads the repo as a package, registers it, helpers for scratch scenes (mesh with UVs, material, assert helpers, non-zero exit on failure).
+- [x] Registration test: addon registers and unregisters cleanly in 5.2. [H]
+- [x] Node group build: layer, folder and mask groups build; interface sockets, min/max, subtypes, Mix socket identifiers, Bool to float, Brightness/Contrast identifiers (design doc "Verify"). [H]
+- [x] Stack operators: add layer, folder, mask (white, black, image), move (across folder borders), remove, rebuild; list data stays consistent with node links. [H]
+- [x] Blend math: evaluate a 3-layer stack with masks by baking to pixels and compare against the formulas (mix, add, folder lerp, mask stack multiply, enable leak). [H]
+- [x] Group version upgrade: open data made with older group versions, upgrade keeps socket values. [H]
+- [x] Bake: AO, World Gradient, Normal tangent/world on a single object, then high to low with a High Poly collection; settings restored afterwards. [H]
+- [x] Bump/normal check: unconnected Height leaves the baked normal unchanged; Normal Map before Bump wiring. [H]
+- [x] Export Unity HDRP: files exist, channel values match, MaskMap packing, straight alpha, temp data cleaned up. [H]
+- [x] Fix every (nothing needed fixing) failure found; bump versions where needed.
+- [x] Update design doc "Verify" section and status markers with the results.
 - [ ] **Milestone checklist for the user** [G]: panels render in both sidebars, layer list rows and thumbnails, mask picker grid, Paint Mask enters/exits Texture Paint and painting changes the mask, viewport looks right, bake panel flow.
 
 Acceptance: `tests/run_all.py` passes headless; user checklist answered.
