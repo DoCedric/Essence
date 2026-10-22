@@ -49,6 +49,15 @@ Goal: per-channel blend modes and the channel set grows beyond four.
 - [x] Export and panels follow the channel list (BaseMap alpha, Emission file). [H]
 - [ ] **Milestone checklist** [G].
 
+## Sprint 2b: Mesh map slots (`sprint-2-blend-channels`)
+Added after the Sprint 2 GUI check.
+
+- [x] Normal is a mesh map slot (Mesh Maps panel, Normal and AO slots) instead of a layer channel. [H]
+- [x] UI polish from the check: Emission Strength, collapsible Transform, 3-column channel list.
+- [x] Panels skip channels that no longer exist instead of crashing.
+- [ ] Freeze to image: **removed again** after the first GUI test went wrong. The code is in git history (commit 8702a97, reverted in 4da21fa). The shader compile time when adding layers is still open; see the performance options (pause updates, trim per-layer cost) and revisit with a reproduction of what went wrong.
+- [ ] **Milestone checklist** [G]: Mesh Maps panel (bake a normal, pick a normal image).
+
 ## Sprint 3: Bake quality and performance baseline (`sprint-3-bake-perf`)
 - [ ] Cage object support (selected-to-active). [H]
 - [ ] Float image buffers for height and masks. [H]
