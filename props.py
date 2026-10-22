@@ -2,7 +2,7 @@ import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, IntProperty,
                        PointerProperty, StringProperty)
 
-from . import sources
+from . import nodes, sources
 
 
 def _name_update(self, context):
@@ -18,11 +18,13 @@ def _name_update(self, context):
 def _source_update(self, context):
     """A source setting changed: rebuild that channel's source nodes."""
     mat = self.id_data
-    if mat.node_tree is None:
+    if sources.SUSPEND or mat.node_tree is None or not self.channel:
         return
     entry = next((e for e in mat.essence.layers if e.uid == self.uid), None)
     if entry is not None:
         sources.apply(mat, entry, self.channel)
+        if self.channel == 'MASK':
+            nodes.rebuild_stack(mat)  # re-places the mask's source nodes
 
 
 class EssenceSource(bpy.types.PropertyGroup):
@@ -37,6 +39,8 @@ class EssenceSource(bpy.types.PropertyGroup):
                             update=_source_update)
     expanded: BoolProperty(name="Expanded", default=True,
                            description="Show this channel's settings")
+    # The image of an Image source that was switched away, restored when switching back.
+    image_memory: PointerProperty(type=bpy.types.Image)
 
 
 class EssenceLayer(bpy.types.PropertyGroup):
@@ -55,6 +59,7 @@ class EssenceLayer(bpy.types.PropertyGroup):
     node_name: StringProperty()
     mask_node_name: StringProperty()
     sources: CollectionProperty(type=EssenceSource)  # layers only, one per channel
+    source: PointerProperty(type=EssenceSource)      # masks only, see sources.py
 
 
 def _active_update(self, context):

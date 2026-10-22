@@ -2,7 +2,7 @@ import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
 from . import nodes, sources, stack
-from .channels import BY_ID
+from .channels import SOURCE_BY_ID
 
 
 def _material(context, create=False, migrate=False):
@@ -255,7 +255,7 @@ class ESSENCE_OT_source_colorspace(_Base, bpy.types.Operator):
     def execute(self, context):
         mat = _material(context)
         e = _active(mat) if mat is not None else None
-        ch = BY_ID.get(self.channel)
+        ch = SOURCE_BY_ID.get(self.channel)
         if e is None or ch is None:
             return {'CANCELLED'}
         tex = sources.source_nodes(mat.node_tree, e.uid, ch.id).get('TEXTURE')
@@ -281,6 +281,9 @@ class ESSENCE_OT_paint_mask(_Base, bpy.types.Operator):
         node = mat.node_tree.nodes.get(e.mask_node_name)
         if node is None or node.image is None:
             self.report({'ERROR'}, "Mask image node is missing")
+            return {'CANCELLED'}
+        if e.source.projection != 'UV':
+            self.report({'ERROR'}, "Painting needs the mask's UV projection")
             return {'CANCELLED'}
         if not ob.data.uv_layers:
             self.report({'ERROR'}, "Object has no UV map; unwrap it to paint")

@@ -1,6 +1,6 @@
 import bpy
 
-from .channels import CHANNELS
+from .channels import CHANNELS, MASK_SOURCE
 from . import nodes, sources
 from .bake import HIGH_MAPS
 
@@ -164,13 +164,19 @@ def _channel(layout, mat, e, node, ch):
     col = box.column(align=True)
     col.active = enable.default_value
     col.prop(node.inputs[f"{ch.label} Opacity"], "default_value", text="Opacity", slider=True)
-    b = node.inputs[f"{ch.label} B"]
+    _source_controls(col, mat, e, src, ch, node.inputs[f"{ch.label} B"])
+
+
+def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
+    """The settings of a source (channel or mask): its value, image or procedural, the
+    remap or color ramp, then projection and mapping. `preview` draws an image as a
+    thumbnail grid, like the mask picker."""
     found = sources.source_nodes(mat.node_tree, e.uid, ch.id)
     if src.kind == 'VALUE':
-        if b.is_linked:
+        if value_socket.is_linked:
             col.label(text="Driven by nodes in the node editor", icon='NODETREE')
         else:
-            col.prop(b, "default_value", text="Value")
+            col.prop(value_socket, "default_value", text="Value")
         return
 
     tex = found.get('TEXTURE')
@@ -179,10 +185,17 @@ def _channel(layout, mat, e, node, ch):
                      icon='FILE_REFRESH')
         return
     if src.kind == 'IMAGE':
-        col.template_ID(tex, "image", open="image.open")
-        if tex.image is not None and tex.image.colorspace_settings.name != ch.colorspace:
+        if preview:
+            col.template_ID_preview(tex, "image", open="image.open", rows=3, cols=5)
+        else:
+            col.template_ID(tex, "image", open="image.open")
+        if tex.image is None:
+            if preview:
+                col.label(text="Pick an image above", icon='INFO')
+        elif tex.image.colorspace_settings.name != ch.colorspace:
             sub = col.box()
-            sub.label(text=f"This channel expects {ch.colorspace}", icon='ERROR')
+            sub.label(text=f"This {'mask' if preview else 'channel'} expects {ch.colorspace}",
+                      icon='ERROR')
             sub.operator("essence.source_colorspace",
                          text=f"Set {ch.colorspace}").channel = ch.id
     else:
@@ -230,23 +243,23 @@ def _mask(self, context):
     e, node = _active(mat)
     tree = mat.node_tree
     owner = next((x for x in mat.essence.layers if x.uid == e.parent), None)
-    mask_node = tree.nodes.get(e.mask_node_name) if tree else None
-    if mask_node is None or node is None:
+    if node is None:
         layout.label(text="Mask node missing from graph", icon='ERROR')
         layout.operator("essence.remove_layer", icon='X')
         return
     layout.prop(e, "name", text="Name")
     if owner is not None:
         layout.label(text=f"Masks {owner.name}", icon='MOD_MASK')
-    # Thumbnail grid of every image in the file, with Open (load from disk) and unlink.
-    layout.template_ID_preview(mask_node, "image", open="image.open", rows=3, cols=5)
-    img = mask_node.image
-    if img is None:
-        layout.label(text="Pick an image above", icon='INFO')
-    elif img.colorspace_settings.name != 'Non-Color':
-        box = layout.box()
-        box.label(text="Masks should be Non-Color", icon='ERROR')
-        box.operator("essence.mask_non_color")
+    src = sources.get_source(e, 'MASK')
+    if src is None:
+        layout.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
+        return
+    layout.prop(src, "kind", text="Source")
+    # An image source shows a thumbnail grid of every image in the file, with Open and unlink.
+    col = layout.column()
+    _source_controls(col, mat, e, src, MASK_SOURCE, node.inputs[nodes.MASK_VALUE],
+                     preview=True)
+    img = getattr(tree.nodes.get(e.mask_node_name), "image", None) if tree else None
     if nodes.MASK_INVERT in node.inputs:
         col = layout.column(align=True)
         col.prop(node.inputs[nodes.MASK_INVERT], "default_value", text="Invert", toggle=True)
@@ -258,8 +271,10 @@ def _mask(self, context):
         layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
     else:
         row = layout.row()
-        row.enabled = img is not None
+        row.enabled = img is not None and src.kind == 'IMAGE' and src.projection == 'UV'
         row.operator("essence.paint_mask", icon='BRUSH_DATA')
+        if src.kind == 'IMAGE' and src.projection != 'UV':
+            layout.label(text="Painting needs the UV projection", icon='INFO')
     layout.operator("essence.remove_layer", text="Remove Mask", icon='X')
 
 

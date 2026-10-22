@@ -13,7 +13,7 @@ here is hidden: the user can edit, replace or extend these nodes in the node edi
 
 import bpy
 
-from .channels import BY_ID, CHANNELS
+from .channels import CHANNELS, SOURCE_BY_ID
 
 SRC_KEY = "essence_source"
 ROLE_KEY = "essence_role"
@@ -134,7 +134,13 @@ def tag(uid, ch_id):
     return f"{uid}:{ch_id}"
 
 
+# True while Essence itself sets source properties, so their update callbacks stay quiet.
+SUSPEND = False
+
+
 def get_source(entry, ch_id):
+    if ch_id == 'MASK':
+        return entry.source if entry.source.channel == 'MASK' else None
     return next((s for s in entry.sources if s.channel == ch_id), None)
 
 
@@ -192,12 +198,23 @@ def _clear_links(tree, sock):
         tree.links.remove(l)
 
 
+def _discard(tree, node, src):
+    """Remove a source node. An image it held is remembered on the source and kept alive, so
+    switching a channel or mask away from Image and back never loses (painted) pixels."""
+    if node.bl_idname == 'ShaderNodeTexImage' and node.image is not None:
+        node.image.use_fake_user = True
+        src.image_memory = node.image
+    tree.nodes.remove(node)
+
+
 def apply(mat, entry, ch_id):
-    """Reconcile the source nodes of one channel with its settings: create what is missing,
-    delete what no longer fits, set the projection and the wiring. Settings the user changed
-    on nodes that stay (mapping, image, procedural values) are kept."""
+    """Reconcile the source nodes of one channel (or of a mask, `ch_id` 'MASK') with its
+    settings: create what is missing, delete what no longer fits, set the projection and the
+    wiring. Settings the user changed on nodes that stay (mapping, image, procedural values)
+    are kept."""
     tree = mat.node_tree
-    ch = BY_ID[ch_id]
+    ch = SOURCE_BY_ID[ch_id]
+    is_mask = ch_id == 'MASK'
     src = get_source(entry, ch_id)
     layer_node = tree.nodes.get(entry.node_name)
     if src is None or layer_node is None:
@@ -208,7 +225,7 @@ def apply(mat, entry, ch_id):
     switched = False
     for role, node in list(have.items()):
         if role not in wanted or node.bl_idname != wanted[role]:
-            tree.nodes.remove(node)
+            _discard(tree, node, src)
             del have[role]
             switched = True
     if switched:
@@ -217,8 +234,10 @@ def apply(mat, entry, ch_id):
             if role in have:
                 tree.nodes.remove(have.pop(role))
 
-    b_in = layer_node.inputs[f"{ch.label} B"]
+    b_in = layer_node.inputs["Value" if is_mask else f"{ch.label} B"]
     if not wanted:
+        if is_mask:
+            entry.mask_node_name = ""
         return
 
     key = tag(entry.uid, ch_id)
@@ -235,6 +254,8 @@ def apply(mat, entry, ch_id):
             _set_proc_group(n, src.proc_type)
         elif role == 'TEXTURE':
             n.interpolation = 'Linear'
+            if src.image_memory is not None:
+                n.image = src.image_memory
         elif role == 'REMAP':
             lo, hi = ch.image_range if src.kind == 'IMAGE' else ch.proc_range
             n.data_type = 'FLOAT'
@@ -275,7 +296,10 @@ def apply(mat, entry, ch_id):
         out = have['RAMP'].outputs['Color']
     _clear_links(tree, b_in)
     links.new(out, b_in)
-    layout(tree, entry, layer_node)
+    if is_mask:
+        entry.mask_node_name = tex.name if src.kind == 'IMAGE' else ""
+    else:
+        layout(tree, entry, layer_node)
 
 
 _ROLE_ORDER = ('COORD', 'MAPPING', 'TEXTURE', 'REMAP', 'RAMP')
@@ -296,3 +320,40 @@ def layout(tree, entry, layer_node):
             y += _STEP[role]
         if nodes:
             y += 60
+
+
+def layout_mask(tree, entry, mask_node):
+    """Stack a mask's source nodes in a column below its mask node. Returns the y where the
+    next mask can start."""
+    x = mask_node.location.x
+    y = mask_node.location.y - 320
+    for role in _ROLE_ORDER:
+        n = source_nodes(tree, entry.uid, 'MASK').get(role)
+        if n is not None:
+            n.location = (x, y)
+            y -= _STEP[role]
+    return y - 80
+
+
+def ensure_mask_source(mat, entry):
+    """Give a mask entry its source. Masks made before sources existed have their image node
+    linked straight into the mask group; that node becomes the Image source's texture node."""
+    src = entry.source
+    if src.channel == 'MASK':
+        return False
+    global SUSPEND
+    SUSPEND = True
+    try:
+        src.channel = 'MASK'
+        src.uid = entry.uid
+        img = mat.node_tree.nodes.get(entry.mask_node_name) if entry.mask_node_name else None
+        if img is not None and img.bl_idname == 'ShaderNodeTexImage':
+            img[SRC_KEY] = tag(entry.uid, 'MASK')
+            img[ROLE_KEY] = 'TEXTURE'
+            src.kind = 'IMAGE'
+        else:
+            src.kind = 'VALUE'
+    finally:
+        SUSPEND = False
+    apply(mat, entry, 'MASK')
+    return True

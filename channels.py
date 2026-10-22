@@ -42,3 +42,8 @@ CHANNELS = (
 BY_ID = {c.id: c for c in CHANNELS}
 
 MASK_SOCKET = "Mask"
+
+# A mask's source works like a channel's (see sources.py) and feeds the mask group's Value
+# input. It is not a layer channel, so it is not part of CHANNELS.
+MASK_SOURCE = Channel('MASK', 'Mask', 'NodeSocketFloat', 'MIX', 1.0, 0.0, 1.0, 'FACTOR')
+SOURCE_BY_ID = {**BY_ID, MASK_SOURCE.id: MASK_SOURCE}

@@ -36,7 +36,7 @@ Goal: a layer channel can be driven by an image or procedural, mapped and opacit
 - [x] Design doc and roadmap updated.
 - [ ] **Milestone checklist** [G]: source picker usability, triplanar look, row toggles.
 - [x] Disabled channels collapse automatically in Layer Properties.
-- [ ] Follow-up: masks get the same Source options as channels (see B4).
+- [x] Follow-up (branch `sprint-1b-mask-sources`): masks get the same Source options as channels (Image, Procedural, Value, projection, mapping, remap). [H]
 
 ## Sprint 2: Blend modes and channels (`sprint-2-blend-channels`)
 Goal: per-channel blend modes and the channel set grows beyond four.

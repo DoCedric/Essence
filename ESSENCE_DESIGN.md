@@ -2,7 +2,7 @@
 
 A Blender addon that brings a Substance Painter-class texturing workflow into Blender, built entirely on top of Blender's own shader graph, baking, texture paint, asset and compositing systems.
 
-> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (39 tests: stack operators, layer sources, blend math against real baked pixels, bake, export, group upgrades). **Not yet verified: everything that needs the GUI** (panels, thumbnails, Texture Paint, viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
+> Status: v0.1 in development. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (47 tests: stack operators, layer and mask sources, blend math against real baked pixels, bake, export, group upgrades). **Not yet verified: everything that needs the GUI** (panels, thumbnails, Texture Paint, viewport), which waits on the user's milestone check. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
 
 **Target:** Blender 5.2.2 (latest). No support for older versions.
 
@@ -104,12 +104,12 @@ Map types ✅ *(built, untested)*:
 
 ### Layers and Masks
 - Layers influence different channels of the PBR shader; masks control where they apply. All are built from shader graph nodes.
-- A mask is an **image slot** ✅: either a new blank paint image (white reveals, black hides; size set in the redo panel) or any image already in the file, picked from Blender's thumbnail grid (`template_ID_preview`, with Open and unlink). The two are interchangeable at any time.
+- A mask has a **source** ✅ (Image, Procedural or Value, with the same projection, mapping and Min/Max controls as a channel source, see Layer sources). An **image mask** is an image slot: either a new blank paint image (white reveals, black hides; size set in the redo panel) or any image already in the file, picked from Blender's thumbnail grid (`template_ID_preview`, with Open and unlink). The two are interchangeable at any time.
 - Masks should be Non-Color. If a picked image is not, the panel warns and offers a one-click Set Non-Color instead of changing the image silently.
 - Mask adjustments ✅: **Invert**, **Brightness** and **Contrast** (same ranges as Blender's Brightness/Contrast node, -100 to 100), per mask. Order inside the mask node: invert, then brightness/contrast, then clamp to 0-1.
 - **Mask stack** ✅: a layer or folder can have any number of masks. Each mask is a row in the layer list, indented under its owner with its thumbnail. Masks multiply together. Each mask row has an eye toggle (a disabled mask counts as white) and masks reorder within their owner.
 - **Selection decides the panel.** Selecting a layer or folder shows its properties and an Add Mask menu (white, black or image mask). Selecting a mask shows only the mask properties. A layer never shows both at once.
-- Masks can be painted in Texture Paint mode. A Paint Mask button makes the selected mask's image the active image node and enters Texture Paint in Material mode; an Exit button leaves it.
+- Masks can be painted in Texture Paint mode (Image source with the UV projection only; procedural, value and triplanar masks are generated and not paintable). Switching a mask away from Image remembers its image (kept alive with a fake user) and restores it when you switch back. A Paint Mask button makes the selected mask's image the active image node and enters Texture Paint in Material mode; an Exit button leaves it.
 
 ### PBR Channels (v1)
 Color, Roughness, Metallic, Bump (height). Defined in `channels.py` as data.
@@ -258,7 +258,7 @@ Float channels (roughness, metallic, height) use the same modes through the Mix 
 | Image mask (blank or picked), invert, brightness, contrast, stack, eye toggle, reorder | Image Texture + math nodes | L | ✅ | |
 | Folder masks | same | L | ✅ | |
 | Mask stack blend modes (add, subtract, ...) beyond multiply | Mask group extension | L | ⬜ | P1 |
-| **Mask sources with the same options as a channel source** (Image, Procedural, later Gradient and Baked map): projection (UV, Triplanar, Object), tiling/offset/rotation, Min/Max remap, built on the same `sources.py` machinery and followed by the existing invert/brightness/contrast. Only an Image mask in UV projection can be painted; a procedural or triplanar mask is generated, not paintable (as in Substance) | Source nodes feeding the mask group's Value input | L | 🟡 image only today | **P0** (next to Sprint 2, or Sprint 1b) |
+| **Mask sources with the same options as a channel source** (Image, Procedural, later Gradient and Baked map): projection (UV, Triplanar, Object), tiling/offset/rotation, Min/Max remap, built on the same `sources.py` machinery and followed by the existing invert/brightness/contrast. Only an Image mask in UV projection can be painted; a procedural or triplanar mask is generated, not paintable (as in Substance) | Source nodes feeding the mask group's Value input | L | ✅ Image, Procedural and Value; Gradient and Baked map come with the asset library and mesh maps | |
 | Mask adjustments: **Levels** (in/out, gamma), **Curves** (RGB Curves), **Threshold/Contrast**, **Color Ramp / Gradient remap**, **Smooth step** | Map Range, Float Curve, Color Ramp nodes | L | 🟡 brightness/contrast only | P1 |
 | Mask **filters needing neighbours**: Blur, Sharpen, Edge detect, Dilate/Erode, Slope blur | Compositor on an image, run as an explicit bake | B | ⬜ | P2 |
 | Mask by selection: Material ID / Color ID / Object ID | Baked ID map + Math Compare, color picker in the panel | L | ⬜ | P1 |

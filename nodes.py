@@ -464,6 +464,9 @@ def rebuild_stack(mat):
         _clear_links(tree, dst)
         tree.links.new(prev.outputs[ch.label], dst)
 
+    for m in layers:
+        if m.kind == 'MASK' and m.uid and tree.nodes.get(m.node_name) is not None:
+            sources.ensure_mask_source(mat, m)
     for e, node in entries:
         _link_masks(tree, layers, e, node)
         if e.kind == 'LAYER' and e.uid:
@@ -484,18 +487,22 @@ def _link_masks(tree, layers, owner, owner_node):
         node = tree.nodes.get(m.node_name)
         if node is None:
             continue
-        image = tree.nodes.get(m.mask_node_name) if m.mask_node_name else None
         prev_in = node.inputs[MASK_PREVIOUS]
         _clear_links(tree, prev_in)
         if prev is not None:
             tree.links.new(prev.outputs[MASK_SOCKET], prev_in)
-        value_in = node.inputs[MASK_VALUE]
-        _clear_links(tree, value_in)
-        if image is not None:
-            tree.links.new(image.outputs['Color'], value_in)
-            image.location = (x, y - 250)
         node.location = (x, y)
-        y -= 650
+        if m.source.channel == 'MASK':
+            # The source nodes (see sources.py) feed Value; they sit below the mask node.
+            y = sources.layout_mask(tree, m, node)
+        else:
+            image = tree.nodes.get(m.mask_node_name) if m.mask_node_name else None
+            value_in = node.inputs[MASK_VALUE]
+            _clear_links(tree, value_in)
+            if image is not None:
+                tree.links.new(image.outputs['Color'], value_in)
+                image.location = (x, y - 250)
+            y -= 650
         prev = node
     if prev is not None:
         tree.links.new(prev.outputs[MASK_SOCKET], dst)
