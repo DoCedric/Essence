@@ -118,3 +118,25 @@ def test_material_panel_lists_channels(addon):
     log = _draw(ui._material, ob)
     shown = [a[0].id for n, a, k in log if n == "prop" and a[1] == "enabled"]
     check(shown == [c.id for c in addon.channels.CHANNELS], f"channel checkboxes: {shown}")
+
+
+def test_material_panel_emission_strength_and_transform(addon):
+    from essence import ui
+    ob, mat = _setup(addon)
+    log = _draw(ui._material, ob)
+    check(not any(k.get("text") == "Emission Strength" for n, a, k in log),
+          "emission strength shown without the channel")
+    next(c for c in mat.essence.channels if c.id == 'EMISSION').enabled = True
+    log = _draw(ui._material, ob)
+    check(any(k.get("text") == "Emission Strength" for n, a, k in log),
+          "emission strength missing with the channel on")
+    # the transform settings stay hidden until expanded
+    layer = next(e for e in mat.essence.layers if e.kind == 'LAYER')
+    src = next(s for s in layer.sources if s.channel == 'ROUGHNESS')
+    src.kind = 'PROCEDURAL'
+    mat.essence.active_index = [e.name for e in mat.essence.layers].index(layer.name)
+    log = _draw(ui._props, ob)
+    check(not any(k.get("text") == "Tiling" for n, a, k in log), "transform shown collapsed")
+    src.show_transform = True
+    log = _draw(ui._props, ob)
+    check(any(k.get("text") == "Tiling" for n, a, k in log), "transform missing when expanded")

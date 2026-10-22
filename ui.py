@@ -213,8 +213,11 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
     if ramp is not None:
         col.template_color_ramp(ramp, "color_ramp")
     col.separator()
-    col.prop(src, "projection", text="Projection")
-    _mapping(col, found['MAPPING'])
+    col.prop(src, "projection", expand=True)
+    col.prop(src, "show_transform", emboss=False,
+             icon='TRIA_DOWN' if src.show_transform else 'TRIA_RIGHT')
+    if src.show_transform:
+        _mapping(col, found['MAPPING'])
 
 
 def _props(self, context):
@@ -288,10 +291,14 @@ def _material(self, context):
     if mat.essence.channels:
         box = layout.box()
         box.label(text="Channels")
-        col = box.column(align=True)
+        grid = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
         for state in mat.essence.channels:
-            ch = BY_ID[state.id]
-            col.prop(state, "enabled", text=ch.label)
+            grid.prop(state, "enabled", text=BY_ID[state.id].label)
+        on = {c.id for c in active_channels(mat)}
+        bsdf = next((n for n in tree.nodes if n.bl_idname == 'ShaderNodeBsdfPrincipled'), None)
+        if 'EMISSION' in on and bsdf is not None:
+            box.prop(bsdf.inputs['Emission Strength'], "default_value",
+                     text="Emission Strength")
     normal = tree.nodes.get(nodes.NORMAL_NODE_NAME)
     bump = tree.nodes.get(nodes.BUMP_NODE_NAME)
     if normal is None and bump is None:

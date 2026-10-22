@@ -94,6 +94,8 @@ class EssenceSource(bpy.types.PropertyGroup):
     blend: EnumProperty(name="Blend", items=_blend_items, update=_blend_update,
                         description="How this channel of the layer combines with what is below")
     blend_init: BoolProperty()  # blend has been set to the channel's default
+    show_transform: BoolProperty(name="Transform", default=False,
+                                 description="Show tiling, offset and rotation")
     projection: EnumProperty(name="Projection", items=sources.PROJECTIONS, default='UV',
                              update=_source_update)
     proc_type: EnumProperty(name="Type", items=sources.PROC_ITEMS, default='NOISE',
