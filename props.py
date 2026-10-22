@@ -25,6 +25,26 @@ def _source_update(self, context):
         sources.apply(mat, entry, self.channel)
         if self.channel == 'MASK':
             nodes.rebuild_stack(mat)  # re-places the mask's source nodes
+            _refresh_paint_slots(context, mat, entry)
+
+
+def _refresh_paint_slots(context, mat, entry):
+    """Texture Paint builds its list of paintable images when the mode is entered, so after the
+    mask's image node was replaced it still points at the old, deleted node and painting does
+    nothing until the mode is re-entered. Do that here, with the new image node active."""
+    ob = context.active_object
+    if ob is None or ob.mode != 'TEXTURE_PAINT' or ob.active_material is None:
+        return
+    if ob.active_material.name != mat.name:
+        return
+    tex = mat.node_tree.nodes.get(entry.mask_node_name) if entry.mask_node_name else None
+    if tex is not None:
+        mat.node_tree.nodes.active = tex
+    try:
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='TEXTURE_PAINT')
+    except RuntimeError:
+        pass
 
 
 class EssenceSource(bpy.types.PropertyGroup):

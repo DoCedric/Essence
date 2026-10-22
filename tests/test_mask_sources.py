@@ -135,3 +135,17 @@ def test_mask_stack_with_sources(addon):
     m2.source.kind = 'VALUE'
     mat.node_tree.nodes[m2.node_name].inputs['Value'].default_value = 0.5
     close(_rough(ob, mat, top), 0.5, 0.02, "stacked masks 1.0 * 0.5")
+
+
+def test_switching_source_in_paint_mode_keeps_painting(addon):
+    ob, mat, top = _setup()
+    m = _add_mask(mat)
+    bpy.ops.essence.paint_mask()
+    check(ob.mode == 'TEXTURE_PAINT', "not in paint mode")
+    uid = m.uid
+    m.source.kind = 'PROCEDURAL'
+    m.source.kind = 'IMAGE'
+    m = next(e for e in mat.essence.layers if e.uid == uid)
+    check(ob.mode == 'TEXTURE_PAINT', f"paint mode lost: {ob.mode}")
+    tex = mat.node_tree.nodes[m.mask_node_name]
+    check(mat.node_tree.nodes.active.name == tex.name, "image node not active after switching back")
