@@ -1,9 +1,11 @@
 """Builds the layer node group and wires layer stacks inside a material."""
 
+import json
+
 import bpy
 
-from . import sources, stack
-from .channels import CHANNELS, MASK_SOCKET
+from . import blends, sources, stack
+from .channels import BY_ID, CHANNELS, MASK_SOCKET, active_channels
 
 MASK_INVERT = "Mask Invert"
 MASK_BRIGHTNESS = "Mask Brightness"
@@ -28,6 +30,7 @@ MASK_GROUP_VERSION = 1
 VERSION_KEY = "essence_version"
 BUMP_NODE_NAME = "Essence Bump"
 NORMAL_NODE_NAME = "Essence Normal Map"
+BAKED_NORMAL_NODE = "Essence_Bake_NORMAL"  # the bake panel target node, see bake.py
 
 
 # --------------------------------------------------------------------------
@@ -62,17 +65,30 @@ def _opacity_socket(iface, name):
     return s
 
 
-def _build_group(ng, folder=False):
+def default_key():
+    """The channel set and blend modes of a plain material: every default-enabled channel,
+    every channel on its default mode."""
+    return {"ch": [c.id for c in CHANNELS if c.default_enabled], "modes": {}}
+
+
+def _build_group(ng, folder=False, key=None):
     """Build the layer group, or the folder group (`folder=True`).
+
+    `key` says which channels the group has ("ch") and, for layers, which blend mode each
+    uses ("modes", channel id -> mode; missing means the channel's default). Every distinct
+    key is its own group, so one layer node stays one node whatever its blend modes.
 
     The folder group has the same A/B/Mask interface but no Enable inputs,
     and lerps every channel (A = stack below the folder, B = result of the folder's
     layers), so the folder mask limits the combined effect of everything inside."""
+    key = key or default_key()
+    active = [BY_ID[i] for i in key["ch"]]
+    modes = key.get("modes", {})
     iface = ng.interface
     iface.clear()
     ng.nodes.clear()
 
-    for ch in CHANNELS:
+    for ch in active:
         _new_socket(iface, f"{ch.label} A", 'INPUT', ch)
         _new_socket(iface, f"{ch.label} B", 'INPUT', ch)
     mask = iface.new_socket(MASK_SOCKET, in_out='INPUT', socket_type='NodeSocketFloat')
@@ -84,12 +100,12 @@ def _build_group(ng, folder=False):
     vis_in.default_value = True
     if not folder:
         _opacity_socket(iface, OPACITY)
-    for ch in CHANNELS if not folder else ():
+    for ch in active if not folder else ():
         _opacity_socket(iface, f"{ch.label} Opacity")
         en = iface.new_socket(f"{ch.label} Enable", in_out='INPUT',
                               socket_type='NodeSocketBool')
         en.default_value = True
-    for ch in CHANNELS:
+    for ch in active:
         _new_socket(iface, ch.label, 'OUTPUT', ch)
 
     nodes, links = ng.nodes, ng.links
@@ -117,16 +133,16 @@ def _build_group(ng, folder=False):
         links.new(mask_out, lop.inputs[0])
         links.new(n_in.outputs[OPACITY], lop.inputs[1])
         mask_out = lop.outputs[0]
-        lop.location = (-600, 150)
 
-    for i, ch in enumerate(CHANNELS):
+    for i, ch in enumerate(active):
         a = n_in.outputs[f"{ch.label} A"]
         b = n_in.outputs[f"{ch.label} B"]
-        y = -i * 200
-        # Effective factor = mask * enable. Disabled channel -> factor 0 -> A leaks through.
-        blend = 'MIX' if folder else ch.blend
+        y = -i * 300
+        # Effective factor = mask * opacity * enable. A disabled channel has factor 0, so
+        # A leaks through.
         if folder:
             factor = mask_out
+            mode = 'MIX'
         else:
             cop = nodes.new('ShaderNodeMath')
             cop.operation = 'MULTIPLY'
@@ -141,28 +157,8 @@ def _build_group(ng, folder=False):
             links.new(cop.outputs[0], fac.inputs[0])
             links.new(n_in.outputs[f"{ch.label} Enable"], fac.inputs[1])
             factor = fac.outputs[0]
-        if blend == 'MIX':
-            node = nodes.new('ShaderNodeMix')
-            is_color = ch.socket_type == 'NodeSocketColor'
-            node.data_type = 'RGBA' if is_color else 'FLOAT'
-            node.blend_type = 'MIX'
-            suffix = 'Color' if is_color else 'Float'
-            links.new(factor, _by_ident(node.inputs, "Factor_Float"))
-            links.new(a, _by_ident(node.inputs, f"A_{suffix}"))
-            links.new(b, _by_ident(node.inputs, f"B_{suffix}"))
-            result = _by_ident(node.outputs, f"Result_{suffix}")
-        elif blend == 'ADD':
-            # A + B * mask
-            node = nodes.new('ShaderNodeMath')
-            node.operation = 'MULTIPLY_ADD'
-            links.new(b, node.inputs[0])
-            links.new(factor, node.inputs[1])
-            links.new(a, node.inputs[2])
-            result = node.outputs[0]
-        else:
-            raise ValueError(f"Unknown blend method {blend}")
-        node.location = (0, y)
-        node.label = f"{ch.label} ({blend.title()})"
+            mode = modes.get(ch.id, ch.blend)
+        result = blends.build(nodes, links, ch, mode, a, b, factor, (0, y))
         links.new(result, n_out.inputs[ch.label])
 
 
@@ -234,37 +230,107 @@ def _build_mask_group(ng):
     links.new(mul.outputs[0], n_out.inputs[MASK_SOCKET])
 
 
-def _ensure_group(name, version, folder):
+KEY_PROP = "essence_key"
+
+
+def ensure_channel_states(mat):
+    """One entry per channel in the material's channel list."""
+    have = {c.id for c in mat.essence.channels}
+    if all(c.id in have for c in CHANNELS):
+        return
+    sources.SUSPEND = True
+    try:
+        for ch in CHANNELS:
+            if ch.id not in have:
+                s = mat.essence.channels.add()
+                s.id = ch.id
+                s.enabled = ch.default_enabled
+    finally:
+        sources.SUSPEND = False
+
+
+def layer_modes(entry):
+    """{channel id: blend mode} of a layer entry (only the ones that were set up)."""
+    return {s.channel: s.blend for s in entry.sources if s.blend_init and s.blend}
+
+
+def variant_key(mat, entry):
+    """The group key (channel set and blend modes) a layer or folder entry needs."""
+    key = {"ch": [c.id for c in active_channels(mat)], "modes": {}}
+    if entry.kind == 'LAYER':
+        for ch_id, mode in layer_modes(entry).items():
+            if ch_id in key["ch"] and mode != BY_ID[ch_id].blend:
+                key["modes"][ch_id] = mode
+    return key
+
+
+def variant_name(base, key):
+    """A readable group name: the base name plus what differs from a plain material, e.g.
+    "Essence Layer +Emission Color:Multiply". Falls back to a hash when it gets too long."""
+    parts = []
+    for c in CHANNELS:
+        on = c.id in key["ch"]
+        if on and not c.default_enabled:
+            parts.append(f"+{c.label}")
+        elif not on and c.default_enabled:
+            parts.append(f"-{c.label}")
+        if on and key["modes"].get(c.id, c.blend) != c.blend:
+            parts.append(f"{c.label}:{key['modes'][c.id].title()}")
+    if not parts:
+        return base
+    name = f"{base} {' '.join(parts)}"
+    if len(name) > 60:
+        import hashlib
+        digest = hashlib.sha1(json.dumps(key, sort_keys=True).encode()).hexdigest()[:10]
+        name = f"{base} {digest}"
+    return name
+
+
+def _canon(key):
+    return json.dumps({"ch": list(key["ch"]), "modes": dict(sorted(key["modes"].items()))},
+                      sort_keys=True)
+
+
+def _ensure_group(name, version, folder, key=None):
     ng = bpy.data.node_groups.get(name)
+    mask = name == MASK_GROUP_NAME
+    canon = None if mask else _canon(key or default_key())
     if ng is not None and ng.get(VERSION_KEY) == version:
-        return ng
+        stored = ng.get(KEY_PROP)
+        # A group from before variants existed has no key and is the default one.
+        if mask or stored == canon or (stored is None and canon == _canon(default_key())):
+            return ng
     if ng is None:
         ng = bpy.data.node_groups.new(name, 'ShaderNodeTree')
-    elif name != MASK_GROUP_NAME:
+    elif not mask:
         # Upgrading rebuilds the interface for every material using the group, which drops
         # the old per-layer mask inputs. Convert those to mask entries first.
         for mat in bpy.data.materials:
             migrate(mat)
     saved = _snapshot_values(ng)
     saved_links = _snapshot_links(ng)
-    if name == MASK_GROUP_NAME:
+    if mask:
         _build_mask_group(ng)
     else:
-        _build_group(ng, folder)
+        _build_group(ng, folder, json.loads(canon))
+        ng[KEY_PROP] = canon
     ng[VERSION_KEY] = version
     _restore_values(saved)
     _restore_links(saved_links)
     return ng
 
 
-def ensure_layer_group():
-    """Return the shared layer node group, (re)building it if missing or outdated."""
-    return _ensure_group(GROUP_NAME, GROUP_VERSION, False)
+def ensure_layer_group(key=None):
+    """Return the layer node group for a key, (re)building it if missing or outdated."""
+    key = key or default_key()
+    return _ensure_group(variant_name(GROUP_NAME, key), GROUP_VERSION, False, key)
 
 
-def ensure_folder_group():
-    """Return the shared folder node group, (re)building it if missing or outdated."""
-    return _ensure_group(FOLDER_GROUP_NAME, FOLDER_GROUP_VERSION, True)
+def ensure_folder_group(key=None):
+    """Return the folder node group for a channel set, (re)building it if missing or
+    outdated."""
+    key = {"ch": (key or default_key())["ch"], "modes": {}}
+    return _ensure_group(variant_name(FOLDER_GROUP_NAME, key), FOLDER_GROUP_VERSION, True, key)
 
 
 def ensure_mask_group():
@@ -272,10 +338,50 @@ def ensure_mask_group():
     return _ensure_group(MASK_GROUP_NAME, MASK_GROUP_VERSION, False)
 
 
-def group_for(entry):
+def group_for(mat, entry):
     if entry.kind == 'MASK':
         return ensure_mask_group()
-    return ensure_folder_group() if entry.kind == 'FOLDER' else ensure_layer_group()
+    key = variant_key(mat, entry)
+    return ensure_folder_group(key) if entry.kind == 'FOLDER' else ensure_layer_group(key)
+
+
+def swap_group(node, ng):
+    """Point a group node at another group, keeping its values and links by socket name.
+    Blender matches sockets by position when the group changes, which scrambles them as soon
+    as the two groups have different channels."""
+    if node.node_tree is ng:
+        return
+    values = {}
+    for s in node.inputs:
+        if hasattr(s, "default_value"):
+            v = s.default_value
+            values[s.name] = tuple(v) if hasattr(v, "__len__") else v
+    incoming = [(l.from_socket, l.to_socket.name) for s in node.inputs for l in s.links]
+    outgoing = [(l.from_socket.name, l.to_socket) for s in node.outputs for l in s.links]
+    tree = node.id_data
+    node.node_tree = ng
+    for name, v in values.items():
+        s = node.inputs.get(name)
+        if s is not None:
+            try:
+                s.default_value = v
+            except (TypeError, ValueError):
+                pass
+    for from_sock, to_name in incoming:
+        s = node.inputs.get(to_name)
+        if s is not None and not s.is_linked:
+            tree.links.new(from_sock, s)
+    for from_name, to_sock in outgoing:
+        o = node.outputs.get(from_name)
+        if o is not None and not to_sock.is_linked:
+            tree.links.new(o, to_sock)
+
+
+def refresh_entry(mat, entry):
+    """Give a layer or folder the group variant its channel set and blend modes need."""
+    node = mat.node_tree.nodes.get(entry.node_name)
+    if node is not None and entry.kind != 'MASK':
+        swap_group(node, group_for(mat, entry))
 
 
 def _snapshot_values(ng):
@@ -377,16 +483,8 @@ def ensure_bump_node(tree, bsdf):
     return bump
 
 
-def apply_normal_map(mat, image_node):
-    """Wire a baked tangent-space normal image into the shader.
-
-    image -> Normal Map -> Bump (Normal input) -> BSDF Normal, so the normal map is
-    evaluated before the bump (layer height) as Blender requires. Returns the
-    Normal Map node, whose Strength is the user-facing slider."""
-    tree = mat.node_tree
-    bsdf = find_principled(tree)
-    bump = ensure_bump_node(tree, bsdf)
-
+def ensure_normal_node(tree, bump):
+    """The Normal Map node in front of the Bump node's Normal input (created if missing)."""
     nm = tree.nodes.get(NORMAL_NODE_NAME)
     if nm is None:
         nm = tree.nodes.new('ShaderNodeNormalMap')
@@ -394,12 +492,28 @@ def apply_normal_map(mat, image_node):
         nm.label = NORMAL_NODE_NAME
         nm.space = 'TANGENT'
     nm.location = (bump.location.x - 250, bump.location.y - 150)
-    image_node.location = (nm.location.x - 320, nm.location.y)
-
-    _clear_links(tree, nm.inputs['Color'])
-    tree.links.new(image_node.outputs['Color'], nm.inputs['Color'])
     _clear_links(tree, bump.inputs['Normal'])
     tree.links.new(nm.outputs['Normal'], bump.inputs['Normal'])
+    return nm
+
+
+def apply_normal_map(mat, image_node):
+    """Wire a baked tangent-space normal image into the shader.
+
+    image -> Normal Map -> Bump (Normal input) -> BSDF Normal, so the normal map is
+    evaluated before the bump (layer height) as Blender requires. Returns the
+    Normal Map node, whose Strength is the user-facing slider. With the Normal channel on,
+    the image becomes the base of the layer stack's normal instead (see rebuild_stack)."""
+    tree = mat.node_tree
+    bsdf = find_principled(tree)
+    bump = ensure_bump_node(tree, bsdf)
+    nm = ensure_normal_node(tree, bump)
+    image_node.location = (nm.location.x - 320, nm.location.y)
+    if any(c.id == 'NORMAL' for c in active_channels(mat)):
+        rebuild_stack(mat)
+    else:
+        _clear_links(tree, nm.inputs['Color'])
+        tree.links.new(image_node.outputs['Color'], nm.inputs['Color'])
     return nm
 
 
@@ -412,15 +526,28 @@ def rebuild_stack(mat):
     """Wire the layer nodes of `mat` into a chain and into the shader."""
     tree = mat.node_tree
     layers = mat.essence.layers
+    ensure_channel_states(mat)
+    sources.cleanup(tree, {e.uid for e in layers})
+    for e in layers:
+        if e.kind == 'LAYER' and e.uid:
+            sources.ensure_entries(e)
+    for e in layers:
+        refresh_entry(mat, e)  # the group variant must match the channel set and blend modes
     entries = [(e, tree.nodes.get(e.node_name)) for e in layers if e.kind != 'MASK']
     entries = [(e, n) for e, n in entries if n is not None]
-    sources.cleanup(tree, {e.uid for e in layers})
     if not entries:
         return
 
+    active = active_channels(mat)
+    active_ids = {c.id for c in active}
     bsdf = find_principled(tree)
     bump = ensure_bump_node(tree, bsdf)
     targets = {'BSDF': bsdf, 'BUMP': bump}
+    baked = tree.nodes.get(BAKED_NORMAL_NODE)
+    if baked is not None and (baked.bl_idname != 'ShaderNodeTexImage' or baked.image is None):
+        baked = None
+    if 'NORMAL' in active_ids or baked is not None:
+        targets['NORMALMAP'] = ensure_normal_node(tree, bump)
 
     px, py = bsdf.location.x, bsdf.location.y
     bump.location = (px - 250, py - 700)
@@ -428,12 +555,15 @@ def rebuild_stack(mat):
     # The list is bottom-to-top and a folder entry sits directly above its children.
     # Children chain from the stack below the folder; the folder node then lerps
     # between that stack (A) and the end of the children's chain (B).
+    # Where nothing is below, a baked normal map (if any) is the base of the normal channel.
     def link_chain(node, a_src, b_src=None):
-        for ch in CHANNELS:
+        for ch in active:
             a = node.inputs[f"{ch.label} A"]
             _clear_links(tree, a)
             if a_src is not None:
                 tree.links.new(a_src.outputs[ch.label], a)
+            elif ch.id == 'NORMAL' and baked is not None:
+                tree.links.new(baked.outputs['Color'], a)
             if b_src is not None:
                 b = node.inputs[f"{ch.label} B"]
                 _clear_links(tree, b)
@@ -460,9 +590,16 @@ def rebuild_stack(mat):
 
     for ch in CHANNELS:
         kind, sock_name = ch.target
+        if kind not in targets:
+            continue
         dst = targets[kind].inputs[sock_name]
         _clear_links(tree, dst)
-        tree.links.new(prev.outputs[ch.label], dst)
+        if ch.id in active_ids:
+            tree.links.new(prev.outputs[ch.label], dst)
+    if 'NORMAL' not in active_ids and baked is not None:
+        nm = targets['NORMALMAP']
+        _clear_links(tree, nm.inputs['Color'])
+        tree.links.new(baked.outputs['Color'], nm.inputs['Color'])
 
     for m in layers:
         if m.kind == 'MASK' and m.uid and tree.nodes.get(m.node_name) is not None:
@@ -470,8 +607,31 @@ def rebuild_stack(mat):
     for e, node in entries:
         _link_masks(tree, layers, e, node)
         if e.kind == 'LAYER' and e.uid:
-            sources.ensure_entries(e)
             sources.layout(tree, e, node)
+
+
+def refresh_all(mat, changed=()):
+    """The channel set changed: move every layer to the right group variant, rebuild the
+    sources (a disabled channel loses its source nodes, an enabled one gets them back) and
+    rewire. `changed` is the ids of channels that were just switched, whose BSDF defaults
+    (like the emission strength) are set to match."""
+    tree = mat.node_tree
+    if tree is None:
+        return
+    for e in mat.essence.layers:
+        refresh_entry(mat, e)
+    for e in mat.essence.layers:
+        if e.kind == 'LAYER':
+            for ch in CHANNELS:
+                sources.apply(mat, e, ch.id)
+    if changed and mat.essence.layers:
+        bsdf = find_principled(tree)
+        on = {c.id for c in active_channels(mat)}
+        for ch in CHANNELS:
+            if ch.id in changed:
+                for sock, on_value, off_value in ch.enable_values:
+                    bsdf.inputs[sock].default_value = on_value if ch.id in on else off_value
+    rebuild_stack(mat)
 
 
 def _link_masks(tree, layers, owner, owner_node):
@@ -511,7 +671,8 @@ def _link_masks(tree, layers, owner, owner_node):
 def add_layer_node(mat, name, folder=False):
     tree = ensure_tree(mat)
     node = tree.nodes.new('ShaderNodeGroup')
-    node.node_tree = ensure_folder_group() if folder else ensure_layer_group()
+    key = {"ch": [c.id for c in active_channels(mat)], "modes": {}}
+    node.node_tree = ensure_folder_group(key) if folder else ensure_layer_group(key)
     node.label = name
     node.width = 240
     return node

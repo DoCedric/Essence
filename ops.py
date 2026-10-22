@@ -322,7 +322,7 @@ class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
         nodes.migrate(mat)  # before the groups upgrade: it reads their old inputs
         for e in mat.essence.layers:
             n = mat.node_tree.nodes.get(e.node_name)
-            group = nodes.group_for(e)
+            group = nodes.group_for(mat, e)
             if n is not None and n.node_tree is not group:
                 n.node_tree = group
         nodes.rebuild_stack(mat)

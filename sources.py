@@ -13,16 +13,22 @@ here is hidden: the user can edit, replace or extend these nodes in the node edi
 
 import bpy
 
-from .channels import CHANNELS, SOURCE_BY_ID
+from .channels import CHANNELS, SOURCE_BY_ID, active_channels
 
 SRC_KEY = "essence_source"
 ROLE_KEY = "essence_role"
 PROC_VERSION_KEY = "essence_version"
 PROC_VERSION = 1
 
-KINDS = [('VALUE', "Value", "A plain value"),
-         ('IMAGE', "Image", "An image texture"),
-         ('PROCEDURAL', "Procedural", "A procedural texture")]
+KINDS = [('VALUE', "Value", "A plain value", 'NONE', 0),
+         ('IMAGE', "Image", "An image texture", 'NONE', 1),
+         ('PROCEDURAL', "Procedural", "A procedural texture", 'NONE', 2)]
+# A normal has no procedural source: a procedural makes a height, which is the Bump channel.
+KINDS_NORMAL = KINDS[:2]
+
+
+def kind_items(src):
+    return KINDS_NORMAL if src.channel == 'NORMAL' else KINDS
 PROJECTIONS = [('UV', "UV", "Use the UV map"),
                ('TRIPLANAR', "Triplanar",
                 "Project along the object's axes and blend the sides, with no UV map needed. "
@@ -153,6 +159,16 @@ def ensure_entries(entry):
             s.channel = ch.id
             s.uid = entry.uid
             changed = True
+    global SUSPEND
+    SUSPEND = True
+    try:
+        for s in entry.sources:  # layers from before blend modes get their channel default
+            if not s.blend_init and s.channel in SOURCE_BY_ID:
+                s.blend = SOURCE_BY_ID[s.channel].blend
+                s.blend_init = True
+                changed = True
+    finally:
+        SUSPEND = False
     return changed
 
 
@@ -219,6 +235,9 @@ def apply(mat, entry, ch_id):
     layer_node = tree.nodes.get(entry.node_name)
     if src is None or layer_node is None:
         return
+    if not is_mask and ch_id not in {c.id for c in active_channels(mat)}:
+        remove_nodes(tree, entry.uid, ch_id)  # a switched-off channel has no source nodes
+        return
     wanted = _wanted(src, ch)
     have = source_nodes(tree, entry.uid, ch_id)
 
@@ -265,7 +284,7 @@ def apply(mat, entry, ch_id):
         elif role == 'RAMP':
             els = n.color_ramp.elements
             els[0].color = (0.0, 0.0, 0.0, 1.0)
-            els[1].color = ch.default
+            els[1].color = ch.ramp_color or ch.default
 
     tex = have['TEXTURE']
     if src.kind == 'PROCEDURAL' and tex.node_tree is not ensure_proc_group(src.proc_type):

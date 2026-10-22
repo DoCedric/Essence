@@ -15,6 +15,7 @@ import numpy as np
 from bpy.props import EnumProperty, StringProperty
 
 from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials
+from .channels import BY_ID
 
 FORMATS = (
     ('PNG', "PNG", "8-bit PNG", 'png'),
@@ -116,18 +117,34 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             img.colorspace_settings.name = 'sRGB' if (color and not is_exr) else 'Non-Color'
             return img
 
-        def channel(name):
+        def output(nt_, ch_id, x, y):
+            """The stack's output for a channel, or its default if the material has no such
+            channel (a switched-off channel is not in the layer node)."""
+            ch = BY_ID[ch_id]
+            if ch.label in tail.outputs:
+                return tail.outputs[ch.label], []
+            if ch.socket_type == 'NodeSocketColor':
+                n = nt_.nodes.new('ShaderNodeRGB')
+                n.outputs[0].default_value = ch.default
+            else:
+                n = nt_.nodes.new('ShaderNodeValue')
+                n.outputs[0].default_value = ch.default
+            n.location = (x, y)
+            return n.outputs[0], [n]
+
+        def channel(ch_id):
             def build(nt_, x, y):
-                return tail.outputs[name], []
+                return output(nt_, ch_id, x, y)
             return build
 
         def smoothness(nt_, x, y):
             m = nt_.nodes.new('ShaderNodeMath')
             m.operation = 'SUBTRACT'
             m.inputs[0].default_value = 1.0
-            nt_.links.new(tail.outputs['Roughness'], m.inputs[1])
+            rough, made = output(nt_, 'ROUGHNESS', x - 200, y)
+            nt_.links.new(rough, m.inputs[1])
             m.location = (x, y)
-            return m.outputs[0], [m]
+            return m.outputs[0], [m] + made
 
         start_mode = context.active_object.mode if context.active_object else 'OBJECT'
         if start_mode != 'OBJECT':
@@ -159,8 +176,8 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             normal = new_image("normal")
             temps += [base, metal, smooth, normal]
 
-            self._bake(obj, mat, base, 'EMIT', channel('Color'))
-            self._bake(obj, mat, metal, 'EMIT', channel('Metallic'))
+            self._bake(obj, mat, base, 'EMIT', channel('COLOR'))
+            self._bake(obj, mat, metal, 'EMIT', channel('METALLIC'))
             self._bake(obj, mat, smooth, 'EMIT', smoothness)
             self._bake(obj, mat, normal, 'NORMAL')
 

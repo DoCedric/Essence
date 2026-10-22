@@ -2,7 +2,8 @@ import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, IntProperty,
                        PointerProperty, StringProperty)
 
-from . import nodes, sources
+from . import blends, nodes, sources
+from .channels import BY_ID, SOURCE_BY_ID
 
 
 def _name_update(self, context):
@@ -13,6 +14,44 @@ def _name_update(self, context):
         node = mat.node_tree.nodes.get(n) if n else None
         if node is not None:
             node.label = self.name
+
+
+def _kind_items(self, context):
+    return sources.kind_items(self)
+
+
+def _blend_items(self, context):
+    ch = SOURCE_BY_ID.get(self.channel)
+    return blends.items_for(ch) if ch is not None and ch.id in BY_ID else _NO_BLEND
+
+
+_NO_BLEND = [('MIX', "Normal", "", 'NONE', 0)]
+
+
+def _blend_update(self, context):
+    """The blend mode of a channel changed: the layer needs another group variant."""
+    mat = self.id_data
+    if sources.SUSPEND or mat.node_tree is None or not self.blend_init:
+        return
+    entry = next((e for e in mat.essence.layers if e.uid == self.uid), None)
+    if entry is not None:
+        nodes.refresh_entry(mat, entry)
+        nodes.rebuild_stack(mat)
+
+
+def _channel_update(self, context):
+    """A channel was switched on or off for the material."""
+    mat = self.id_data
+    if sources.SUSPEND or mat.node_tree is None:
+        return
+    nodes.refresh_all(mat, changed={self.id})
+
+
+class EssenceChannelState(bpy.types.PropertyGroup):
+    """Whether the material has a channel (see channels.py, default_enabled)."""
+    id: StringProperty()
+    enabled: BoolProperty(name="Enabled", default=True, update=_channel_update,
+                          description="Use this channel in the layer stack")
 
 
 def _source_update(self, context):
@@ -51,8 +90,10 @@ class EssenceSource(bpy.types.PropertyGroup):
     """What drives one channel of a layer (see sources.py). The nodes carry the values."""
     channel: StringProperty()
     uid: StringProperty()  # uid of the layer entry that owns it
-    kind: EnumProperty(name="Source", items=sources.KINDS, default='VALUE',
-                       update=_source_update)
+    kind: EnumProperty(name="Source", items=_kind_items, update=_source_update)
+    blend: EnumProperty(name="Blend", items=_blend_items, update=_blend_update,
+                        description="How this channel of the layer combines with what is below")
+    blend_init: BoolProperty()  # blend has been set to the channel's default
     projection: EnumProperty(name="Projection", items=sources.PROJECTIONS, default='UV',
                              update=_source_update)
     proc_type: EnumProperty(name="Type", items=sources.PROC_ITEMS, default='NOISE',
@@ -95,10 +136,11 @@ def _active_update(self, context):
 
 class EssenceMaterial(bpy.types.PropertyGroup):
     layers: CollectionProperty(type=EssenceLayer)
+    channels: CollectionProperty(type=EssenceChannelState)
     active_index: IntProperty(update=_active_update)
 
 
-classes = (EssenceSource, EssenceLayer, EssenceMaterial)
+classes = (EssenceChannelState, EssenceSource, EssenceLayer, EssenceMaterial)
 
 
 def register():

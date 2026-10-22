@@ -18,7 +18,7 @@ def test_groups_build(addon):
         check(len(ng.interface.items_tree) > 0, f"{name} has no interface")
     ng = nodes.ensure_layer_group()
     names = {s.name for s in ng.interface.items_tree}
-    for ch in addon.channels.CHANNELS:
+    for ch in (c for c in addon.channels.CHANNELS if c.default_enabled):
         for n in (f"{ch.label} A", f"{ch.label} B", f"{ch.label} Enable", ch.label):
             check(n in names, f"layer group missing socket {n}")
     check("Mask" in names, "layer group missing Mask")
