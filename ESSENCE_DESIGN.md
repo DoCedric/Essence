@@ -99,7 +99,7 @@ Map types ✅ *(built, untested)*:
 
 **Bake from high to low** ✅: set a **High Poly** collection (children included, meshes only) and bake the selected low-poly objects. Works for every map type.
 - Selected-to-active, no cage. Ray start offset (Extrusion) defaults to 2% of the low-poly's bounding-box diagonal, overridable; max ray distance is twice the extrusion.
-- High-poly objects are never bake targets, even if selected. Hidden or unselectable high-poly objects are made visible for the bake and restored afterwards; a high-poly excluded or hidden by its collection is a clear error.
+- High-poly objects are never bake targets, even if selected. Hidden or unselectable high-poly objects, and the collections that are excluded, hidden in the viewport or unselectable around them, are switched on for the bake and put back exactly as they were afterwards (the same temporary-and-restored approach as the bake settings), so the user never has to prepare the outliner. The scene's root collection is never touched. Verified headless for an excluded collection, an excluded parent, and hidden or unselectable flags.
 - For emission-based maps Cycles reads the shader from the high-poly, so the temporary Emission override is applied to the high-poly materials too (a temporary material if one has none).
 
 ### Layers and Masks

@@ -287,34 +287,85 @@ def auto_extrusion(obj):
     return obj.dimensions.length * 0.02
 
 
+def _layer_collection_path(layer_collection, collection):
+    """The chain of LayerCollections from the scene root down to `collection`, or None."""
+    if layer_collection.collection == collection:
+        return [layer_collection]
+    for child in layer_collection.children:
+        path = _layer_collection_path(child, collection)
+        if path is not None:
+            return [layer_collection] + path
+    return None
+
+
 class _ForceSelectable:
     """Temporarily make objects visible and selectable (required for selected-to-active
-    baking), then put their visibility flags back."""
+    baking), then put their visibility flags back. Collections that are excluded or hidden
+    are switched on for the bake too, and switched off again afterwards, so the user's
+    outliner looks the same as before."""
 
     def __init__(self, context, objects):
         self.vl = context.view_layer
         self.objects = objects
         self.saved = []
+        self.saved_collections = []   # (collection, exclude, hide_viewport of its layer collection, ...)
+        self._seen = set()
+
+    def _enable_collections(self, o):
+        """Un-exclude and un-hide every collection that holds `o`, from the root down."""
+        todo = []
+        for coll in o.users_collection:
+            # [1:]: the scene's root collection cannot be excluded or hidden, and assigning
+            # to it (even the same value) resets the state of the collections below it.
+            for lc in (_layer_collection_path(self.vl.layer_collection, coll) or ())[1:]:
+                if lc.name not in self._seen:
+                    self._seen.add(lc.name)
+                    c = lc.collection
+                    # Everything is read before anything is changed: changing a parent
+                    # rebuilds the layer collections below it.
+                    self.saved_collections.append(
+                        (c, lc.exclude, lc.hide_viewport, c.hide_viewport, c.hide_select))
+                    todo.append(c)
+        for c in todo:
+            path = _layer_collection_path(self.vl.layer_collection, c)
+            if path:
+                path[-1].exclude = False
+                path[-1].hide_viewport = False
+            c.hide_viewport = False
+            c.hide_select = False
 
     def __enter__(self):
         for o in self.objects:
+            if o.name not in self.vl.objects or not o.visible_get(view_layer=self.vl):
+                self._enable_collections(o)
             if o.name not in self.vl.objects:
-                raise RuntimeError(f"high-poly '{o.name}' is not in this view layer "
-                                   "(its collection is excluded)")
+                raise RuntimeError(f"high-poly '{o.name}' is not in this view layer")
             self.saved.append((o, o.hide_get(), o.hide_viewport, o.hide_select))
             o.hide_set(False)
             o.hide_viewport = False
             o.hide_select = False
             if not o.visible_get(view_layer=self.vl):
-                raise RuntimeError(f"high-poly '{o.name}' is hidden by its collection")
+                raise RuntimeError(f"high-poly '{o.name}' is still hidden")
         return self
 
     def __exit__(self, *exc):
-        for o, hidden, hide_vp, hide_sel in self.saved:
-            try:
+        for o, hidden, hide_vp, hide_sel in self.saved:   # while the objects are still in
+            try:                                         # the view layer
                 o.hide_set(hidden)
                 o.hide_viewport = hide_vp
                 o.hide_select = hide_sel
+            except (ReferenceError, RuntimeError):
+                pass
+        for c, exclude, hide_vp, c_hide_vp, c_hide_sel in reversed(self.saved_collections):
+            try:
+                c.hide_select = c_hide_sel
+                c.hide_viewport = c_hide_vp
+                # Layer collections are looked up again: toggling exclude rebuilds them, so a
+                # reference kept from before would be stale.
+                path = _layer_collection_path(self.vl.layer_collection, c)
+                if path:
+                    path[-1].hide_viewport = hide_vp
+                    path[-1].exclude = exclude
             except ReferenceError:
                 pass
         return False
