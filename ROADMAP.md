@@ -78,6 +78,7 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [x] Operators: Add Adjustment (menu on the selected layer or mask), remove, move within the owner, eye toggle. [H]
 - [ ] Panel rows: items indented under their owner in the Layers list; an adjustment properties panel (type, channel, opacity, the node's own controls, the curve widget). [G]
 - [ ] Mask Invert/Brightness/Contrast stay as they are for now; fold them into items later.
+- Known cosmetic issue (not fixing: the list is replaced by the mockup layout): items nested deepest in the list (for example under a mask inside a folder) sometimes get an empty line below them, probably from the row width at that indent.
 - [ ] Mockup layout: layer and mask side by side, each with its item column, built from native widgets instead of a UIList. A separate task, judged in the GUI. [G]
 - [ ] **Milestone checklist** [G].
 
