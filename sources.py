@@ -257,7 +257,7 @@ def adjustment_entries(mat, owner_uid, ch_id):
     """The adjustments of an owner for one channel (all of a mask's), bottom-to-top."""
     return [a for a in mat.essence.layers if a.parent == owner_uid and (
             (a.kind == 'ADJUSTMENT' and (ch_id == 'MASK' or a.adj_channel == ch_id))
-            or (a.kind == 'FILL' and ch_id == 'MASK'))]
+            or (a.kind in ('FILL', 'FILTER') and ch_id == 'MASK'))]
 
 
 def _chain_fill(tree, a, out):
@@ -290,12 +290,44 @@ def _chain_fill(tree, a, out):
     return out
 
 
+def _chain_filter(tree, a, out):
+    """A baked filter in a mask's chain. The value so far goes into a reroute (the point that
+    Refresh bakes); once a result image exists the chain continues from that image sampled
+    with the UV map, before that the filter passes the value through."""
+    have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)
+    node_in, tex = have.get('IN'), have.get('OUT')
+    if node_in is None:
+        node_in = tree.nodes.new('NodeReroute')
+        node_in[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
+        node_in[ROLE_KEY] = 'IN'
+    if tex is None:
+        tex = tree.nodes.new('ShaderNodeTexImage')
+        tex[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
+        tex[ROLE_KEY] = 'OUT'
+        tex.interpolation = 'Linear'
+        tex.extension = 'EXTEND'
+        tex.width = 240
+    tex.label = f"{a.name} (baked)"
+    img = bpy.data.images.get(adjustments.FILTER_IMAGE_PREFIX + a.uid)
+    if img is not None and tex.image is not img:
+        tex.image = img
+    _clear_links(tree, node_in.inputs[0])
+    if out is not None:
+        tree.links.new(out, node_in.inputs[0])
+        if a.adj_enabled and tex.image is not None:
+            out = tex.outputs['Color']
+    return out
+
+
 def _chain(tree, adjs, out):
     """Create or update the nodes of `adjs` and wire the enabled ones in series after `out`
     (None: nothing to feed, so every adjustment stays unlinked). Returns the new end."""
     for a in adjs:
         if a.kind == 'FILL':
             out = _chain_fill(tree, a, out)
+            continue
+        if a.kind == 'FILTER':
+            out = _chain_filter(tree, a, out)
             continue
         t = adjustments.BY_ID[a.adj_type]
         have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)
@@ -467,7 +499,7 @@ def apply(mat, entry, ch_id):
 
 _ROLE_ORDER = ('CONST', 'COORD', 'MAPPING', 'TEXTURE', 'REMAP', 'RAMP')
 _STEP = {'CONST': 200, 'COORD': 230, 'MAPPING': 330, 'TEXTURE': 330, 'REMAP': 290,
-         'RAMP': 320, 'MAIN': 330, 'MIX': 250}
+         'RAMP': 320, 'MAIN': 330, 'MIX': 250, 'IN': 60, 'OUT': 330}
 
 
 def _place_adjustments(tree, adjs, index, x, y, step):
@@ -476,7 +508,7 @@ def _place_adjustments(tree, adjs, index, x, y, step):
     for a in adjs:
         nodes = (index.get(tag(a.uid, adjustments.ADJ_KEY), {}) if index is not None
                  else source_nodes(tree, a.uid, adjustments.ADJ_KEY))
-        for role in ('MAIN', 'MIX'):
+        for role in ('MAIN', 'MIX', 'IN', 'OUT'):
             n = nodes.get(role)
             if n is not None:
                 place(n, x, y)

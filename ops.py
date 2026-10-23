@@ -1,7 +1,7 @@
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import adjustments, nodes, sources, stack
+from . import adjustments, filters, nodes, sources, stack
 from .channels import SOURCE_BY_ID
 
 
@@ -149,6 +149,7 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
                     tree.nodes.remove(node)
         s.active_index = max(0, min(i, len(s.layers) - 1))
         nodes.rebuild_stack(mat)  # also deletes the removed adjustment's nodes
+        filters.cleanup()
         if adjusted:
             _reapply(mat, adjusted)
         return {'FINISHED'}
@@ -367,6 +368,93 @@ class ESSENCE_OT_add_fill(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
+    bl_idname = "essence.add_filter"
+    bl_label = "Add Baked Filter"
+    bl_description = ("Add a baked filter on top of the active mask's items. It filters the "
+                      "value built so far into an image; press Refresh to bake it")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filter_type: EnumProperty(name="Filter", items=[(t.id, t.label, t.description)
+                                                    for t in filters.TYPES])
+
+    @classmethod
+    def poll(cls, context):
+        mat = _material(context)
+        owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
+        return owner is not None and owner.kind == 'MASK'
+
+    def execute(self, context):
+        mat = _material(context)
+        s = mat.essence
+        owner_uid = _adjustment_owner(mat, _active(mat)).uid
+        t = filters.BY_ID[self.filter_type]
+        e = s.layers.add()
+        e.kind = 'FILTER'
+        e.uid = uid = stack.new_uid()
+        e.parent = owner_uid
+        e.name = t.label
+        sources.SUSPEND = True
+        try:
+            e.adj_enabled = True
+            e.filter_type = self.filter_type
+        finally:
+            sources.SUSPEND = False
+        filters.build_group(e)
+        tree = stack.Tree(s.layers)
+        tree.apply()
+        _reapply(mat, owner_uid)
+        s.active_index = tree.index(uid)
+        return {'FINISHED'}
+
+
+class ESSENCE_OT_filter_refresh(_Base, bpy.types.Operator):
+    bl_idname = "essence.filter_refresh"
+    bl_label = "Refresh"
+    bl_description = ("Bake the mask value below this filter, run the filter on it and store "
+                      "the result. Needed again after the items below change")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    uid: StringProperty()
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.type == 'MESH' and ob.active_material is not None
+
+    def execute(self, context):
+        ob = context.active_object
+        mat = ob.active_material
+        entry = next((e for e in mat.essence.layers if e.uid == self.uid), None)
+        if entry is None or entry.kind != 'FILTER':
+            return {'CANCELLED'}
+        if not ob.data.uv_layers:
+            self.report({'ERROR'}, "The object has no UV map")
+            return {'CANCELLED'}
+        tree = mat.node_tree
+        node_in = sources.source_nodes(tree, entry.uid, adjustments.ADJ_KEY).get('IN')
+        if node_in is None:
+            self.report({'ERROR'}, "Filter nodes missing, press Rebuild")
+            return {'CANCELLED'}
+        size = int(entry.filter_resolution)
+        owner_uid, uid = entry.parent, entry.uid
+        try:
+            image = filters.bake_value(context, ob, mat,
+                                       lambda t: t.nodes[node_in.name].outputs[0], size)
+            try:
+                result = filters.run_compositor(entry, image)
+            finally:
+                bpy.data.images.remove(image)
+        except Exception as e:  # noqa: BLE001
+            self.report({'ERROR'}, f"Refresh failed: {e}")
+            return {'CANCELLED'}
+        entry = next(e for e in mat.essence.layers if e.uid == uid)
+        filters.store_result(entry, result)
+        _reapply(mat, owner_uid)
+        self.report({'INFO'}, f"Baked filter at {size} px")
+        return {'FINISHED'}
+
+
 class ESSENCE_MT_add_adjustment(bpy.types.Menu):
     bl_idname = "ESSENCE_MT_add_adjustment"
     bl_label = "Add Adjustment"
@@ -376,6 +464,11 @@ class ESSENCE_MT_add_adjustment(bpy.types.Menu):
         owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
         if owner is not None and owner.kind == 'MASK':
             self.layout.operator("essence.add_fill", text="Fill", icon='IMAGE_DATA')
+            self.layout.separator()
+            self.layout.label(text="Baked filters (press Refresh)")
+            for ft in filters.TYPES:
+                self.layout.operator("essence.add_filter", text=ft.label,
+                                     icon='FILTER').filter_type = ft.id
             self.layout.separator()
         for t in adjustments.TYPES:
             op = self.layout.operator("essence.add_adjustment", text=t.label)
@@ -524,7 +617,8 @@ class ESSENCE_MT_add_mask(bpy.types.Menu):
 classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
-    ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu,
+    ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
+    ESSENCE_OT_filter_refresh,
     ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,

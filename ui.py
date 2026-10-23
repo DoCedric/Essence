@@ -1,7 +1,7 @@
 import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
-from . import adjustments, nodes, sources
+from . import adjustments, filters, nodes, sources
 from .bake import HIGH_MAPS
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
@@ -26,7 +26,7 @@ def _active(mat):
 def _depth(layers, item):
     """Indent level of a list row: folders 0, their layers 1, masks one more than the
     owner."""
-    if item.kind in ('MASK', 'ADJUSTMENT', 'FILL'):
+    if item.kind in ('MASK', 'ADJUSTMENT', 'FILL', 'FILTER'):
         owner = next((e for e in layers if e.uid == item.parent), None)
         return (_depth(layers, owner) if owner is not None else 0) + 1
     return 1 if item.parent else 0
@@ -40,6 +40,13 @@ class ESSENCE_UL_layers(bpy.types.UIList):
         if depth:
             row.separator(factor=2.0 * depth)
         node = tree.nodes.get(item.node_name) if tree is not None else None
+
+        if item.kind == 'FILTER':
+            row.label(text="", icon='FILTER')
+            row.prop(item, "name", text="", emboss=False)
+            row.prop(item, "adj_enabled", text="", emboss=False,
+                     icon='HIDE_OFF' if item.adj_enabled else 'HIDE_ON')
+            return
 
         if item.kind == 'FILL':
             img_node = tree.nodes.get(item.mask_node_name) if tree is not None else None
@@ -152,10 +159,12 @@ def _entry_row(layout, mat, item, active, add_mask=False):
             row.label(text="", icon='MOD_MASK' if item.kind == 'MASK' else 'IMAGE_DATA')
         if item.kind == 'MASK':
             toggle = node.inputs.get(nodes.MASK_ENABLE) if node is not None else None
+    elif item.kind == 'FILTER':
+        row.label(text="", icon='FILTER')
     else:
         row.label(text="", icon='MODIFIER')
     row.operator("essence.select_entry", text=item.name, depress=active).uid = item.uid
-    if item.kind in ('ADJUSTMENT', 'FILL'):
+    if item.kind in ('ADJUSTMENT', 'FILL', 'FILTER'):
         row.prop(item, "adj_enabled", text="", emboss=False,
                  icon='HIDE_OFF' if item.adj_enabled else 'HIDE_ON')
     elif toggle is not None:
@@ -172,7 +181,7 @@ def _tree(layout, mat):
     active = s.layers[s.active_index].uid if 0 <= s.active_index < len(s.layers) else ""
     items, masks, kids, roots = {}, {}, {}, []
     for e in s.layers:  # stored bottom-to-top
-        if e.kind in ('ADJUSTMENT', 'FILL'):
+        if e.kind in ('ADJUSTMENT', 'FILL', 'FILTER'):
             items.setdefault(e.parent, []).append(e)
         elif e.kind == 'MASK':
             masks.setdefault(e.parent, []).append(e)
@@ -288,7 +297,28 @@ def _adjustment_poll(cls, context):
     if mat is None or not mat.essence.layers:
         return False
     e, _ = _active(mat)
-    return e is not None and e.kind in ('ADJUSTMENT', 'FILL')
+    return e is not None and e.kind in ('ADJUSTMENT', 'FILL', 'FILTER')
+
+
+def _filter(layout, mat, e, owner):
+    """A baked filter: its type, the compositor node's settings, resolution and Refresh."""
+    if owner is not None:
+        layout.label(text=f"Filters {owner.name} (baked)", icon='FILTER')
+    layout.prop(e, "filter_type", text="Filter")
+    layout.prop(e, "adj_enabled", text="Enabled")
+    node = filters.filter_node(e)
+    if node is not None:
+        t = filters.BY_ID[e.filter_type]
+        col = layout.column(align=True)
+        for sock in node.inputs:
+            if sock.name != t.input and hasattr(sock, "default_value"):
+                col.prop(sock, "default_value", text=sock.name)
+    layout.prop(e, "filter_resolution", text="Resolution")
+    layout.operator("essence.filter_refresh", icon='FILE_REFRESH').uid = e.uid
+    if filters.result_image(e.uid) is None:
+        layout.label(text="Not baked yet: passes the value through", icon='INFO')
+    else:
+        layout.label(text="Refresh after changing the items below", icon='INFO')
 
 
 def _fill(layout, mat, e, owner):
@@ -322,6 +352,9 @@ def _adjustment(self, context):
     layout.prop(e, "name", text="Name")
     if e.kind == 'FILL':
         _fill(layout, mat, e, owner)
+        return
+    if e.kind == 'FILTER':
+        _filter(layout, mat, e, owner)
         return
     if owner is not None:
         layout.label(text=f"Adjusts {owner.name}", icon='MODIFIER')

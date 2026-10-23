@@ -2,7 +2,7 @@ import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, IntProperty,
                        PointerProperty, StringProperty)
 
-from . import adjustments, blends, nodes, sources, stack
+from . import adjustments, blends, filters, nodes, sources, stack
 from .channels import BY_ID, CHANNELS, SOURCE_BY_ID
 
 
@@ -106,6 +106,8 @@ def _adj_update(self, context):
             self.adj_channel = next(c.id for c in CHANNELS if c.socket_type == 'NodeSocketColor')
         finally:
             sources.SUSPEND = False
+    if self.kind == 'FILTER':
+        filters.build_group(self)
     if self.kind == 'ADJUSTMENT' and self.name in {t.label for t in adjustments.TYPES}:
         self.name = adjustments.BY_ID[self.adj_type].label  # a default name follows the type
     sources.apply_owner(mat, owner)
@@ -142,7 +144,7 @@ class EssenceLayer(bpy.types.PropertyGroup):
     name: StringProperty(name="Name", update=_name_update)
     kind: EnumProperty(items=[('LAYER', "Layer", ""), ('FOLDER', "Folder", ""),
                               ('MASK', "Mask", ""), ('ADJUSTMENT', "Adjustment", ""),
-                              ('FILL', "Fill", "")],
+                              ('FILL', "Fill", ""), ('FILTER', "Filter", "")],
                        default='LAYER')
     uid: StringProperty()
     parent: StringProperty()   # uid of the owner (folder or layer), empty at top level
@@ -157,6 +159,13 @@ class EssenceLayer(bpy.types.PropertyGroup):
     adj_enabled: BoolProperty(name="Enabled", default=True, update=_adj_update,
                               description="Apply this adjustment or fill")
     # Fills only (a mask's item with its own `source`): how it combines with the value below.
+    # Filters only (see filters.py): the compositor filter and the resolution it is baked at.
+    filter_type: EnumProperty(name="Filter", items=[(t.id, t.label, t.description)
+                                                    for t in filters.TYPES],
+                              update=_adj_update)
+    filter_resolution: EnumProperty(name="Resolution", items=filters.RESOLUTIONS,
+                                    default='1024',
+                                    description="Size of the image the filter is baked at")
     fill_blend: EnumProperty(name="Blend", items=adjustments.FILL_BLENDS, update=_adj_update,
                              description="How this fill combines with the mask value below it")
 

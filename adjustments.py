@@ -20,6 +20,10 @@ from typing import Tuple
 
 ADJ_KEY = "ADJ"
 
+# Baked filters (see filters.py): the compositor group and the result image of an item.
+FILTER_GROUP_PREFIX = "Essence Filter "
+FILTER_IMAGE_PREFIX = ".Essence Filter "
+
 
 @dataclass(frozen=True)
 class AdjType:

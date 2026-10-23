@@ -82,10 +82,11 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - Known cosmetic issue (not fixing: the list is replaced by the mockup layout): items nested deepest in the list (for example under a mask inside a folder) sometimes get an empty line below them, probably from the row width at that indent.
 - [x] Tree view: layer and mask side by side, each with its item column, built from native widgets (the list stays as the other view). [H] draws; [G] look pending
 - [x] Retire several masks per layer: one mask per layer or folder, further values stacked as fills. Add Mask is unavailable once an owner has a mask. [H]
-- [ ] **Milestone checklist** [G].
+- [x] Baked filters, opt-in: Kuwahara, Blur, Sharpen, Dilate/Erode as items on a mask with a Refresh button; one hidden packed image per item, deleted with it. [H]
+- [ ] Baked filters on layer channels (the bake already handles any socket). Not decided.
+- [ ] **Milestone checklist** [G]: tree view and rows, adjustments and fills on a mask, the mask button, Add Mask limits, a baked filter (add Kuwahara or Blur to a mask, press Refresh, check the result, the dot-hidden image in the image pickers, how long it takes).
 
 ## Later sprints (outline, to be detailed)
-- **Sprint 4b, baked filters:** compositor filters on image sources and masks (Kuwahara first, then blur, sharpen, dilate/erode), an explicit Refresh; mask levels/curves and mask stack blend modes.
 - **Sprint 5, generators and assets:** Essence asset library (catalogs), noise/gradient/grunge assets, smart masks consuming baked maps.
 - **Sprint 6, mesh maps:** curvature, position, thickness, ID maps, height from mesh, baking groups, multi-object bake.
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
