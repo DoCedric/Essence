@@ -1,5 +1,7 @@
 """Evaluate real pixel values of the generated stack against the documented formulas."""
 
+from importlib import import_module
+
 import bpy
 
 from harness import close, make_plane, sample_socket
@@ -17,13 +19,15 @@ def _set(node, color, rough, metal, bump):
 
 
 def _mask(mat, value, invert=False):
-    """Add a mask whose image is a flat `value`; returns its group node."""
+    """Add a mask whose image is a flat `value` (with an Invert item on top if `invert`);
+    returns its group node."""
     bpy.ops.essence.add_mask(source='PAINT', fill='WHITE')
     e = mat.essence.layers[mat.essence.active_index]
     img = mat.node_tree.nodes[e.mask_node_name].image
     img.generated_color = (value, value, value, 1.0)
     node = mat.node_tree.nodes[e.node_name]
-    node.inputs["Mask Invert"].default_value = invert
+    if invert:
+        bpy.ops.essence.add_adjustment(adj_type='INVERT')
     return node
 
 
@@ -72,12 +76,11 @@ def test_mask_invert_and_stack(addon):
     _mask(mat, 0.25, invert=True)  # 0.75
     top = _top(mat)
     close(sample_socket(ob, mat, top.outputs["Roughness"])[0], 0.2 + 0.6 * 0.75, msg="invert")
-    # A second value is a Fill on the mask, multiplied into the source (0.25 * 0.5) before the
-    # mask's own invert stage: 1 - 0.125.
+    # A second value is a Fill on the mask, applied after the Invert item: 0.75 * 0.5
     bpy.ops.essence.add_fill()
     fill = mat.essence.layers[mat.essence.active_index]
     mat.node_tree.nodes[fill.node_name].inputs[1].default_value = 0.5
-    close(sample_socket(ob, mat, top.outputs["Roughness"])[0], 0.2 + 0.6 * 0.875, msg="stack")
+    close(sample_socket(ob, mat, top.outputs["Roughness"])[0], 0.2 + 0.6 * 0.375, msg="stack")
 
 
 def test_mask_disable(addon):
@@ -119,9 +122,12 @@ def test_mask_brightness_contrast_direction(addon):
     top = _top(mat)
     base = sample_socket(ob, mat, top.outputs["Roughness"])[0]
     close(base, 0.5, 0.02, "mask 0.5 baseline")
-    m.inputs["Mask Brightness"].default_value = 50
+    bpy.ops.essence.add_adjustment(adj_type='BRIGHT_CONTRAST')
+    adj = mat.essence.layers[mat.essence.active_index].uid
+    bc = import_module("essence").sources.source_nodes(mat.node_tree, adj, 'ADJ')['MAIN']
+    bc.inputs['Bright'].default_value = 50
     bright = sample_socket(ob, mat, top.outputs["Roughness"])[0]
     assert bright > base + 0.05, f"brightness did not brighten: {base} -> {bright}"
-    m.inputs["Mask Brightness"].default_value = -50
+    bc.inputs['Bright'].default_value = -50
     dark = sample_socket(ob, mat, top.outputs["Roughness"])[0]
     assert dark < base - 0.05, f"negative brightness did not darken: {base} -> {dark}"

@@ -7,13 +7,9 @@ import bpy
 from . import blends, sources, stack
 from .channels import BY_ID, CHANNELS, MASK_SOCKET, active_channels
 
-MASK_INVERT = "Mask Invert"
-MASK_BRIGHTNESS = "Mask Brightness"
-MASK_CONTRAST = "Mask Contrast"
 
 MASK_ENABLE = "Enable"
 MASK_VALUE = "Value"
-MASK_PREVIOUS = "Previous"
 
 GROUP_NAME = "Essence Layer"
 # 2: per-channel Enable inputs, 3: mask invert/brightness/contrast,
@@ -26,7 +22,7 @@ FOLDER_GROUP_NAME = "Essence Folder"
 # 3: Visible (eye toggle)
 FOLDER_GROUP_VERSION = 3
 MASK_GROUP_NAME = "Essence Mask"
-MASK_GROUP_VERSION = 1
+MASK_GROUP_VERSION = 2
 VERSION_KEY = "essence_version"
 BUMP_NODE_NAME = "Essence Bump"
 NORMAL_NODE_NAME = "Essence Normal Map"
@@ -167,71 +163,37 @@ def _build_group(ng, folder=False, key=None):
 
 
 def _build_mask_group(ng):
-    """One mask of a layer or folder. Adjusts the image value (invert, then
-    brightness/contrast, then clamp 0-1) and multiplies it onto the masks before it, so a
-    stack of masks is a chain of these nodes. A disabled mask contributes 1 (no effect)."""
+    """The mask of a layer or folder: clamps the mask value to 0-1 and gates it with Enable
+    (a disabled mask is 1, no effect). Invert, brightness and the like are adjustment items on
+    the mask (see adjustments.py), so their order against fills and filters is the user's."""
     iface = ng.interface
     iface.clear()
     ng.nodes.clear()
-
-    def float_in(name, default, lo=None, hi=None, subtype='NONE'):
-        s = iface.new_socket(name, in_out='INPUT', socket_type='NodeSocketFloat')
-        s.default_value = default
-        if lo is not None:
-            s.min_value, s.max_value = lo, hi
-        s.subtype = subtype
-        return s
-
-    float_in(MASK_VALUE, 1.0, 0.0, 1.0, 'FACTOR')
-    float_in(MASK_PREVIOUS, 1.0, 0.0, 1.0, 'FACTOR')
-    inv = iface.new_socket(MASK_INVERT, in_out='INPUT', socket_type='NodeSocketBool')
-    inv.default_value = False
-    float_in(MASK_BRIGHTNESS, 0.0, -100.0, 100.0)  # same range as the Brightness/Contrast node
-    float_in(MASK_CONTRAST, 0.0, -100.0, 100.0)
+    v = iface.new_socket(MASK_VALUE, in_out='INPUT', socket_type='NodeSocketFloat')
+    v.default_value = 1.0
+    v.min_value, v.max_value = 0.0, 1.0
+    v.subtype = 'FACTOR'
     en = iface.new_socket(MASK_ENABLE, in_out='INPUT', socket_type='NodeSocketBool')
     en.default_value = True
     iface.new_socket(MASK_SOCKET, in_out='OUTPUT', socket_type='NodeSocketFloat')
 
     nodes, links = ng.nodes, ng.links
     n_in = nodes.new('NodeGroupInput')
-    n_in.location = (-1100, 0)
+    n_in.location = (-500, 0)
     n_out = nodes.new('NodeGroupOutput')
-    n_out.location = (500, 0)
-
-    sub = nodes.new('ShaderNodeMath')
-    sub.operation = 'SUBTRACT'
-    sub.label = "Invert (|invert - mask|)"
-    sub.location = (-850, 100)
-    links.new(n_in.outputs[MASK_INVERT], sub.inputs[0])
-    links.new(n_in.outputs[MASK_VALUE], sub.inputs[1])
-    absn = nodes.new('ShaderNodeMath')
-    absn.operation = 'ABSOLUTE'
-    absn.location = (-650, 100)
-    links.new(sub.outputs[0], absn.inputs[0])
-    bc = nodes.new('ShaderNodeBrightContrast')
-    bc.location = (-450, 100)
-    links.new(absn.outputs[0], bc.inputs['Color'])
-    links.new(n_in.outputs[MASK_BRIGHTNESS], bc.inputs['Bright'])
-    links.new(n_in.outputs[MASK_CONTRAST], bc.inputs['Contrast'])
+    n_out.location = (300, 0)
     clamp = nodes.new('ShaderNodeClamp')
     clamp.location = (-250, 100)
-    links.new(bc.outputs['Color'], clamp.inputs['Value'])
-
-    # Disabled -> 1.0, enabled -> adjusted value.
+    links.new(n_in.outputs[MASK_VALUE], clamp.inputs['Value'])
+    # Disabled -> 1.0, enabled -> the value.
     gate = nodes.new('ShaderNodeMix')
     gate.data_type = 'FLOAT'
     gate.label = "Enable"
-    gate.location = (-50, 100)
+    gate.location = (0, 100)
     gate.inputs[2].default_value = 1.0  # A_Float
     links.new(n_in.outputs[MASK_ENABLE], _by_ident(gate.inputs, "Factor_Float"))
     links.new(clamp.outputs['Result'], _by_ident(gate.inputs, "B_Float"))
-    mul = nodes.new('ShaderNodeMath')
-    mul.operation = 'MULTIPLY'
-    mul.label = "Multiply with previous masks"
-    mul.location = (200, 100)
-    links.new(_by_ident(gate.outputs, "Result_Float"), mul.inputs[0])
-    links.new(n_in.outputs[MASK_PREVIOUS], mul.inputs[1])
-    links.new(mul.outputs[0], n_out.inputs[MASK_SOCKET])
+    links.new(_by_ident(gate.outputs, "Result_Float"), n_out.inputs[MASK_SOCKET])
 
 
 KEY_PROP = "essence_key"
@@ -807,8 +769,8 @@ def refresh_all(mat, changed=()):
 
 
 def _link_masks(tree, layers, owner, owner_node, index=None, adjs=()):
-    """Chain the owner's mask nodes (image -> mask node -> next mask node) into its Mask
-    input, and lay them out in a column below the owner."""
+    """Wire the owner's mask node into its Mask input, and lay the mask and its source nodes
+    out in a column below the owner."""
     dst = owner_node.inputs[MASK_SOCKET]
     prev = None
     x, y = owner_node.location.x, owner_node.location.y - 420
@@ -818,11 +780,6 @@ def _link_masks(tree, layers, owner, owner_node, index=None, adjs=()):
         node = tree.nodes.get(m.node_name)
         if node is None:
             continue
-        prev_in = node.inputs[MASK_PREVIOUS]
-        if prev is not None:
-            _set_link(tree, prev_in, prev.outputs[MASK_SOCKET])
-        else:
-            _clear_links(tree, prev_in)
         sources.place(node, x, y)
         if m.source.channel == 'MASK':
             # The source nodes (see sources.py) feed Value; they sit below the mask node.

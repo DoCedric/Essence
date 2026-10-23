@@ -473,10 +473,6 @@ def _mask(self, context):
     _source_controls(col, mat, e, src, MASK_SOURCE, node.inputs[nodes.MASK_VALUE],
                      preview=True)
     img = getattr(tree.nodes.get(e.mask_node_name), "image", None) if tree else None
-    col = layout.column(align=True)
-    col.prop(node.inputs[nodes.MASK_INVERT], "default_value", text="Invert", toggle=True)
-    col.prop(node.inputs[nodes.MASK_BRIGHTNESS], "default_value", text="Brightness")
-    col.prop(node.inputs[nodes.MASK_CONTRAST], "default_value", text="Contrast")
     if context.active_object.mode == 'TEXTURE_PAINT':
         layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
     else:

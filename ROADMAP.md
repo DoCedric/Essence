@@ -78,7 +78,7 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [x] Operators: Add Adjustment (menu on the selected layer or mask), remove, move within the owner, eye toggle. [H]
 - [ ] Panel rows: items indented under their owner in the Layers list; an adjustment properties panel (type, channel, opacity, the node's own controls, the curve widget). [G]
 - [x] Mask fills: a Fill item on a mask (own source, blend Multiply/Add/Subtract/Darken/Lighten, opacity), items apply in order on the running mask value. Several masks per layer still work until the layout task retires them. [H]
-- [ ] Mask Invert/Brightness/Contrast stay as they are for now; fold them into items later.
+- [x] The mask's built-in Invert/Brightness/Contrast are gone: they are ordinary adjustment items, so their order against fills and later filters is the user's choice. Mask group version 2. [H]
 - Known cosmetic issue (not fixing: the list is replaced by the mockup layout): items nested deepest in the list (for example under a mask inside a folder) sometimes get an empty line below them, probably from the row width at that indent.
 - [x] Tree view: layer and mask side by side, each with its item column, built from native widgets (the list stays as the other view). [H] draws; [G] look pending
 - [x] Retire several masks per layer: one mask per layer or folder, further values stacked as fills. Add Mask is unavailable once an owner has a mask. [H]
