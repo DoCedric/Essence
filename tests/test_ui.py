@@ -189,3 +189,16 @@ def test_draw_adjustments_every_type(addon):
                                        mat.essence, "active_index", 0)
         check(any(c[0] == "prop" and c[1][1] == "adj_enabled" for c in item_log),
               "adjustment row should show its eye toggle")
+
+
+def test_adjustment_panel_shows_every_parameter(addon):
+    from essence import ui
+    ob, mat = _setup(addon)
+    layer = next(e.name for e in mat.essence.layers if e.kind == 'LAYER')
+    for t in addon.adjustments.TYPES:
+        _select(mat, layer)
+        bpy.ops.essence.add_adjustment(adj_type=t.id)
+        log = _draw(ui._adjustment, ob)
+        labels = [c[2].get("text") for c in log if c[0] == "prop"]
+        for _, label in t.params:
+            check(label in labels, f"{t.label}: control {label!r} not drawn ({labels})")

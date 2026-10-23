@@ -170,7 +170,8 @@ def _adjustment(self, context):
                 text="Opacity", slider=True)
     col = layout.column(align=True)
     for ident, label in t.params:
-        sock = next((s for s in main.inputs if s.identifier == ident), None)
+        # Node sockets match by identifier; a group node's identifiers are generated, so by name.
+        sock = next((s for s in main.inputs if s.identifier == ident or s.name == ident), None)
         if sock is not None:
             col.prop(sock, "default_value", text=label)
     if t.widget == 'curve':
