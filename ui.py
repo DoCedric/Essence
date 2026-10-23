@@ -125,7 +125,7 @@ def _thumb(tree, item):
         return 0
 
 
-def _entry_row(layout, mat, item, active):
+def _entry_row(layout, mat, item, active, add_mask=False):
     """One entry of the tree view: its icon, a button that selects it (pressed while it is the
     active one) and its eye toggle."""
     tree = mat.node_tree
@@ -161,6 +161,8 @@ def _entry_row(layout, mat, item, active):
     elif toggle is not None:
         row.prop(toggle, "default_value", text="", emboss=False,
                  icon='HIDE_OFF' if toggle.default_value else 'HIDE_ON')
+    if add_mask:  # a layer or folder without a mask: a button for a white or black one
+        row.operator("essence.add_mask_menu", text="", icon='MOD_MASK').uid = item.uid
 
 
 def _tree(layout, mat):
@@ -197,7 +199,7 @@ def _tree(layout, mat):
             left, right = split.column(align=True), split.column(align=True)
         else:
             left, right = box.column(align=True), None
-        _entry_row(left, mat, e, e.uid == active)
+        _entry_row(left, mat, e, e.uid == active, add_mask=right is None)
         draw_items(left, e)
         if right is not None:
             draw_masks(right, e)
@@ -210,7 +212,7 @@ def _tree(layout, mat):
             draw_masks(right, e)
         else:
             left = box.column(align=True)
-        _entry_row(left, mat, e, e.uid == active)
+        _entry_row(left, mat, e, e.uid == active, add_mask=not masks.get(e.uid))
         for child in reversed(kids.get(e.uid, [])):
             row = box.split(factor=0.04)
             row.label(text="")
