@@ -59,10 +59,12 @@ Added after the Sprint 2 GUI check.
 - [ ] **Milestone checklist** [G]: Mesh Maps panel (bake a normal, pick a normal image).
 
 ## Sprint 3: Bake quality and performance baseline (`sprint-3-bake-perf`)
-- [ ] Cage object support (selected-to-active). [H]
-- [ ] Float image buffers for height and masks. [H]
-- [ ] Performance measurement: compile time and render time for 5, 20, 50 layer stacks, EEVEE and Cycles (headless where possible); write guidance into the design doc. [H]
-- [ ] Constant-folding check for disabled channels. [H]
+- [x] Cage object support (selected-to-active). [H]
+- [x] Float image buffers for masks and baked maps (height images are user-picked). [H]
+- [x] Performance measurement: compile time and render time for 5, 20, 50 layer stacks, EEVEE and Cycles (`tests/perf_stack.py`); guidance is in the design doc. [H]
+- [x] Constant-folding check for disabled channels: folds in EEVEE. [H]
+- [ ] Follow-up: stack build cost is quadratic in Python (50 procedural layers with masks take 240 s through the operators; each operator rebuilds everything). Profile and make Add Layer/Add Mask/source changes incremental. [H]
+- [ ] **Milestone checklist** [G]: Cage and Float controls in the Bake panel, a cage bake on a real high-poly.
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 4, adjustments and filters:** adjustment layers, filter stack on layer/mask, live adjustment set (levels, HSV, balance, curves, invert, gradient map, threshold), mask levels/curves, mask stack blend modes.

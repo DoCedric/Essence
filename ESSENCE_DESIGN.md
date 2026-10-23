@@ -345,7 +345,7 @@ Substance's bakers, mapped to Cycles and emission-override tricks. All result im
 | Bent normals | Cycles with custom shader | ⬜ | P3 |
 | Opacity (from alpha geometry) | Emission override | ⬜ | P3 |
 | Baked **diffuse/color** (Cycles DIFFUSE, color only) for transferring vertex colors or textures high to low | Cycles bake | ⬜ | P2 |
-| **Cage** object support | Cycles `use_cage`, `cage_object` | ⬜ | **P0** (high to low quality) |
+| **Cage** object support | Cycles `use_cage`, `cage_object`; a Cage field next to High Poly replaces the extrusion offset and ray distance limit | ✅ verified headless | |
 | Match by name (`_low` / `_high` suffix) as an alternative to a High Poly collection | Collection or name pairing | ⬜ | P2 |
 | **Baking groups** (sets of objects and bake settings) | Scene collection of bake settings | ⬜ | P1 |
 | Multi-object bake into one texture set (shared UV) | Cycles bake to one image | 🟡 one image per object today | P1 |
@@ -370,7 +370,7 @@ Painting is Blender's Texture Paint. Essence only chooses the target image and c
 | Symmetry, stencil/texture masks, projection paint, clone, smudge, fill, blur | Native Texture Paint tools | native | |
 | Paint with material (paint a fill layer's mask) | Fill + mask, see B2 | ✅ | |
 | **Paint-through / stencil projection from camera** | Native Texture Paint stencil | native | |
-| Paint on float images for height (no banding) | Create masks and height images as float buffers | ⬜ | **P0** (height, brightness/contrast on 8-bit masks bands) |
+| Paint on float images for height (no banding) | New paint masks and baked maps are float buffers (baked maps have a Float toggle). Height images are picked by the user, so their format is theirs | ✅ masks and bakes | |
 | **Viewport channel solo**: view Color, Roughness, Metallic, Height, Normal, AO, a mask, or any layer's output alone | An "Essence View" switch node group in front of the Material Output (Emission of the chosen socket) | ⬜ | **P1** |
 | Viewport isolate layer ("show only this layer") | same switch | ⬜ | P2 |
 | Texture set / material list with resolution per set | Material slots + per-material essence settings | ⬜ | P1 |
@@ -420,12 +420,12 @@ Blender evaluates the whole material per pixel, so very deep stacks cost shader 
 
 | Feature | Blender infra | Status | Pri |
 |---|---|---|---|
-| **Measure** compile time and viewport cost of a 5, 20, 50-layer stack (decide guidance) | EEVEE and Cycles timing | ⬜ | **P0** |
+| **Measure** compile time and viewport cost of a 5, 20, 50-layer stack (decide guidance) | EEVEE and Cycles timing, `tests/perf_stack.py` | ✅ see "Performance guidance" below | |
 | Only generate enabled channels (smaller groups) | Per-material channel list | ⬜ | P0 / P1 |
 | **Freeze layer / folder / whole stack to image** (bake the result of a layer or folder to images, swap in an Image Texture, keep the live version for unfreezing). The main remedy for procedural-heavy stacks, since procedurals are evaluated live per shading point (see B6, Procedural cost). Deliberately later: not needed until stacks get heavy. | Emission bake (as export already does) | ⬜ | **P1** (late in the tier) **Status:** a first version (bake the stack up to a layer or folder, frozen entries leave the chain) was built and removed again after its first GUI test went wrong; it is in git history (commit 8702a97). The underlying problem is real: adding a layer to a 14-layer stack took about 7 seconds to recompile, because Blender recompiles the whole material on any structural change and the Bump node evaluates its height network three times. Options still open: freeze (retry), a pause-live-updates toggle, a lighter per-layer shader. |
 | Draft mode: lower texture resolution, disable heavy generators | Image scale + group toggle | ⬜ | P3 |
 | Disabled layers do not compile (muted nodes, `mute`) | Node mute | ⬜ | P1 |
-| Constant-folding check (are disabled-channel Math nodes with constant inputs free?) | Verify in EEVEE/Cycles | ⬜ | P1 |
+| Constant-folding check (are disabled-channel Math nodes with constant inputs free?) | Verify in EEVEE/Cycles | ✅ yes in EEVEE, see below | |
 | Group version migration, rebuild | ✅ | |
 | Python-free runtime: the generated material works without the addon installed | Principle 2 | ✅ | |
 
@@ -465,8 +465,8 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 5. **Blend mode per channel** (dropdown per channel, one group variant per combination, see B3). ✅
 6. **Channels beyond four**: Alpha, Emission and the channel list per material. ✅ (Normal became the Normal mesh map slot instead of a channel.)
 7. **Per-row eye toggle for layers and folders**; blend mode and opacity shown on the active layer. ✅
-8. **Cage support and float image buffers** for baking and for height/mask images. ⬜
-9. **Measure performance** of deep stacks and set guidance. ⬜
+8. **Cage support and float image buffers** for baking and for height/mask images. ✅
+9. **Measure performance** of deep stacks and set guidance. ✅ (see Performance guidance)
 
 ### P1 Core (the "full workflow" line)
 10. **Adjustment layers and filter stack**: levels, HSV, color balance, curves, invert, gradient map, threshold, channel mix. ⬜
@@ -533,6 +533,8 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 - Bake: AO, World Gradient (cube and zero-height plane), Normal (world, tangent), settings restored afterwards, tangent bake wires Normal Map into Bump into BSDF, high-to-low normal bake with a High Poly collection (tilted plane leaves the expected mark, high-poly is not a target).
 - Export (Unity HDRP, EXR): BaseMap, MaskMap (R metallic, G white without AO, B white, A smoothness) and Normal values, temp images and nodes cleaned up, and the exported normal equals the baked normal when layer height is zero.
 
+- Cage: a high-poly 0.5 above a low-poly is missed with the automatic extrusion and captured (correct tilted world normal) once a cage plane sits above it; bake settings are restored. Float buffers: bakes and new paint masks are float, switching the Float toggle keeps the image name and its users.
+
 **Still to confirm in the GUI (milestone checklist):**
 - `template_ID_preview(..., open="image.open")`, and the layer-row thumbnail via `preview_ensure`.
 - Panels, bake panel flow, Texture Paint entry and exit, normal orientation judged by eye (no flipped green) on a real high-poly.
@@ -543,7 +545,23 @@ Researched but not confirmed against the Blender 5.2 documentation:
 - That a Bump node evaluates its Height input multiple times per shading point in both Cycles and EEVEE (basis for "one Bump node at the end"). Test by comparing render time of a per-layer Bump chain versus one Bump node.
 - Whether a UIList supports drag reordering in 5.2, and what the asset shelf API allows an addon to register (for the library and smart materials).
 - Compositor access from an addon in 5.2 (Open Question 8), UDIM bake support, and whether constant-input Math/Mix nodes are folded away when compiling the GPU shader (disabled channels free or not).
-- That Cycles `cage_object` and `use_cage` behave as expected with the selected-to-active setup Essence uses.
+
+## Performance guidance
+
+Measured with `tests/perf_stack.py` (Blender 5.2.2, Windows, Cycles CPU and EEVEE headless, 1 plane). "Procedural" layers have Noise sources on Color, Bump and Roughness plus a Noise mask; "plain" layers only hold values. Times are seconds.
+
+| Stack | Cycles render (512 px, 8 spp) | EEVEE shader compile, first render | EEVEE compile after adding one layer |
+|---|---|---|---|
+| 5 plain / 20 plain / 50 plain | 0.15 / 0.15 / 0.16 | 2.9 / ~0.3 / ~0.4 (constant values fold away) | ~0.3 |
+| 5 procedural | 0.3 | about 3 | about 2.5 |
+| 20 procedural | 0.32 | about 19 | about 8 |
+| 50 procedural | 0.41 | 73 | 24 |
+
+- **Cycles on CPU is not the problem.** Render time barely grows with depth (SVM has no compile step). The cost is EEVEE's GPU shader compile, which grows steeply with the number of procedural nodes and recompiles the whole material on every structural change (adding, removing or reordering a layer, switching a source).
+- **Practical limit:** about 10 procedural layers stays comfortable (a few seconds per edit); 20 is tolerable; 50 is not (24 s per edit). Plain value layers are almost free. Guidance for users: keep procedural sources to the layers that need them, and use image sources for the rest. Freeze to image and a pause-live-updates toggle remain the planned remedies.
+- **Constant folding works for disabled content.** With all channel Enables switched off, or a layer's Visible off, 20 procedural layers compile in 2 to 3 s (versus about 19 s enabled), so switched-off layers and channels are effectively free in EEVEE. No node muting is needed for that. (EEVEE timings are only comparable within one run: Blender caches compiled shaders between runs.)
+- **Open: stack build cost in Python.** Adding layers one at a time through the operators grows roughly quadratically: 20 procedural layers with a mask each take about 15 s, 50 take about 240 s (plain layers: 0.5 s and 10 s). Each operator rebuilds the whole stack. Not fixed yet; see the Sprint 3 follow-up in the roadmap.
+- The per-layer Bump node cost (the Bump node evaluating its height network several times) was not isolated separately.
 
 ## Sources
 - [Artistant addon](https://github.com/Cedricvdk/Artistant) (bake pipeline, thumbnails and bake panel layout that Essence's baking is ported from)
