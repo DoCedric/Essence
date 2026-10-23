@@ -139,12 +139,15 @@ def _filter_icon(mat, item):
     return 'STRIP_COLOR_01'
 
 
-def _entry_row(layout, mat, item, active, add_mask=False):
-    """One entry of the tree view: its icon, a button that selects it (pressed while it is the
-    active one) and its eye toggle."""
+def _entry_row(layout, mat, item, active, add_mask=False, foldable=False):
+    """One entry of the tree view: a fold triangle when something hangs under it, its icon, a
+    button that selects it (pressed while it is the active one) and its eye toggle."""
     tree = mat.node_tree
     node = tree.nodes.get(item.node_name) if tree is not None else None
     row = layout.row(align=True)
+    if foldable:
+        row.prop(item, "collapsed", text="", emboss=False,
+                 icon='TRIA_RIGHT' if item.collapsed else 'TRIA_DOWN')
     toggle = None
     if item.kind == 'LAYER':
         color = node.inputs.get("Color B") if node is not None else None
@@ -197,16 +200,27 @@ def _tree(layout, mat):
         else:
             roots.append(e)
 
-    def draw_items(col, owner):
+    def draw_items(col, owner, hidden=False):
+        if hidden:
+            return
         for it in reversed(items.get(owner.uid, [])):
             row = col.row()
             row.separator(factor=1.5)
             _entry_row(row, mat, it, it.uid == active)
 
-    def draw_masks(col, owner):
+    def draw_masks(col, owner, hidden=False):
         for m in reversed(masks.get(owner.uid, [])):
             _entry_row(col, mat, m, m.uid == active)
-            draw_items(col, m)
+            draw_items(col, m, hidden)
+
+    def mask_items(owner):
+        return any(items.get(m.uid) for m in masks.get(owner.uid, []))
+
+    def foldable(e):
+        """Something hangs under it that the triangle can hide."""
+        if e.kind == 'FOLDER':
+            return bool(kids.get(e.uid)) or mask_items(e)
+        return bool(items.get(e.uid)) or mask_items(e)
 
     def draw_layer(col, e):
         box = col.box()
@@ -215,21 +229,22 @@ def _tree(layout, mat):
             left, right = split.column(align=True), split.column(align=True)
         else:
             left, right = box.column(align=True), None
-        _entry_row(left, mat, e, e.uid == active, add_mask=right is None)
-        draw_items(left, e)
+        _entry_row(left, mat, e, e.uid == active, add_mask=right is None, foldable=foldable(e))
+        draw_items(left, e, e.collapsed)
         if right is not None:
-            draw_masks(right, e)
+            draw_masks(right, e, e.collapsed)
 
     def draw_folder(col, e):
         box = col.box()
         if masks.get(e.uid):  # like a layer: the folder on the left, its masks on the right
             split = box.split(factor=0.5)
             left, right = split.column(align=True), split.column(align=True)
-            draw_masks(right, e)
+            draw_masks(right, e, e.collapsed)
         else:
             left = box.column(align=True)
-        _entry_row(left, mat, e, e.uid == active, add_mask=not masks.get(e.uid))
-        for child in reversed(kids.get(e.uid, [])):
+        _entry_row(left, mat, e, e.uid == active, add_mask=not masks.get(e.uid),
+                   foldable=foldable(e))
+        for child in ([] if e.collapsed else reversed(kids.get(e.uid, []))):
             row = box.split(factor=0.04)
             row.label(text="")
             draw_layer(row.column(), child)

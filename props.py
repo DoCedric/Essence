@@ -142,6 +142,9 @@ class EssenceLayer(bpy.types.PropertyGroup):
     Masks (kind MASK) point at the layer or folder that owns them; their `node_name` is the
     mask group node and `mask_node_name` the image node. See stack.py."""
     name: StringProperty(name="Name", update=_name_update)
+    collapsed: BoolProperty(name="Collapsed", default=False,
+                            description="Hide what is under this entry in the tree view: a "
+                                        "folder's layers, or a layer's and its mask's items")
     kind: EnumProperty(items=[('LAYER', "Layer", ""), ('FOLDER', "Folder", ""),
                               ('MASK', "Mask", ""), ('ADJUSTMENT', "Adjustment", ""),
                               ('FILL', "Fill", ""), ('FILTER', "Filter", "")],

@@ -80,6 +80,7 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [x] Mask fills: a Fill item on a mask (own source, blend Normal (default)/Multiply/Add/Subtract/Darken/Lighten, opacity), items apply in order on the running mask value. Several masks per layer still work until the layout task retires them. [H]
 - [x] The mask's built-in Invert/Brightness/Contrast are gone: they are ordinary adjustment items, so their order against fills and later filters is the user's choice. Mask group version 2. [H]
 - Known cosmetic issue (not fixing: the list is replaced by the mockup layout): items nested deepest in the list (for example under a mask inside a folder) sometimes get an empty line below them, probably from the row width at that indent.
+- [x] Collapsible tree view: a triangle on entries that have something under them (folders hide their layers, layers hide their own and their mask's items). [H]
 - [x] Tree view: layer and mask side by side, each with its item column, built from native widgets (the list stays as the other view). [H] draws; [G] look pending
 - [x] Retire several masks per layer: one mask per layer or folder, further values stacked as fills. Add Mask is unavailable once an owner has a mask. [H]
 - [x] Baked filters, opt-in: Kuwahara, Blur, Sharpen, Dilate/Erode as items on a mask with a Refresh button; one hidden packed image per item, deleted with it. [H]
@@ -93,6 +94,6 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - **Sprint 5, generators and assets:** Essence asset library (catalogs), noise/gradient/grunge assets, smart masks consuming baked maps.
 - **Sprint 6, mesh maps:** curvature, position, thickness, ID maps, height from mesh, baking groups, multi-object bake.
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
-- **Sprint 8, painting and viewport:** paint layers, channel/mask/layer solo, texture set settings.
+- **Sprint 8, painting and viewport:** paint layers, paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), channel/mask/layer solo, texture set settings.
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material.
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**

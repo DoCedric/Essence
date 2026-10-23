@@ -306,7 +306,7 @@ Float channels (roughness, metallic, height) use the same modes through the Mix 
 | Folder opacity | ⬜ | P1 |
 | Folder blend mode (Normal vs Passthrough only; arbitrary blend modes per folder are P3) | ⬜ | P1 / P3 |
 | Per-channel enable on folders | ⬜ | P3 |
-| Folder collapse / expand in the list | ⬜ | P2 |
+| Folder collapse / expand in the tree view (a triangle on entries that have something under them; a folder hides its layers, a layer hides its own and its mask's items; stored per entry, defaults to expanded) | ✅ | |
 | **Smart material** = a folder (with its masks and layers) saved as an asset and dropped onto an object | Node-group-based assets + Asset Browser; operator to instantiate | O | ⬜ | P1 |
 
 ### B6. Generators, procedurals and the asset library
@@ -391,6 +391,7 @@ Painting is Blender's Texture Paint. Essence only chooses the target image and c
 | Paint a mask | Texture Paint, active image node | ✅ (untested) | |
 | **Enter paint automatically on selecting a mask** | Selection callback (Open Question 1) | ⬜ | P2 |
 | **Paint a layer channel directly** (paint layer) | Active paint slot per channel image | ⬜ | P1 |
+| **Fill (bucket) modes** for painting a mask: **Full** (the whole image, today's Fill tool), **Mesh** (only the geometry connected to the one under the cursor, like L in Edit Mode), **UV island** (the island under the cursor) and **Face** (the face under the cursor). Built on the native Fill tool and Blender's own face-selection paint masking: Essence only selects the faces for the mode (linked pick, UV island select, a single face) and lets the native tool fill inside the mask, then restores the user's selection. No own fill algorithm | Texture Paint Fill tool + `Mesh.use_paint_mask` + face selection | O | ⬜ | P1 |
 | Brush library: soft, hard, noise, stencils, textures | Blender brush assets (native), no Essence brushes | native | |
 | Symmetry, stencil/texture masks, projection paint, clone, smudge, fill, blur | Native Texture Paint tools | native | |
 | Paint with material (paint a fill layer's mask) | Fill + mask, see B2 | ✅ | |
