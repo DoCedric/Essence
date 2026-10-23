@@ -401,6 +401,7 @@ Painting is Blender's Texture Paint. Essence only chooses the target image and c
 | Paint on float images for height (no banding) | New paint masks and baked maps are float buffers (baked maps have a Float toggle). Height images are picked by the user, so their format is theirs | ✅ masks and bakes | |
 | **Viewport channel solo**: view Color, Roughness, Metallic, Height, Normal, AO, a mask, or any layer's output alone | An "Essence View" switch node group in front of the Material Output (Emission of the chosen socket) | ⬜ | **P1** |
 | Viewport isolate layer ("show only this layer") | same switch | ⬜ | P2 |
+| **Preview a mask or layer by alt-clicking its thumbnail** in the tree view: the viewport shows that mask (or the layer's output) on its own, alt-click again to return. Another entry point to the same "Essence View" switch node group as the channel solo, so no extra shader machinery | same switch | O | ⬜ | P1 |
 | Texture set / material list with resolution per set | Material slots + per-material essence settings | ⬜ | P1 |
 | Lookdev: HDRI, lights, matcap, Material Preview, Cycles | Native | native | |
 | View transform warning (Standard is accurate for texturing; AgX/Filmic shift colors) | Info label | ⬜ | P4 |
