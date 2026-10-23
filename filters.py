@@ -384,7 +384,8 @@ def tick(context=None):
     """Called by a timer. Marks nothing itself: a filter is stale when its signature differs
     from the one it was baked with. With Auto Refresh on, a stale filter is refreshed once its
     signature stopped changing for a whole tick (so dragging a slider does not bake on every
-    step) and the object is in Object Mode (a bake would pull it out of Texture Paint).
+    step) and the object is in Object Mode or Texture Paint (the bake leaves the mode for a
+    moment and goes back; Edit Mode and the others wait).
     Leaving Texture Paint marks every filter of the material stale, since painting changes
     pixels no signature can see. Returns the delay until the next tick."""
     context = context or bpy.context
@@ -408,7 +409,7 @@ def tick(context=None):
         settled = _seen.get(key) == sig
         _seen[key] = sig
         if (e.get("essence_sig", "") != sig and settled and e.filter_auto and e.adj_enabled
-                and ob.mode == 'OBJECT'):
+                and ob.mode in ('OBJECT', 'TEXTURE_PAINT')):
             uid = e.uid
             try:
                 refresh_entry(context, ob, mat, e)
