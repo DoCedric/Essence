@@ -584,6 +584,10 @@ class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
             if n is not None and n.node_tree is not group:
                 n.node_tree = group
         nodes.rebuild_stack(mat)
+        for e in list(mat.essence.layers):   # re-wire the sources, adjustments, fills, filters
+            if e.kind in ('LAYER', 'MASK'):
+                sources.apply_owner(mat, e)
+        nodes.rebuild_stack(mat)
         return {'FINISHED'}
 
 

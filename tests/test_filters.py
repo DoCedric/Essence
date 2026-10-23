@@ -141,3 +141,14 @@ def test_filter_panel_and_rows_draw(addon):
         check(any(c[0] == "operator" and c[1][0] == "essence.filter_apply" for c in log),
               f"{t.id}: no Apply button")
         _draw(ui._stack, ob)
+
+
+def test_filter_result_repeats_across_uv_tiles(addon):
+    ob, mat, top, mask_uid, img = _setup()
+    f = _add_filter(mat, mask_uid, 'BLUR')
+    tex = addon.sources.source_nodes(mat.node_tree, f, 'ADJ')['OUT']
+    check(tex.extension == 'REPEAT', f"the filter result must repeat, not {tex.extension}")
+    tex.extension = 'EXTEND'                       # a stale node from an earlier version
+    bpy.ops.essence.rebuild()
+    check(addon.sources.source_nodes(mat.node_tree, f, 'ADJ')['OUT'].extension == 'REPEAT',
+          "a rebuild must put it back to repeat")

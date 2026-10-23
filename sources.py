@@ -309,8 +309,10 @@ def _chain_filter(tree, a, out):
         tex[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
         tex[ROLE_KEY] = 'OUT'
         tex.interpolation = 'Linear'
-        tex.extension = 'EXTEND'
         tex.width = 240
+    # Repeat, like every other texture: islands moved to another UV tile show the same
+    # filtered result as the island in the 0-1 tile.
+    tex.extension = 'REPEAT'
     tex.label = f"{a.name} (baked)"
     img = bpy.data.images.get(adjustments.FILTER_IMAGE_PREFIX + a.uid)
     if img is not None and tex.image is not img:
