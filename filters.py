@@ -20,6 +20,7 @@ import hashlib
 import os
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -131,6 +132,7 @@ class _BakeState:
         self.active = c.view_layer.objects.active
         self.engine = c.scene.render.engine
         self.samples = c.scene.cycles.samples
+        self.device = c.scene.cycles.device
         self.bake = c.scene.render.bake
         self.saved = {a: getattr(self.bake, a) for a in _BAKE_ATTRS}
         bpy.ops.object.select_all(action='DESELECT')
@@ -138,6 +140,9 @@ class _BakeState:
         c.view_layer.objects.active = self.obj
         c.scene.render.engine = 'CYCLES'
         c.scene.cycles.samples = 1
+        # CPU: one sample of an emission bake is quick, and it keeps the GPU (and whatever the
+        # viewport is doing with it) out of this.
+        c.scene.cycles.device = 'CPU'
         self.bake.target = 'IMAGE_TEXTURES'
         self.bake.use_selected_to_active = False
         self.bake.margin = c.scene.essence_bake_margin
@@ -147,6 +152,7 @@ class _BakeState:
         c = self.context
         c.scene.render.engine = self.engine
         c.scene.cycles.samples = self.samples
+        c.scene.cycles.device = self.device
         for a, v in self.saved.items():
             setattr(self.bake, a, v)
         bpy.ops.object.select_all(action='DESELECT')
@@ -206,7 +212,13 @@ def run_compositor(entry, image):
         w, h = image.size
         r = scene.render
         r.resolution_x, r.resolution_y, r.resolution_percentage = w, h, 100
-        r.engine = 'BLENDER_WORKBENCH'
+        # The compositor is the only thing that matters in this scene. No GPU anywhere: a
+        # Workbench render and the GPU compositor hung Blender in the GUI once.
+        r.engine = 'CYCLES'
+        scene.cycles.device = 'CPU'
+        scene.cycles.samples = 1
+        r.compositor_device = 'CPU'
+        r.compositor_precision = 'FULL'
         r.image_settings.file_format = 'OPEN_EXR'
         r.image_settings.color_depth = '32'
         r.filepath = os.path.join(folder, "out.exr")
@@ -364,11 +376,18 @@ def apply_entry(context, ob, mat, entry):
     size = int(entry.filter_resolution)
     uid, in_name = entry.uid, node_in.name
     sig = signature(mat, entry)   # of the state that is about to be baked
+    # Progress goes to the system console, so a hang shows where it stopped.
+    t0 = time.perf_counter()
+    print(f"Essence: filter '{entry.name}' ({entry.filter_type}): baking {size} px ...",
+          flush=True)
     image = bake_value(context, ob, mat, lambda t: t.nodes[in_name].outputs[0], size)
+    print(f"Essence: baked in {time.perf_counter() - t0:.1f} s, running the compositor ...",
+          flush=True)
     try:
         result = run_compositor(entry, image)
     finally:
         bpy.data.images.remove(image)
+    print(f"Essence: filter done in {time.perf_counter() - t0:.1f} s", flush=True)
     entry = next(e for e in mat.essence.layers if e.uid == uid)
     store_result(entry, result)
     entry["essence_sig"] = sig
