@@ -45,3 +45,20 @@ def test_mask_button_selects_the_owner_before_the_menu(addon):
     bpy.ops.essence.add_mask(source='PAINT', fill='BLACK')
     masks = [e for e in mat.essence.layers if e.kind == 'MASK']
     check(len(masks) == 1 and masks[0].parent == uid, "mask went to the wrong layer")
+
+
+def test_rebuild_with_every_kind_of_entry(addon):
+    """Rebuild Links must cope with fills, adjustments and filters (they have no group node)."""
+    ob = make_plane()
+    bpy.ops.essence.add_layer()
+    bpy.ops.essence.add_folder()
+    bpy.ops.essence.add_layer()
+    bpy.ops.essence.add_mask(source='PAINT', fill='WHITE', size=64)
+    bpy.ops.essence.add_fill()
+    bpy.ops.essence.add_adjustment(adj_type='INVERT')
+    bpy.ops.essence.add_filter(filter_type='BLUR')
+    mat = ob.active_material
+    kinds = {e.kind for e in mat.essence.layers}
+    check({'LAYER', 'FOLDER', 'MASK', 'FILL', 'ADJUSTMENT', 'FILTER'} <= kinds, f"setup {kinds}")
+    check(bpy.ops.essence.rebuild() == {'FINISHED'}, "rebuild failed")
+    check(bpy.ops.essence.rebuild() == {'FINISHED'}, "second rebuild failed")

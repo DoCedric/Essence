@@ -577,6 +577,8 @@ class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
         if mat is None or mat.node_tree is None:
             return {'CANCELLED'}
         for e in mat.essence.layers:
+            if e.kind not in ('LAYER', 'FOLDER', 'MASK'):  # items have no group node
+                continue
             n = mat.node_tree.nodes.get(e.node_name)
             group = nodes.group_for(mat, e)
             if n is not None and n.node_tree is not group:
