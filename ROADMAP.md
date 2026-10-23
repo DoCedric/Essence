@@ -68,11 +68,24 @@ Added after the Sprint 2 GUI check.
 - [x] Follow-up: stack build cost was cubic in Python (50 procedural layers with masks took 242 s). Rebuild now skips unchanged links and indexes links and source nodes once: 29 s, and 0.9 s for 50 plain layers. [H]
 - [x] **Milestone checklist** [G] (confirmed by the user): Cage, Float and Anti-aliasing controls in the Bake panel, AO Strength slider (bake AO, then drag Strength and compare the viewport), a cage bake on a real high-poly.
 
+## Sprint 4: Adjustments (`sprint-4-adjustments`)
+Goal: live adjustments that transform the content of a layer channel or of a mask, as stack items under their owner (the mockup: a layer and its mask each have a small stack of items). Baked and compositor filters (Kuwahara, blur, ...) are **not** in this sprint (feasibility is verified, see Open Question 8). Decided with the user: adjustments act on the owner's own input (the fill of a channel, or the mask value) before it is blended, not on what is below; one channel per adjustment item; one mask per layer is the eventual structure (not this sprint, but nothing here may assume several masks).
+
+- [x] Feasibility of compositor filters from an addon (Kuwahara through a throwaway scene). [H]
+- [ ] Data: an `ADJUSTMENT` entry kind owned by a layer or a mask (`parent`), with type, channel, enabled. `stack.Tree` orders them directly below their owner (layer items above its masks in the list, a mask's items under that mask). Removing an owner removes its items; items reorder among their siblings. [H]
+- [ ] Nodes: an item is a small tagged node chain (main node plus an Opacity mix) inserted between the source and the blend (layer channel) or between the source and the mask group (mask). A Value source gets a constant node to adjust. Rebuild keeps hand edits. [H]
+- [ ] Live adjustment set: Levels, Hue/Saturation/Value, Brightness/Contrast, Color Balance, RGB Curves, Invert, Gamma, Gradient Map, Threshold. [H] (values checked against baked pixels)
+- [ ] Operators: Add Adjustment (menu on the selected layer or mask), remove, move within the owner, eye toggle. [H]
+- [ ] Panel rows: items indented under their owner in the Layers list; an adjustment properties panel (type, channel, opacity, the node's own controls, the curve widget). [G]
+- [ ] Mask Invert/Brightness/Contrast stay as they are for now; fold them into items later.
+- [ ] Mockup layout: layer and mask side by side, each with its item column, built from native widgets instead of a UIList. A separate task, judged in the GUI. [G]
+- [ ] **Milestone checklist** [G].
+
 ## Later sprints (outline, to be detailed)
-- **Sprint 4, adjustments and filters:** adjustment layers, filter stack on layer/mask, live adjustment set (levels, HSV, balance, curves, invert, gradient map, threshold), mask levels/curves, mask stack blend modes.
+- **Sprint 4b, baked filters:** compositor filters on image sources and masks (Kuwahara first, then blur, sharpen, dilate/erode), an explicit Refresh; mask levels/curves and mask stack blend modes.
 - **Sprint 5, generators and assets:** Essence asset library (catalogs), noise/gradient/grunge assets, smart masks consuming baked maps.
 - **Sprint 6, mesh maps:** curvature, position, thickness, ID maps, height from mesh, baking groups, multi-object bake.
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
 - **Sprint 8, painting and viewport:** paint layers, channel/mask/layer solo, texture set settings.
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material.
-- **Sprint 10, remaining blend modes, specular/AO channels, freeze to image (late), then P2 and below per the design doc.**
+- **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
