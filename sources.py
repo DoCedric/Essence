@@ -13,6 +13,7 @@ here is hidden: the user can edit, replace or extend these nodes in the node edi
 
 import bpy
 
+from . import adjustments
 from .channels import CHANNELS, SOURCE_BY_ID, active_channels
 
 SRC_KEY = "essence_source"
@@ -216,10 +217,14 @@ def cleanup(tree, live_uids):
 # Building a channel's source
 # --------------------------------------------------------------------------
 
-def _wanted(src, ch):
-    """{role: node idname} the source needs, in chain order."""
+def _wanted(src, ch, adjusted=False):
+    """{role: node idname} the source needs, in chain order. A Value source only has nodes
+    when an adjustment needs something to adjust: a constant (CONST) in the channel's type."""
     if src.kind == 'VALUE':
-        return {}
+        if not adjusted:
+            return {}
+        return {'CONST': 'ShaderNodeValue' if ch.socket_type == 'NodeSocketFloat'
+                else 'ShaderNodeRGB'}
     roles = {'COORD': 'ShaderNodeTexCoord', 'MAPPING': 'ShaderNodeMapping'}
     roles['TEXTURE'] = 'ShaderNodeTexImage' if src.kind == 'IMAGE' else 'ShaderNodeGroup'
     if ch.socket_type == 'NodeSocketFloat':
@@ -232,6 +237,62 @@ def _wanted(src, ch):
 def _clear_links(tree, sock):
     for l in list(sock.links):
         tree.links.remove(l)
+
+
+def apply_owner(mat, owner):
+    """Re-apply the sources of a layer (every channel) or a mask, after its adjustments
+    changed."""
+    if owner.kind == 'MASK':
+        apply(mat, owner, 'MASK')
+    elif owner.kind == 'LAYER':
+        for ch in CHANNELS:
+            apply(mat, owner, ch.id)
+
+
+def adjustment_entries(mat, owner_uid, ch_id):
+    """The adjustments of an owner for one channel (all of a mask's), bottom-to-top."""
+    return [a for a in mat.essence.layers if a.kind == 'ADJUSTMENT' and a.parent == owner_uid
+            and (ch_id == 'MASK' or a.adj_channel == ch_id)]
+
+
+def _chain(tree, adjs, out):
+    """Create or update the nodes of `adjs` and wire the enabled ones in series after `out`
+    (None: nothing to feed, so every adjustment stays unlinked). Returns the new end."""
+    for a in adjs:
+        t = adjustments.BY_ID[a.adj_type]
+        have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)
+        main = have.get('MAIN')
+        if main is not None and (main.bl_idname != t.idname
+                                 or (t.id == 'LEVELS' and main.node_tree is not
+                                     adjustments.levels_group())
+                                 or main.get('essence_adj_type') != t.id):
+            tree.nodes.remove(main)
+            main = None
+        if main is None:
+            main = adjustments.new_main(tree, t)
+            main[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
+            main[ROLE_KEY] = 'MAIN'
+            main['essence_adj_type'] = t.id
+            main.width = 240
+            main.label = f"{a.name}"
+        mix = have.get('MIX')
+        if mix is None:
+            mix = adjustments.new_mix(tree)
+            mix[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
+            mix[ROLE_KEY] = 'MIX'
+            mix.width = 240
+        mix.label = f"{a.name} Opacity"
+        a_in = adjustments.mix_socket(mix, "A_Color")
+        b_in = adjustments.mix_socket(mix, "B_Color")
+        main_in = main.inputs[t.input]
+        for sock in (a_in, b_in, main_in):
+            _clear_links(tree, sock)
+        if out is not None and a.adj_enabled:
+            tree.links.new(out, main_in)
+            tree.links.new(out, a_in)
+            tree.links.new(main.outputs[t.output], b_in)
+            out = adjustments.mix_output(mix)
+    return out
 
 
 def _discard(tree, node, src):
@@ -258,12 +319,16 @@ def apply(mat, entry, ch_id):
     if not is_mask and ch_id not in {c.id for c in active_channels(mat)}:
         remove_nodes(tree, entry.uid, ch_id)  # a switched-off channel has no source nodes
         return
-    wanted = _wanted(src, ch)
+    adjs = adjustment_entries(mat, entry.uid, ch_id)
+    wanted = _wanted(src, ch, any(a.adj_enabled for a in adjs))
     have = source_nodes(tree, entry.uid, ch_id)
 
     switched = False
+    b_in = layer_node.inputs["Value" if is_mask else f"{ch.label} B"]
     for role, node in list(have.items()):
         if role not in wanted or node.bl_idname != wanted[role]:
+            if role == 'CONST':  # the value goes back to the socket it was adjusting
+                b_in.default_value = node.outputs[0].default_value
             _discard(tree, node, src)
             del have[role]
             switched = True
@@ -273,8 +338,11 @@ def apply(mat, entry, ch_id):
             if role in have:
                 tree.nodes.remove(have.pop(role))
 
-    b_in = layer_node.inputs["Value" if is_mask else f"{ch.label} B"]
     if not wanted:
+        for l in list(b_in.links):  # a leftover link from an adjustment chain
+            if SRC_KEY in l.from_node:
+                tree.links.remove(l)
+        _chain(tree, adjs, None)
         if is_mask:
             entry.mask_node_name = ""
         return
@@ -305,6 +373,21 @@ def apply(mat, entry, ch_id):
             els = n.color_ramp.elements
             els[0].color = (0.0, 0.0, 0.0, 1.0)
             els[1].color = ch.ramp_color or ch.default
+        elif role == 'CONST':
+            n.outputs[0].default_value = (tuple(b_in.default_value)
+                                          if ch.socket_type != 'NodeSocketFloat'
+                                          else b_in.default_value)
+
+    if src.kind == 'VALUE':  # only here with an adjustment to feed
+        out = _chain(tree, adjs, have['CONST'].outputs[0])
+        _clear_links(tree, b_in)
+        links = tree.links
+        links.new(out, b_in)
+        if is_mask:
+            entry.mask_node_name = ""
+        else:
+            layout(tree, entry, layer_node)
+        return
 
     tex = have['TEXTURE']
     if src.kind == 'PROCEDURAL' and tex.node_tree is not ensure_proc_group(src.proc_type):
@@ -333,6 +416,7 @@ def apply(mat, entry, ch_id):
         _clear_links(tree, have['RAMP'].inputs['Fac'])
         links.new(out, have['RAMP'].inputs['Fac'])
         out = have['RAMP'].outputs['Color']
+    out = _chain(tree, adjs, out)
     _clear_links(tree, b_in)
     links.new(out, b_in)
     if is_mask:
@@ -341,12 +425,28 @@ def apply(mat, entry, ch_id):
         layout(tree, entry, layer_node)
 
 
-_ROLE_ORDER = ('COORD', 'MAPPING', 'TEXTURE', 'REMAP', 'RAMP')
-_STEP = {'COORD': 230, 'MAPPING': 330, 'TEXTURE': 330, 'REMAP': 290, 'RAMP': 320}
+_ROLE_ORDER = ('CONST', 'COORD', 'MAPPING', 'TEXTURE', 'REMAP', 'RAMP')
+_STEP = {'CONST': 200, 'COORD': 230, 'MAPPING': 330, 'TEXTURE': 330, 'REMAP': 290,
+         'RAMP': 320, 'MAIN': 330, 'MIX': 250}
 
 
-def layout(tree, entry, layer_node, index=None):
-    """Stack the source nodes of a layer in a column above its layer node."""
+def _place_adjustments(tree, adjs, index, x, y, step):
+    """Stack the nodes of the adjustments `adjs` from (x, y) in direction `step` (+1 up the
+    graph, -1 down). Returns the next free y."""
+    for a in adjs:
+        nodes = (index.get(tag(a.uid, adjustments.ADJ_KEY), {}) if index is not None
+                 else source_nodes(tree, a.uid, adjustments.ADJ_KEY))
+        for role in ('MAIN', 'MIX'):
+            n = nodes.get(role)
+            if n is not None:
+                place(n, x, y)
+                y += step * _STEP[role]
+    return y
+
+
+def layout(tree, entry, layer_node, index=None, adjs=()):
+    """Stack the source nodes of a layer in a column above its layer node. `adjs` are the
+    adjustment entries of the whole stack: each channel's go after that channel's source."""
     x = layer_node.location.x
     y = layer_node.location.y + 480
     for ch in CHANNELS:
@@ -358,11 +458,14 @@ def layout(tree, entry, layer_node, index=None):
                 continue
             place(n, x, y)
             y += _STEP[role]
-        if nodes:
+        mine = [a for a in adjs if a.parent == entry.uid and a.adj_channel == ch.id]
+        if mine:
+            y = _place_adjustments(tree, mine, index, x, y, 1)
+        if nodes or mine:
             y += 60
 
 
-def layout_mask(tree, entry, mask_node, index=None):
+def layout_mask(tree, entry, mask_node, index=None, adjs=()):
     """Stack a mask's source nodes in a column below its mask node. Returns the y where the
     next mask can start."""
     x = mask_node.location.x
@@ -374,6 +477,9 @@ def layout_mask(tree, entry, mask_node, index=None):
         if n is not None:
             place(n, x, y)
             y -= _STEP[role]
+    mine = [a for a in adjs if a.parent == entry.uid]
+    if mine:
+        y = _place_adjustments(tree, mine, index, x, y, -1)
     return y - 80
 
 

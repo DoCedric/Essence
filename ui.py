@@ -1,7 +1,7 @@
 import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
-from . import nodes, sources
+from . import adjustments, nodes, sources
 from .bake import HIGH_MAPS
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
@@ -26,7 +26,7 @@ def _active(mat):
 def _depth(layers, item):
     """Indent level of a list row: folders 0, their layers 1, masks one more than the
     owner."""
-    if item.kind == 'MASK':
+    if item.kind in ('MASK', 'ADJUSTMENT'):
         owner = next((e for e in layers if e.uid == item.parent), None)
         return (_depth(layers, owner) if owner is not None else 0) + 1
     return 1 if item.parent else 0
@@ -40,6 +40,13 @@ class ESSENCE_UL_layers(bpy.types.UIList):
         if depth:
             row.separator(factor=2.0 * depth)
         node = tree.nodes.get(item.node_name) if tree is not None else None
+
+        if item.kind == 'ADJUSTMENT':
+            row.label(text="", icon='MODIFIER')
+            row.prop(item, "name", text="", emboss=False)
+            row.prop(item, "adj_enabled", text="", emboss=False,
+                     icon='HIDE_OFF' if item.adj_enabled else 'HIDE_ON')
+            return
 
         if item.kind == 'MASK':
             img_node = tree.nodes.get(item.mask_node_name) if tree is not None else None
@@ -106,6 +113,7 @@ def _stack(self, context):
     col.operator("essence.add_layer", icon='ADD', text="")
     col.operator("essence.add_folder", icon='NEWFOLDER', text="")
     col.menu("ESSENCE_MT_add_mask", icon='MOD_MASK', text="")
+    col.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER', text="")
     col.operator("essence.remove_layer", icon='REMOVE', text="")
     col.separator()
     col.operator("essence.move_layer", icon='TRIA_UP', text="").direction = 'UP'
@@ -128,6 +136,47 @@ def _mask_poll(cls, context):
         return False
     e, _ = _active(mat)
     return e is not None and e.kind == 'MASK'
+
+
+def _adjustment_poll(cls, context):
+    mat = _mat(context)
+    if mat is None or not mat.essence.layers:
+        return False
+    e, _ = _active(mat)
+    return e is not None and e.kind == 'ADJUSTMENT'
+
+
+def _adjustment(self, context):
+    layout = self.layout
+    mat = _mat(context)
+    e, _ = _active(mat)
+    tree = mat.node_tree
+    owner = next((x for x in mat.essence.layers if x.uid == e.parent), None)
+    layout.prop(e, "name", text="Name")
+    if owner is not None:
+        layout.label(text=f"Adjusts {owner.name}", icon='MODIFIER')
+    layout.prop(e, "adj_type", text="Type")
+    if owner is not None and owner.kind == 'LAYER':
+        layout.prop(e, "adj_channel", text="Channel")
+    layout.prop(e, "adj_enabled", text="Enabled")
+    found = sources.source_nodes(tree, e.uid, adjustments.ADJ_KEY) if tree else {}
+    main, mix = found.get('MAIN'), found.get('MIX')
+    if main is None or mix is None:
+        layout.operator("essence.rebuild", text="Adjustment nodes missing, rebuild",
+                        icon='FILE_REFRESH')
+        return
+    t = adjustments.BY_ID[e.adj_type]
+    layout.prop(adjustments.mix_socket(mix, "Factor_Float"), "default_value",
+                text="Opacity", slider=True)
+    col = layout.column(align=True)
+    for ident, label in t.params:
+        sock = next((s for s in main.inputs if s.identifier == ident), None)
+        if sock is not None:
+            col.prop(sock, "default_value", text=label)
+    if t.widget == 'curve':
+        layout.template_curve_mapping(main, "mapping", type='COLOR')
+    elif t.widget == 'ramp':
+        layout.template_color_ramp(main, "color_ramp")
 
 
 def _mapping(layout, node):
@@ -232,6 +281,8 @@ def _props(self, context):
     n = sum(1 for m in mat.essence.layers if m.kind == 'MASK' and m.parent == e.uid)
     layout.menu("ESSENCE_MT_add_mask", icon='MOD_MASK',
                 text="Add Mask" if n == 0 else f"Add Mask ({n})")
+    if e.kind == 'LAYER':
+        layout.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER')
 
 
 def _mask(self, context):
@@ -260,6 +311,7 @@ def _mask(self, context):
     col.prop(node.inputs[nodes.MASK_INVERT], "default_value", text="Invert", toggle=True)
     col.prop(node.inputs[nodes.MASK_BRIGHTNESS], "default_value", text="Brightness")
     col.prop(node.inputs[nodes.MASK_CONTRAST], "default_value", text="Contrast")
+    layout.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER')
     if context.active_object.mode == 'TEXTURE_PAINT':
         layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
     else:
@@ -372,6 +424,7 @@ _PANELS = (
     ("LAYERS", "Layers", _stack, None),
     ("PROPS", "Layer Properties", _props, _props_poll),
     ("MASK", "Mask Properties", _mask, _mask_poll),
+    ("ADJUSTMENT", "Adjustment Properties", _adjustment, _adjustment_poll),
     ("MAPS", "Mesh Maps", _maps, None),
     ("MATERIAL", "Material", _material, None),
     ("BAKE", "Bake", _bake, None),

@@ -403,7 +403,7 @@ def swap_group(node, ng):
 def refresh_entry(mat, entry):
     """Give a layer or folder the group variant its channel set and blend modes need."""
     node = mat.node_tree.nodes.get(entry.node_name)
-    if node is not None and entry.kind != 'MASK':
+    if node is not None and entry.kind in ('LAYER', 'FOLDER'):
         swap_group(node, group_for(mat, entry))
 
 
@@ -694,7 +694,8 @@ def rebuild_stack(mat):
             sources.ensure_entries(e)
     for e in layers:
         refresh_entry(mat, e)  # the group variant must match the channel set and blend modes
-    entries = [(e, tree.nodes.get(e.node_name)) for e in layers if e.kind != 'MASK']
+    entries = [(e, tree.nodes.get(e.node_name)) for e in layers
+               if e.kind in ('LAYER', 'FOLDER')]
     entries = [(e, n) for e, n in entries if n is not None]
     if not entries:
         apply_ao(mat)
@@ -770,12 +771,13 @@ def rebuild_stack(mat):
         if m.kind == 'MASK' and m.uid and tree.nodes.get(m.node_name) is not None:
             sources.ensure_mask_source(mat, m)
     index = sources.source_index(tree)
+    adjs = [a for a in layers if a.kind == 'ADJUSTMENT']
     _begin_links(tree)
     try:
         for e, node in entries:
-            _link_masks(tree, layers, e, node, index)
+            _link_masks(tree, layers, e, node, index, adjs)
             if e.kind == 'LAYER' and e.uid:
-                sources.layout(tree, e, node, index)
+                sources.layout(tree, e, node, index, adjs)
     finally:
         _end_links()
 
@@ -804,7 +806,7 @@ def refresh_all(mat, changed=()):
     rebuild_stack(mat)
 
 
-def _link_masks(tree, layers, owner, owner_node, index=None):
+def _link_masks(tree, layers, owner, owner_node, index=None, adjs=()):
     """Chain the owner's mask nodes (image -> mask node -> next mask node) into its Mask
     input, and lay them out in a column below the owner."""
     dst = owner_node.inputs[MASK_SOCKET]
@@ -824,7 +826,7 @@ def _link_masks(tree, layers, owner, owner_node, index=None):
         sources.place(node, x, y)
         if m.source.channel == 'MASK':
             # The source nodes (see sources.py) feed Value; they sit below the mask node.
-            y = sources.layout_mask(tree, m, node, index)
+            y = sources.layout_mask(tree, m, node, index, adjs)
         else:
             image = tree.nodes.get(m.mask_node_name) if m.mask_node_name else None
             value_in = node.inputs[MASK_VALUE]

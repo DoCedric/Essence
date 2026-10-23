@@ -1,7 +1,7 @@
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import nodes, sources, stack
+from . import adjustments, nodes, sources, stack
 from .channels import SOURCE_BY_ID
 
 
@@ -30,10 +30,29 @@ def _active_mask(context):
 
 
 def _owner(mat, e):
-    """The layer or folder entry that `e` belongs to (`e` itself if it is not a mask)."""
-    if e.kind != 'MASK':
-        return e
-    return next((x for x in mat.essence.layers if x.uid == e.parent), None)
+    """The layer or folder entry that `e` belongs to (`e` itself if it is not a mask or an
+    adjustment; an adjustment of a mask belongs to that mask's layer)."""
+    while e is not None and e.kind in ('MASK', 'ADJUSTMENT'):
+        e = next((x for x in mat.essence.layers if x.uid == e.parent), None)
+    return e
+
+
+def _adjustment_owner(mat, e):
+    """The layer or mask an adjustment is added to for the active entry `e`: the entry itself
+    when it is a layer or mask, the owner when it is an adjustment, None for a folder."""
+    if e is None:
+        return None
+    if e.kind == 'ADJUSTMENT':
+        e = next((x for x in mat.essence.layers if x.uid == e.parent), None)
+    return e if e is not None and e.kind in ('LAYER', 'MASK') else None
+
+
+def _reapply(mat, owner_uid):
+    """Re-wire the sources of a layer or mask after its adjustments changed."""
+    owner = next((x for x in mat.essence.layers if x.uid == owner_uid), None)
+    if owner is not None:
+        sources.apply_owner(mat, owner)
+    nodes.rebuild_stack(mat)
 
 
 class _Base:
@@ -122,13 +141,16 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
         if e is None:
             return {'CANCELLED'}
         tree = mat.node_tree
+        adjusted = e.parent if e.kind == 'ADJUSTMENT' else ""
         for names in stack.remove_entries(s.layers, e.uid):
             for n in names:
                 node = tree.nodes.get(n) if n else None
                 if node is not None:
                     tree.nodes.remove(node)
         s.active_index = max(0, min(i, len(s.layers) - 1))
-        nodes.rebuild_stack(mat)
+        nodes.rebuild_stack(mat)  # also deletes the removed adjustment's nodes
+        if adjusted:
+            _reapply(mat, adjusted)
         return {'FINISHED'}
 
 
@@ -159,6 +181,8 @@ class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
             return {'CANCELLED'}
         tree.apply()
         nodes.rebuild_stack(mat)
+        if e.kind == 'ADJUSTMENT':
+            _reapply(mat, e.parent)
         s.active_index = tree.index(uid)
         return {'FINISHED'}
 
@@ -218,6 +242,56 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
         nodes.rebuild_stack(mat)
         s.active_index = tree.index(uid)  # selects the mask, which shows its options
         return {'FINISHED'}
+
+
+class ESSENCE_OT_add_adjustment(_Base, bpy.types.Operator):
+    bl_idname = "essence.add_adjustment"
+    bl_label = "Add Adjustment"
+    bl_description = ("Add an adjustment on top of the active layer's or mask's adjustments. "
+                      "It transforms that layer channel's input (or the mask value) before "
+                      "it is blended")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    adj_type: EnumProperty(name="Type", items=adjustments.TYPE_ITEMS)
+
+    @classmethod
+    def poll(cls, context):
+        mat = _material(context)
+        return mat is not None and _adjustment_owner(mat, _active(mat)) is not None
+
+    def execute(self, context):
+        mat = _material(context)
+        s = mat.essence
+        owner = _adjustment_owner(mat, _active(mat))
+        t = adjustments.BY_ID[self.adj_type]
+        owner_uid = owner.uid
+        e = s.layers.add()
+        e.kind = 'ADJUSTMENT'
+        e.uid = uid = stack.new_uid()
+        e.parent = owner_uid
+        e.name = t.label
+        sources.SUSPEND = True  # set up without triggering the update callbacks
+        try:
+            e.adj_type = self.adj_type
+            e.adj_enabled = True
+            e.adj_channel = 'COLOR'
+        finally:
+            sources.SUSPEND = False
+        tree = stack.Tree(s.layers)
+        tree.apply()
+        _reapply(mat, owner_uid)
+        s.active_index = tree.index(uid)
+        return {'FINISHED'}
+
+
+class ESSENCE_MT_add_adjustment(bpy.types.Menu):
+    bl_idname = "ESSENCE_MT_add_adjustment"
+    bl_label = "Add Adjustment"
+
+    def draw(self, context):
+        for t in adjustments.TYPES:
+            op = self.layout.operator("essence.add_adjustment", text=t.label)
+            op.adj_type = t.id
 
 
 class ESSENCE_OT_mask_non_color(_Base, bpy.types.Operator):
@@ -361,7 +435,8 @@ class ESSENCE_MT_add_mask(bpy.types.Menu):
 
 classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
-    ESSENCE_OT_move_layer, ESSENCE_OT_add_mask,
+    ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment,
+    ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,
     ESSENCE_OT_rebuild, ESSENCE_MT_add_mask,

@@ -124,6 +124,15 @@ Color, Roughness, Metallic and Bump (height) are on by default. Alpha and Emissi
 - Blender node groups have no variable number of inputs, so a stack of N layers is N group instances in a chain. This is accepted.
 - **Layer sources** ✅ *(verified headless)*: each channel of a layer has a source, chosen in the Layer Properties panel: **Value** (the B socket), **Image** or **Procedural**. Image and procedural sources are ordinary nodes placed above the layer node and wired into its B input: `Texture Coordinate -> Mapping -> Image Texture or procedural group -> Map Range (float channels) or Color Ramp (color, procedurals) -> B`. They are tagged with custom properties (`essence_source`, `essence_role`) so Essence finds them again, and everything stays editable in the node editor. Float channels get a Min/Max (the Map Range output range; bump images map black = -1, mid grey = 0, white = 1). Images warn when their color space does not suit the channel (sRGB for color, Non-Color for data) and offer a one-click fix. **Projection:** UV, Triplanar (box projection on object coordinates) and Object. **Mapping:** tiling, offset and rotation from the Mapping node. **Procedurals** are wrapped node groups with a uniform interface (`Vector`, their own controls, `Contrast`, output `Fac`): Noise, Voronoi, Wave, Checker, Gradient (shared groups "Essence Proc ...", version 1). A hand-wired link into any B input survives Rebuild and group upgrades.
 
+### Adjustments ✅ *(verified headless, GUI check pending)*
+An **adjustment** is a stack entry (kind `ADJUSTMENT`) owned by a layer or a mask. It transforms the owner's **own content before it is blended**, not what is below it: for a layer, the input of one channel (the fill, whatever the source is), chosen in the item's Channel dropdown (Color by default); for a mask, the mask value. Items of one owner and channel apply bottom-to-top, between the source and the blend:
+
+`source -> adjustment 1 -> adjustment 2 -> ... -> the layer's B input (or the mask group's Value)`
+
+Each item is a few ordinary nodes tagged `essence_source` `<uid>:ADJ`, so it stays hand-editable: a MAIN node (Blender's own Hue/Saturation, Brightness/Contrast, Gamma, Invert, RGB Curves, Color Ramp, Map Range, or the shared group "Essence Adj Levels") and a MIX node that blends original and adjusted by the item's **Opacity**. All of them work on colors; float channels and masks go through Blender's implicit float/color conversion. A Value source (no nodes) gets a constant node to adjust, and hands the value back to the socket when nothing needs it. The eye (`adj_enabled`) keeps the nodes but unlinks them. Live set: Levels, Hue/Saturation/Value (color channels only), Brightness/Contrast, Gamma (Blender's node: value to the power gamma), Invert, Curves, Gradient Map, Threshold. There is no Color Balance because Blender has no shader node for it. Adding a type means adding an entry to `adjustments.TYPES`.
+
+In the Layers list the items sit indented under their owner (a layer's items, then its masks, each mask followed by its items). Add Adjustment is a menu in the list column and in the layer and mask panels; the Adjustment Properties panel shows type, channel, opacity, the node's controls and the curve or gradient widget. The target layout (layer and mask side by side, each with an item column) needs native widgets instead of a `UIList` and is a separate task.
+
 ### Folders ✅
 A folder holds layers and has its own mask stack, which limits the combined effect of everything inside. One level only.
 - **Node structure:** layers inside a folder chain as normal, starting from the stack below. A **folder node** (shared node group "Essence Folder", version 3: 3 added Visible) lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is `A + sum of inner heights`. An empty folder passes the stack through.
@@ -312,9 +321,9 @@ Substance has **adjustment layers/filters** (Levels, HSL, Color Balance, Curves,
 
 | Where | Meaning | Status | Pri |
 |---|---|---|---|
-| **Adjustment layer**: a stack entry with no content that transforms the channels below it, limited by its own mask stack and opacity (same A/Mask interface as a layer: `A + (f(A) - A) * mask`) | built on the same chain and mask machinery | 🟡 machinery exists; entry type ⬜ | **P1** |
-| **Layer filter**: transforms a layer's own content before blending | node inserted between the source and the B input | ⬜ | P1 |
-| **Mask filter**: transforms a mask value | node inserted inside the mask group | 🟡 invert/brightness/contrast | P1 |
+| **Adjustment** items on a layer or mask: transform the owner's own content before it is blended (see Adjustments). A stack-wide adjustment that transforms everything below (`A + (f(A) - A) * mask`) is not built; a folder would host it | tagged node chain in the source | ✅ | |
+| **Layer filter**: transforms a layer's own content before blending | an adjustment item on a layer | ✅ | |
+| **Mask filter**: transforms a mask value | an adjustment item on a mask (plus the built-in invert/brightness/contrast) | ✅ | |
 
 Live (L) adjustments, all single Blender nodes: Levels (Map Range), Brightness/Contrast, Hue/Saturation/Value, Color Balance, RGB Curves, Invert Color, Gamma, Color Ramp (gradient map), Math clamp/threshold, Separate/Combine Color (channel mixing).
 
@@ -322,9 +331,9 @@ Neighbour-based filters (Blur, Sharpen, Edge Detect, Dilate/Erode, Slope Blur, B
 
 | Feature | Cost | Status | Pri |
 |---|---|---|---|
-| Adjustment layer entry type | L | ⬜ | P1 |
-| Filter stack on layer / mask | L | ⬜ | P1 |
-| Live adjustment set (levels, HSV, balance, curves, invert, gradient map, threshold) | L | ⬜ | P1 |
+| Adjustment items | L | ✅ | |
+| Filter stack on layer / mask | L | ✅ (several items stack) | |
+| Live adjustment set (levels, HSV, brightness/contrast, gamma, curves, invert, gradient map, threshold) | L | ✅ (no color balance: no shader node) | |
 | Baked filter set via compositor (blur, sharpen, edge, dilate/erode) | B | ⬜ | P2 |
 | Normal-aware filters (normal blend, normal from height, height from normal, normal intensity) | L/B | ⬜ | P2 |
 
@@ -540,6 +549,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 - Anti-aliasing: a high-poly edge falling mid-pixel is hard at Off and gets intermediate values at 4x, the image keeps its final size and float type, and a size times factor over 8192 px is refused before anything is created.
 - Re-baking at a different size replaces the image (found in the GUI: `Image.scale` is silently ignored on a packed image, so a re-bake kept the old resolution). The bake now makes a fresh image and moves the users over.
 - AO overlay: Base Color and Specular IOR Level follow `lerp(1, AO, Strength)` at strengths 1, 0.5 and 0 (real baked pixels), rebuild is idempotent, an empty slot hands Base Color back to the stack, an AO bake wires itself, and the Unity export is unaffected.
+- Adjustments: invert, gamma, levels (input and output range), saturation, brightness, identity curves, gradient map and threshold against baked pixels, on color and float channels, on a Value, an Image source and a mask; Opacity, the eye, chain order and moving an item, switching an item's type, hand edits surviving a rebuild, removal of owners and items, and every panel and list row drawing for every type.
 
 **Still to confirm in the GUI (milestone checklist):**
 - `template_ID_preview(..., open="image.open")`, and the layer-row thumbnail via `preview_ensure`.
