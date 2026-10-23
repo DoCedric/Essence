@@ -443,11 +443,6 @@ def _props(self, context):
         layout.prop(node.inputs[nodes.OPACITY], "default_value", text="Opacity", slider=True)
         for ch in active_channels(mat):
             _channel(layout, mat, e, node, ch)
-    n = sum(1 for m in mat.essence.layers if m.kind == 'MASK' and m.parent == e.uid)
-    layout.menu("ESSENCE_MT_add_mask", icon='MOD_MASK',
-                text="Add Mask" if n == 0 else f"Add Mask ({n})")
-    if e.kind == 'LAYER':
-        layout.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER')
 
 
 def _mask(self, context):
@@ -476,7 +471,6 @@ def _mask(self, context):
     col.prop(node.inputs[nodes.MASK_INVERT], "default_value", text="Invert", toggle=True)
     col.prop(node.inputs[nodes.MASK_BRIGHTNESS], "default_value", text="Brightness")
     col.prop(node.inputs[nodes.MASK_CONTRAST], "default_value", text="Contrast")
-    layout.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER')
     if context.active_object.mode == 'TEXTURE_PAINT':
         layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
     else:
