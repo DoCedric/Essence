@@ -204,9 +204,13 @@ def _tree(layout, mat):
 
     def draw_folder(col, e):
         box = col.box()
-        head = box.column(align=True)
-        _entry_row(head, mat, e, e.uid == active)
-        draw_masks(head, e)
+        if masks.get(e.uid):  # like a layer: the folder on the left, its masks on the right
+            split = box.split(factor=0.5)
+            left, right = split.column(align=True), split.column(align=True)
+            draw_masks(right, e)
+        else:
+            left = box.column(align=True)
+        _entry_row(left, mat, e, e.uid == active)
         for child in reversed(kids.get(e.uid, [])):
             row = box.split(factor=0.04)
             row.label(text="")
