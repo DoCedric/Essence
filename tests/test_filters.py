@@ -152,3 +152,31 @@ def test_filter_result_repeats_across_uv_tiles(addon):
     bpy.ops.essence.rebuild()
     check(addon.sources.source_nodes(mat.node_tree, f, 'ADJ')['OUT'].extension == 'REPEAT',
           "a rebuild must put it back to repeat")
+
+
+def test_filter_settings_survive_save_and_reload(addon):
+    import os
+    import tempfile
+    ob, mat, top, mask_uid, img = _setup()
+    f = _add_filter(mat, mask_uid, 'BLUR')
+    addon.filters.filter_node(_entry(mat, f)).inputs['Size'].default_value = (7.0, 3.0)
+    check(bpy.ops.essence.filter_apply(uid=f) == {'FINISHED'}, "apply failed")
+    check(bpy.data.node_groups[addon.adjustments.FILTER_GROUP_PREFIX + f].use_fake_user,
+          "the compositor group needs a fake user or a save drops it")
+    ob_name = ob.name   # pointers die when the file is reopened
+    folder = tempfile.mkdtemp(prefix="essence_save_")
+    path = os.path.join(folder, "t.blend")
+    try:
+        bpy.ops.wm.save_as_mainfile(filepath=path, copy=True)
+        bpy.ops.wm.open_mainfile(filepath=path)
+        mat = bpy.data.objects[ob_name].active_material
+        e = _entry(mat, f)
+        node = addon.filters.filter_node(e)
+        check(node is not None, "the compositor group was lost on save")
+        size = tuple(node.inputs['Size'].default_value)
+        check(abs(size[0] - 7.0) < 1e-4 and abs(size[1] - 3.0) < 1e-4, f"settings lost: {size}")
+        check(not addon.filters.is_stale(mat, e), "a saved and reloaded filter must still be current")
+        check(addon.filters.result_image(f) is not None, "the result image was lost")
+    finally:
+        import shutil
+        shutil.rmtree(folder, ignore_errors=True)

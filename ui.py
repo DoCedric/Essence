@@ -253,6 +253,18 @@ def _tree(layout, mat):
         (draw_folder if e.kind == 'FOLDER' else draw_layer)(layout, e)
 
 
+def _apply_all_button(layout, mat):
+    """Apply All under the stack when the material has filters: red while any filter needs
+    applying, a green dot when all are current."""
+    if not any(e.kind == 'FILTER' for e in mat.essence.layers):
+        return
+    dirty = filters.any_unapplied(mat)
+    row = layout.row(align=True)
+    row.alert = dirty
+    row.operator("essence.filter_apply_all", text="Apply All Filters",
+                 icon='STRIP_COLOR_01' if dirty else 'STRIP_COLOR_04')
+
+
 def _stack(self, context):
     layout = self.layout
     ob = context.active_object
@@ -280,6 +292,7 @@ def _stack(self, context):
         bar.operator("essence.rebuild", icon='FILE_REFRESH', text="")
         bar.prop(s, "use_tree", text="", icon='OUTLINER')
         _tree(layout, mat)
+        _apply_all_button(layout, mat)
         return
     row = layout.row()
     row.template_list("ESSENCE_UL_layers", "", s, "layers", s, "active_index",
@@ -296,6 +309,7 @@ def _stack(self, context):
     col.separator()
     col.operator("essence.rebuild", icon='FILE_REFRESH', text="")
     col.prop(s, "use_tree", text="", icon='OUTLINER')
+    _apply_all_button(layout, mat)
 
 
 def _props_poll(cls, context):

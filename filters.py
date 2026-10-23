@@ -85,6 +85,9 @@ def build_group(entry):
     if ng is None:
         ng = bpy.data.node_groups.new(name, 'CompositorNodeTree')
         ng.interface.new_socket("Image", in_out='OUTPUT', socket_type='NodeSocketColor')
+    # Only the throwaway scene ever uses this group, so without a fake user Blender would drop
+    # it when the file is saved, and the filter would lose its settings.
+    ng.use_fake_user = True
     src = ng.nodes.get("Source")
     if src is None:
         src = ng.nodes.new('CompositorNodeImage')
@@ -364,6 +367,81 @@ def is_stale(mat, entry):
     return is_baked(entry) and entry.get("essence_sig", "") != signature(mat, entry)
 
 
+class _SolidViewports:
+    """3D viewports in Material Preview or Rendered are switched to Solid while a filter is
+    applied, and put back afterwards. The viewport would otherwise be rebuilding the shader of
+    the material we are baking from while we change it, and Blender hung that way."""
+
+    def __enter__(self):
+        self.saved = []
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type != 'VIEW_3D':
+                    continue
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D' and space.shading.type in ('MATERIAL', 'RENDERED'):
+                        self.saved.append((space, space.shading.type))
+                        space.shading.type = 'SOLID'
+        return self
+
+    def __exit__(self, *exc):
+        for space, shading in self.saved:
+            try:
+                space.shading.type = shading
+            except ReferenceError:
+                pass
+        return False
+
+
+def lower_filters(mat, entry):
+    """The filters below `entry` in the same mask, bottom to top. They are what it bakes."""
+    out = []
+    for item in stack.adjustment_entries(mat.essence.layers, entry.parent):
+        if item.uid == entry.uid:
+            break
+        if item.kind == 'FILTER':
+            out.append(item)
+    return out
+
+
+def needs_apply(mat, entry):
+    return not is_baked(entry) or is_stale(mat, entry)
+
+
+def apply_with_dependencies(context, ob, mat, entry):
+    """Apply `entry` after any filter below it that is not applied or out of date, in order:
+    its bake would otherwise be made from a stale result. Returns the names applied."""
+    uid = entry.uid
+    todo = [e.uid for e in lower_filters(mat, entry) if needs_apply(mat, e)] + [uid]
+    done = []
+    for u in todo:
+        e = next(x for x in mat.essence.layers if x.uid == u)
+        # A lower filter applied just now can leave the next one needing it again.
+        if u == uid or needs_apply(mat, e):
+            apply_entry(context, ob, mat, e)
+            done.append(next(x for x in mat.essence.layers if x.uid == u).name)
+    return done
+
+
+def apply_all(context, ob, mat):
+    """Apply every filter of the material that is not applied or out of date, mask by mask and
+    bottom to top: applying one makes the baked filters above it out of date, and they come
+    up for re-application later in the same pass. Returns the names applied."""
+    done = []
+    for mask in [e for e in mat.essence.layers if e.kind == 'MASK']:
+        for f in [e.uid for e in stack.adjustment_entries(mat.essence.layers, mask.uid)
+                  if e.kind == 'FILTER']:
+            e = next(x for x in mat.essence.layers if x.uid == f)
+            if needs_apply(mat, e):
+                apply_entry(context, ob, mat, e)
+                done.append(next(x for x in mat.essence.layers if x.uid == f).name)
+    return done
+
+
+def any_unapplied(mat):
+    return any(e.kind == 'FILTER' and needs_apply(mat, e) for e in mat.essence.layers)
+
+
 def apply_entry(context, ob, mat, entry):
     """Bake, filter and store the result of one filter item. Returns the size baked at.
     Raises on failure; nothing is left behind in the scene either way."""
@@ -380,15 +458,23 @@ def apply_entry(context, ob, mat, entry):
     t0 = time.perf_counter()
     print(f"Essence: filter '{entry.name}' ({entry.filter_type}): baking {size} px ...",
           flush=True)
-    image = bake_value(context, ob, mat, lambda t: t.nodes[in_name].outputs[0], size)
-    print(f"Essence: baked in {time.perf_counter() - t0:.1f} s, running the compositor ...",
-          flush=True)
-    try:
-        result = run_compositor(entry, image)
-    finally:
-        bpy.data.images.remove(image)
-    print(f"Essence: filter done in {time.perf_counter() - t0:.1f} s", flush=True)
-    entry = next(e for e in mat.essence.layers if e.uid == uid)
-    store_result(entry, result)
-    entry["essence_sig"] = sig
+    owner_uid = entry.parent
+    with _SolidViewports():
+        image = bake_value(context, ob, mat, lambda t: t.nodes[in_name].outputs[0], size)
+        print(f"Essence: baked in {time.perf_counter() - t0:.1f} s, running the compositor ...",
+              flush=True)
+        try:
+            result = run_compositor(entry, image)
+        finally:
+            bpy.data.images.remove(image)
+        print(f"Essence: filter done in {time.perf_counter() - t0:.1f} s", flush=True)
+        entry = next(e for e in mat.essence.layers if e.uid == uid)
+        store_result(entry, result)
+        entry["essence_sig"] = sig
+        # Put the new result into the chain now: a filter above bakes from it.
+        from . import nodes
+        owner = next((x for x in mat.essence.layers if x.uid == owner_uid), None)
+        if owner is not None:
+            sources.apply_owner(mat, owner)
+        nodes.rebuild_stack(mat)
     return size

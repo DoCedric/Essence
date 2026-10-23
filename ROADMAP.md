@@ -85,6 +85,7 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [x] Retire several masks per layer: one mask per layer or folder, further values stacked as fills. Add Mask is unavailable once an owner has a mask. [H]
 - [x] Baked filters, opt-in: Kuwahara, Blur, Sharpen, Dilate/Erode as items on a mask with a Refresh button; one hidden packed image per item, deleted with it. [H]
 - [x] Filters show when they are out of date: the Apply button is red until applied and has a green dot when current, the row shows the same dot. No automatic refresh (removed: a timer-driven bake deadlocked Blender in Texture Paint, and a clock adds complexity). [H] draws; [G] colors
+- [x] Dependencies between stacked filters: Apply applies stale lower filters first, Apply All Filters applies everything in order (the cascade is picked up in the same pass). A filter's compositor group now has a fake user so its settings survive a save. [H]
 - [ ] Apply froze Blender in the GUI once more (after changing a Blur to Kuwahara, removing it and applying a new Blur) although the same sequence takes 1.8 s headless on a copy of that file. Apply now runs fully on the CPU (0.4 s) and logs its stages to the system console; if it hangs again the last line says where. Needs the user's GUI check.
 - [ ] Open idea: some way to refresh filters without a timer, if a better approach turns up (the user is thinking about it).
 - [ ] Baked filters on layer channels (the bake already handles any socket). Not decided.

@@ -431,14 +431,40 @@ class ESSENCE_OT_filter_apply(_Base, bpy.types.Operator):
         if not ob.data.uv_layers:
             self.report({'ERROR'}, "The object has no UV map")
             return {'CANCELLED'}
-        owner_uid = entry.parent
         try:
-            size = filters.apply_entry(context, ob, mat, entry)
+            done = filters.apply_with_dependencies(context, ob, mat, entry)
         except Exception as e:  # noqa: BLE001
             self.report({'ERROR'}, f"Apply failed: {e}")
             return {'CANCELLED'}
-        _reapply(mat, owner_uid)
-        self.report({'INFO'}, f"Baked filter at {size} px")
+        self.report({'INFO'}, f"Applied {', '.join(done)}")
+        return {'FINISHED'}
+
+
+class ESSENCE_OT_filter_apply_all(_Base, bpy.types.Operator):
+    bl_idname = "essence.filter_apply_all"
+    bl_label = "Apply All"
+    bl_description = ("Apply every filter that is not applied yet or out of date, in order: "
+                      "lower filters first, and the ones above them again when they change")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return (ob is not None and ob.type == 'MESH' and ob.active_material is not None
+                and any(e.kind == 'FILTER' for e in ob.active_material.essence.layers))
+
+    def execute(self, context):
+        ob = context.active_object
+        mat = ob.active_material
+        if not ob.data.uv_layers:
+            self.report({'ERROR'}, "The object has no UV map")
+            return {'CANCELLED'}
+        try:
+            done = filters.apply_all(context, ob, mat)
+        except Exception as e:  # noqa: BLE001
+            self.report({'ERROR'}, f"Apply failed: {e}")
+            return {'CANCELLED'}
+        self.report({'INFO'}, f"Applied {', '.join(done)}" if done else "Everything is current")
         return {'FINISHED'}
 
 
@@ -585,7 +611,9 @@ class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
                 n.node_tree = group
         nodes.rebuild_stack(mat)
         for e in list(mat.essence.layers):   # re-wire the sources, adjustments, fills, filters
-            if e.kind in ('LAYER', 'MASK'):
+            if e.kind == 'FILTER':
+                filters.build_group(e)       # the compositor group, if a file lost it
+            elif e.kind in ('LAYER', 'MASK'):
                 sources.apply_owner(mat, e)
         nodes.rebuild_stack(mat)
         return {'FINISHED'}
@@ -611,7 +639,7 @@ classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
-    ESSENCE_OT_filter_apply,
+    ESSENCE_OT_filter_apply, ESSENCE_OT_filter_apply_all,
     ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,
