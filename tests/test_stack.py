@@ -36,14 +36,11 @@ def test_layers_and_masks(addon):
     mat = ob.active_material
     check(_kinds(mat) == ['LAYER', 'LAYER'], _kinds(mat))
     bpy.ops.essence.add_mask(source='PAINT', fill='WHITE')
-    bpy.ops.essence.add_mask(source='PAINT', fill='BLACK')
-    check(_kinds(mat).count('MASK') == 2, "masks not added")
+    check(_kinds(mat).count('MASK') == 1, "mask not added")
+    check(not bpy.ops.essence.add_mask.poll(), "a layer takes one mask only")
     _validate(addon, mat)
     top = mat.node_tree.nodes.get(mat.essence.layers[-1].node_name)
     check(top.inputs['Mask'].is_linked, "top layer mask not linked")
-    masks = [e for e in mat.essence.layers if e.kind == 'MASK']
-    second = mat.node_tree.nodes[masks[1].node_name]
-    check(second.inputs['Previous'].is_linked, "mask stack not chained")
     n = len(mat.essence.layers)
     bpy.ops.essence.remove_layer()
     check(len(mat.essence.layers) == n - 1, "mask not removed")

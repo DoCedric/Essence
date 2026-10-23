@@ -107,7 +107,7 @@ Map types ✅ *(built, untested)*:
 - A mask has a **source** ✅ (Image, Procedural or Value, with the same projection, mapping and Min/Max controls as a channel source, see Layer sources). An **image mask** is an image slot: either a new blank paint image (white reveals, black hides; size set in the redo panel) or any image already in the file, picked from Blender's thumbnail grid (`template_ID_preview`, with Open and unlink). The two are interchangeable at any time.
 - Masks should be Non-Color. If a picked image is not, the panel warns and offers a one-click Set Non-Color instead of changing the image silently.
 - Mask adjustments ✅: **Invert**, **Brightness** and **Contrast** (same ranges as Blender's Brightness/Contrast node, -100 to 100), per mask. Order inside the mask node: invert, then brightness/contrast, then clamp to 0-1.
-- **Mask stack** ✅: a layer or folder can have any number of masks. Each mask is a row in the layer list, indented under its owner with its thumbnail. Masks multiply together. Each mask row has an eye toggle (a disabled mask counts as white) and masks reorder within their owner.
+- **One mask per layer or folder** ✅: the mask is a row under its owner with its thumbnail and an eye toggle (a disabled mask counts as white). More than one value is stacked on that mask as Fill items (see Mask fills), not as extra masks.
 - **Selection decides the panel.** Selecting a layer or folder shows its properties and an Add Mask menu (white, black or image mask). Selecting a mask shows only the mask properties. A layer never shows both at once.
 - Masks can be painted in Texture Paint mode (Image source with the UV projection only; procedural, value and triplanar masks are generated and not paintable). Switching a mask away from Image remembers its image (kept alive with a fake user) and restores it when you switch back. A Paint Mask button makes the selected mask's image the active image node and enters Texture Paint in Material mode; an Exit button leaves it.
 
@@ -138,10 +138,10 @@ A mask is a stack: its running value starts at the mask's own source and the ite
 
 Nodes: a fill is a Math node (the blend: input 0 the value below, input 1 the fill's source, clamped) tagged like an adjustment, followed by the Opacity mix. Its source nodes are the usual tagged source nodes of the fill's uid, wired into the Math node's second input. A mask that is a plain Value gets a constant to run the stack on. Items reorder with the up/down arrows, so an adjustment can act on everything below it or only on one fill.
 
-With fills a second mask is a Fill item set to Multiply, so several masks per layer are no longer needed. They still work for now; retiring them and the one-mask-per-layer UI come with the mockup layout. Painting a fill's image is not wired yet (Paint Mask works on the mask's own image).
+With fills a second mask is a Fill item set to Multiply, so a layer or folder has **one** mask (Add Mask is unavailable once it has one). The mask's own invert, brightness and contrast come last, after the items. Painting a fill's image is not wired yet (Paint Mask works on the mask's own image).
 
 ### Folders ✅
-A folder holds layers and has its own mask stack, which limits the combined effect of everything inside. One level only.
+A folder holds layers and has its own mask (with the same fills and adjustments), which limits the combined effect of everything inside. One level only.
 - **Node structure:** layers inside a folder chain as normal, starting from the stack below. A **folder node** (shared node group "Essence Folder", version 3: 3 added Visible) lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is `A + sum of inner heights`. An empty folder passes the stack through.
 - **Data:** the layer list stays flat and bottom-to-top. Every entry has a `uid`, a `kind` (layer, folder or mask) and a `parent` (the owner's uid). All reordering goes through the tree helpers in `stack.py`.
 - **UI:** children indented under the folder, masks under their owner. Add Folder creates an empty folder above the active entry. Add Layer with a folder active adds into it. Up/down arrows move a layer within and across folder borders; a folder moves as a block. Removing a folder ungroups its layers; removing a layer or folder removes its masks.
@@ -546,7 +546,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 **Verified headless (Blender 5.2.2, `tests/run_all.py`, Sprint 0):**
 - Node group interface calls, Mix socket identifiers, Bool sockets converting to float, Brightness/Contrast identifiers (and that brightness brightens, negative darkens).
 - Layer, folder and mask operators (add, move across folder borders, remove, ungroup), list stays in canonical order, save/reload round trip.
-- Blend math against real baked pixel values: mask lerp, bump add, mask invert, mask stack multiply, disabled mask = white, channel enable leak, folder lerp (incl. bump).
+- Blend math against real baked pixel values: mask lerp, bump add, mask invert, mask fill multiply, disabled mask = white, channel enable leak, folder lerp (incl. bump).
 - Group version upgrade keeps socket values.
 - Bake: AO, World Gradient (cube and zero-height plane), Normal (world, tangent), settings restored afterwards, tangent bake wires Normal Map into Bump into BSDF, high-to-low normal bake with a High Poly collection (tilted plane leaves the expected mark, high-poly is not a target).
 - Export (Unity HDRP, EXR): BaseMap, MaskMap (R metallic, G white without AO, B white, A smoothness) and Normal values, temp images and nodes cleaned up, and the exported normal equals the baked normal when layer height is zero.

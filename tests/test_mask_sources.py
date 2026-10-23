@@ -127,14 +127,24 @@ def test_remove_mask_removes_source_nodes(addon):
     check(not left, f"source nodes left: {left}")
 
 
-def test_mask_stack_with_sources(addon):
+def test_second_value_stacks_as_a_fill(addon):
     ob, mat, top = _setup()
     _add_mask(mat)                       # white image
-    bpy.ops.essence.add_mask(source='PAINT', fill='WHITE')
-    m2 = mat.essence.layers[mat.essence.active_index]
-    m2.source.kind = 'VALUE'
-    mat.node_tree.nodes[m2.node_name].inputs['Value'].default_value = 0.5
-    close(_rough(ob, mat, top), 0.5, 0.02, "stacked masks 1.0 * 0.5")
+    bpy.ops.essence.add_fill()
+    fill = mat.essence.layers[mat.essence.active_index]
+    mat.node_tree.nodes[fill.node_name].inputs[1].default_value = 0.5
+    close(_rough(ob, mat, top), 0.5, 0.02, "mask 1.0 * fill 0.5")
+
+
+def test_one_mask_per_layer(addon):
+    ob, mat, top = _setup()
+    _add_mask(mat)
+    check(not bpy.ops.essence.add_mask.poll(), "a second mask must not be possible")
+    uid = mat.essence.layers[-1].uid
+    check(sum(1 for e in mat.essence.layers if e.kind == 'MASK') == 1, "one mask expected")
+    # Another layer can still have its own.
+    bpy.ops.essence.add_layer()
+    check(bpy.ops.essence.add_mask.poll(), "a layer without a mask can take one")
 
 
 def test_switching_source_in_paint_mode_keeps_painting(addon):

@@ -190,8 +190,8 @@ class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
 class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
     bl_idname = "essence.add_mask"
     bl_label = "Add Mask"
-    bl_description = ("Add a mask on top of the active layer's or folder's mask stack. "
-                      "Masks multiply together")
+    bl_description = ("Add a mask to the active layer or folder. A layer or folder has one "
+                      "mask; stack more onto it with Fill items")
     bl_options = {'REGISTER', 'UNDO'}
 
     source: EnumProperty(
@@ -209,17 +209,19 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        return mat is not None and _active(mat) is not None
+        cur = _active(mat) if mat is not None else None
+        owner = _owner(mat, cur) if cur is not None else None
+        return owner is not None and not any(
+            x.kind == 'MASK' and x.parent == owner.uid for x in mat.essence.layers)
 
     def execute(self, context):
         mat = _material(context)
         s = mat.essence
         cur = _active(mat)
         owner = _owner(mat, cur) if cur is not None else None
-        if owner is None:
+        if owner is None or any(x.kind == 'MASK' and x.parent == owner.uid for x in s.layers):
             return {'CANCELLED'}
-        n = sum(1 for x in s.layers if x.kind == 'MASK' and x.parent == owner.uid)
-        name = "Mask" if n == 0 else f"Mask {n + 1}"
+        name = "Mask"
         img = None
         if self.source == 'PAINT':
             v = 0.0 if self.fill == 'BLACK' else 1.0

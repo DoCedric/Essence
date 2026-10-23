@@ -81,7 +81,7 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [ ] Mask Invert/Brightness/Contrast stay as they are for now; fold them into items later.
 - Known cosmetic issue (not fixing: the list is replaced by the mockup layout): items nested deepest in the list (for example under a mask inside a folder) sometimes get an empty line below them, probably from the row width at that indent.
 - [x] Tree view: layer and mask side by side, each with its item column, built from native widgets (the list stays as the other view). [H] draws; [G] look pending
-- [ ] Retire several masks per layer (one mask per layer, stacked with fills) once the tree view is approved.
+- [x] Retire several masks per layer: one mask per layer or folder, further values stacked as fills. Add Mask is unavailable once an owner has a mask. [H]
 - [ ] **Milestone checklist** [G].
 
 ## Later sprints (outline, to be detailed)

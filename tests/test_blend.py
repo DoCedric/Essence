@@ -72,9 +72,12 @@ def test_mask_invert_and_stack(addon):
     _mask(mat, 0.25, invert=True)  # 0.75
     top = _top(mat)
     close(sample_socket(ob, mat, top.outputs["Roughness"])[0], 0.2 + 0.6 * 0.75, msg="invert")
-    _select(mat, mat.essence.layers[-1].name)
-    _mask(mat, 0.5)  # stacked: 0.75 * 0.5
-    close(sample_socket(ob, mat, top.outputs["Roughness"])[0], 0.2 + 0.6 * 0.375, msg="stack")
+    # A second value is a Fill on the mask, multiplied into the source (0.25 * 0.5) before the
+    # mask's own invert stage: 1 - 0.125.
+    bpy.ops.essence.add_fill()
+    fill = mat.essence.layers[mat.essence.active_index]
+    mat.node_tree.nodes[fill.node_name].inputs[1].default_value = 0.5
+    close(sample_socket(ob, mat, top.outputs["Roughness"])[0], 0.2 + 0.6 * 0.875, msg="stack")
 
 
 def test_mask_disable(addon):
