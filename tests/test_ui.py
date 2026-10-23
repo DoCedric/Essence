@@ -9,6 +9,10 @@ import bpy
 from harness import check, make_plane
 
 
+_ICONS = {i.identifier for i in
+          bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"].enum_items}
+
+
 class Rec:
     """Stands in for a UILayout and records what is drawn."""
 
@@ -21,6 +25,9 @@ class Rec:
 
         def call(*args, **kwargs):
             self.log.append((name, args, kwargs))
+            icon = kwargs.get("icon")
+            if icon is not None:   # a wrong icon name raises in Blender, not here, so check it
+                check(icon in _ICONS, f"unknown icon {icon!r} in {name}()")
             if name == "prop" and len(args) >= 2:
                 data, prop = args[0], args[1]
                 props = data.bl_rna.properties

@@ -97,11 +97,11 @@ def test_panel_row_and_button_show_the_state(addon):
     def row_icon():
         return [c[2].get("icon") for c in _draw(ui._stack, ob) if c[0] == "label"]
 
-    check(button()[2].get("icon") == 'SEQUENCE_COLOR_01', "not applied: red dot")
-    check('SEQUENCE_COLOR_01' in row_icon(), "not applied: the row shows a red dot")
+    check(button()[2].get("icon") == 'STRIP_COLOR_01', "not applied: red dot")
+    check('STRIP_COLOR_01' in row_icon(), "not applied: the row shows a red dot")
     bpy.ops.essence.filter_apply(uid=f)
-    check(button()[2].get("icon") == 'SEQUENCE_COLOR_04', "current: green dot")
-    check('SEQUENCE_COLOR_04' in row_icon(), "current: the row shows a green dot")
+    check(button()[2].get("icon") == 'STRIP_COLOR_04', "current: green dot")
+    check('STRIP_COLOR_04' in row_icon(), "current: the row shows a green dot")
     _remap(addon, mat, mask_uid).inputs['To Max'].default_value = 0.5
-    check(button()[2].get("icon") == 'SEQUENCE_COLOR_01', "out of date: red dot")
-    check('SEQUENCE_COLOR_01' in row_icon(), "out of date: red row")
+    check(button()[2].get("icon") == 'STRIP_COLOR_01', "out of date: red dot")
+    check('STRIP_COLOR_01' in row_icon(), "out of date: red row")

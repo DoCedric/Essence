@@ -135,8 +135,8 @@ def _thumb(tree, item):
 def _filter_icon(mat, item):
     """Red dot: nothing baked yet or out of date. Green dot: the baked result is current."""
     if filters.is_baked(item) and not filters.is_stale(mat, item):
-        return 'SEQUENCE_COLOR_04'
-    return 'SEQUENCE_COLOR_01'
+        return 'STRIP_COLOR_04'
+    return 'STRIP_COLOR_01'
 
 
 def _entry_row(layout, mat, item, active, add_mask=False):
@@ -328,7 +328,7 @@ def _filter(layout, mat, e, owner):
     row.scale_y = 1.3
     row.alert = not current   # Blender's own red: something to apply
     row.operator("essence.filter_apply", text="Apply",
-                 icon='SEQUENCE_COLOR_04' if current else 'SEQUENCE_COLOR_01').uid = e.uid
+                 icon='STRIP_COLOR_04' if current else 'STRIP_COLOR_01').uid = e.uid
     if not baked:
         layout.label(text="Not applied yet: passes the value through", icon='INFO')
 
