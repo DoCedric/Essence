@@ -180,3 +180,35 @@ def test_filter_settings_survive_save_and_reload(addon):
     finally:
         import shutil
         shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_filter_over_a_procedural_fill_and_the_log_trail(addon):
+    """A procedural checker fill (3D coordinates, a texture node group) under a blur."""
+    ob, mat, top, top_uid, mask_uid = _setup_fill_mask()
+    mat.essence.active_index = next(i for i, e in enumerate(mat.essence.layers)
+                                    if e.uid == mask_uid)
+    bpy.ops.essence.add_fill()
+    fill = mat.essence.layers[mat.essence.active_index]
+    fill.source.kind = 'PROCEDURAL'
+    fill.source.proc_type = 'CHECKER'
+    f = _add_filter(mat, mask_uid, 'BLUR')
+    import os
+    if os.path.exists(addon.filters.LOG_PATH):
+        os.remove(addon.filters.LOG_PATH)
+    check(bpy.ops.essence.filter_apply(uid=f) == {'FINISHED'}, "apply over a procedural failed")
+    check(addon.filters.is_baked(_entry(mat, f)), "no result")
+    log = open(addon.filters.LOG_PATH, encoding="utf-8").read()
+    for step in ("APPLY", "bake: calling bpy.ops.object.bake", "bake: bake state restored",
+                 "compositor: calling bpy.ops.render.render", "APPLY finished"):
+        check(step in log, f"the log should show '{step}':\n{log}")
+
+
+def _setup_fill_mask():
+    ob = make_plane()
+    bpy.ops.essence.add_layer()
+    mat = ob.active_material
+    bpy.ops.essence.add_layer()
+    e = mat.essence.layers[mat.essence.active_index]
+    top, top_uid = mat.node_tree.nodes[e.node_name], e.uid
+    bpy.ops.essence.add_mask(source='PAINT', fill='WHITE', size=64)
+    return ob, mat, top, top_uid, mat.essence.layers[mat.essence.active_index].uid

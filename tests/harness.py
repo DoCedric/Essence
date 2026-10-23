@@ -10,6 +10,7 @@ Cycles (the same Emission trick the export uses).
 import importlib.util
 import os
 import sys
+import tempfile
 
 import bpy
 
@@ -48,6 +49,8 @@ def fresh_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     addon = load_addon()
     addon.register()
+    # Tests must not write into the log a real session leaves behind after a hang.
+    addon.filters.LOG_PATH = os.path.join(tempfile.gettempdir(), "essence_filter_tests.log")
     return addon
 
 

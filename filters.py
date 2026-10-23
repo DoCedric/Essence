@@ -57,6 +57,21 @@ TYPES = (
 BY_ID = {t.id: t for t in TYPES}
 
 
+LOG_PATH = os.path.join(tempfile.gettempdir(), "essence_filter.log")
+
+
+def log(message):
+    """Append one line to a log file in the temp folder, flushed and closed at once, so after a
+    hang the last line says which step it was in. Also printed to the system console."""
+    line = f"{time.strftime('%H:%M:%S')} {message}"
+    print(f"Essence: {message}", flush=True)
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
 def group_name(uid):
     return f"{GROUP_PREFIX}{uid}"
 
@@ -185,26 +200,34 @@ def bake_value(context, obj, mat, socket_of, size):
 
     teardowns = []
     try:
+        log("bake: entering bake state (mode, selection, Cycles settings)")
         with _BakeState(context, obj):
+            log("bake: adding the temporary target and emission nodes")
             for m in _ensure_materials(obj):
                 if not m.use_nodes:
                     m.use_nodes = True
                 teardowns.append(_temp_target(m, image))
             teardowns.append(_emission_override(mat, build))
+            log("bake: calling bpy.ops.object.bake")
             if 'FINISHED' not in bpy.ops.object.bake(type='EMIT', use_clear=True):
                 raise RuntimeError("bake did not finish (see console)")
-    except Exception:
+            log("bake: bpy.ops.object.bake returned")
+        log("bake: bake state restored")
+    except Exception as e:
+        log(f"bake: FAILED {type(e).__name__}: {e}")
         bpy.data.images.remove(image)
         raise
     finally:
         for t in reversed(teardowns):
             t()
+        log("bake: temporary nodes removed")
     return image
 
 
 def run_compositor(entry, image):
     """Run the item's compositor group on `image` in a throwaway scene and return the
     result as a new, packed, float image."""
+    log("compositor: building the group and the throwaway scene")
     ng, node = build_group(entry)
     src = ng.nodes["Source"]
     scene = bpy.data.scenes.new("EssenceFilterTmp")
@@ -228,15 +251,19 @@ def run_compositor(entry, image):
         cam = bpy.data.objects.new("EssenceFilterCam", bpy.data.cameras.new("EssenceFilterCam"))
         scene.collection.objects.link(cam)
         scene.camera = cam
+        log("compositor: calling bpy.ops.render.render")
         if 'FINISHED' not in bpy.ops.render.render(write_still=True, scene=scene.name):
             raise RuntimeError("the compositor render did not finish")
+        log("compositor: render returned, loading the result")
         result = bpy.data.images.load(r.filepath)
         result.colorspace_settings.name = 'Non-Color'
         result.pack()           # outlives the temporary folder
+        log("compositor: result loaded and packed")
         return result
     finally:
         src.image = None
         shutil.rmtree(folder, ignore_errors=True)
+        log("compositor: removing the throwaway scene")
         cam_data = scene.camera.data if scene.camera else None
         bpy.data.scenes.remove(scene)
         for o in [o for o in bpy.data.objects if o.name.startswith("EssenceFilterCam")]:
@@ -367,32 +394,6 @@ def is_stale(mat, entry):
     return is_baked(entry) and entry.get("essence_sig", "") != signature(mat, entry)
 
 
-class _SolidViewports:
-    """3D viewports in Material Preview or Rendered are switched to Solid while a filter is
-    applied, and put back afterwards. The viewport would otherwise be rebuilding the shader of
-    the material we are baking from while we change it, and Blender hung that way."""
-
-    def __enter__(self):
-        self.saved = []
-        for window in bpy.context.window_manager.windows:
-            for area in window.screen.areas:
-                if area.type != 'VIEW_3D':
-                    continue
-                for space in area.spaces:
-                    if space.type == 'VIEW_3D' and space.shading.type in ('MATERIAL', 'RENDERED'):
-                        self.saved.append((space, space.shading.type))
-                        space.shading.type = 'SOLID'
-        return self
-
-    def __exit__(self, *exc):
-        for space, shading in self.saved:
-            try:
-                space.shading.type = shading
-            except ReferenceError:
-                pass
-        return False
-
-
 def lower_filters(mat, entry):
     """The filters below `entry` in the same mask, bottom to top. They are what it bakes."""
     out = []
@@ -454,27 +455,29 @@ def apply_entry(context, ob, mat, entry):
     size = int(entry.filter_resolution)
     uid, in_name = entry.uid, node_in.name
     sig = signature(mat, entry)   # of the state that is about to be baked
-    # Progress goes to the system console, so a hang shows where it stopped.
+    # Every step is logged to a file (LOG_PATH): after a hang the last line says where.
     t0 = time.perf_counter()
-    print(f"Essence: filter '{entry.name}' ({entry.filter_type}): baking {size} px ...",
-          flush=True)
+    spaces = [sp.shading.type for w in bpy.context.window_manager.windows
+              for ar in w.screen.areas if ar.type == 'VIEW_3D' for sp in ar.spaces
+              if sp.type == 'VIEW_3D']
+    log(f"APPLY '{entry.name}' {entry.filter_type} uid={uid} {size}px, object={ob.name} "
+        f"mode={ob.mode}, viewport shading={spaces}, nodes in material={len(tree.nodes)}")
     owner_uid = entry.parent
-    with _SolidViewports():
-        image = bake_value(context, ob, mat, lambda t: t.nodes[in_name].outputs[0], size)
-        print(f"Essence: baked in {time.perf_counter() - t0:.1f} s, running the compositor ...",
-              flush=True)
-        try:
-            result = run_compositor(entry, image)
-        finally:
-            bpy.data.images.remove(image)
-        print(f"Essence: filter done in {time.perf_counter() - t0:.1f} s", flush=True)
-        entry = next(e for e in mat.essence.layers if e.uid == uid)
-        store_result(entry, result)
-        entry["essence_sig"] = sig
-        # Put the new result into the chain now: a filter above bakes from it.
-        from . import nodes
-        owner = next((x for x in mat.essence.layers if x.uid == owner_uid), None)
-        if owner is not None:
-            sources.apply_owner(mat, owner)
-        nodes.rebuild_stack(mat)
+    image = bake_value(context, ob, mat, lambda t: t.nodes[in_name].outputs[0], size)
+    log(f"baked in {time.perf_counter() - t0:.1f} s, running the compositor")
+    try:
+        result = run_compositor(entry, image)
+    finally:
+        bpy.data.images.remove(image)
+    log(f"compositor done at {time.perf_counter() - t0:.1f} s, storing the result")
+    entry = next(e for e in mat.essence.layers if e.uid == uid)
+    store_result(entry, result)
+    entry["essence_sig"] = sig
+    # Put the new result into the chain now: a filter above bakes from it.
+    from . import nodes
+    owner = next((x for x in mat.essence.layers if x.uid == owner_uid), None)
+    if owner is not None:
+        sources.apply_owner(mat, owner)
+    nodes.rebuild_stack(mat)
+    log(f"APPLY finished in {time.perf_counter() - t0:.1f} s")
     return size
