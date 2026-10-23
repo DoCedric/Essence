@@ -39,8 +39,7 @@ def _add_fill(mat, mask_uid, value=None, blend='MULTIPLY'):
     e = mat.essence.layers[mat.essence.active_index]
     check(e.kind == 'FILL', "the new fill should be active")
     uid = e.uid
-    if blend != 'MULTIPLY':
-        e.fill_blend = blend
+    e.fill_blend = blend   # a new fill is Normal; most tests here want Multiply
     if value is not None:
         _blend_node(mat, uid).inputs[1].default_value = value
     return uid
@@ -80,6 +79,26 @@ def test_fill_blend_modes(addon):
                              ('MINIMUM', 0.4), ('MAXIMUM', 0.5)):
         _entry(mat, f).fill_blend = mode
         close(_rough(ob, mat, top), 0.2 + 0.6 * mask_value, 0.02, f"blend {mode}")
+
+
+def test_new_fill_is_normal_and_replaces_what_is_below(addon):
+    ob, mat, top, top_uid, mask_uid = _setup(base_value=0.5)
+    mat.essence.active_index = next(i for i, e in enumerate(mat.essence.layers)
+                                    if e.uid == mask_uid)
+    bpy.ops.essence.add_fill()
+    e = mat.essence.layers[mat.essence.active_index]
+    check(e.fill_blend == 'NORMAL', f"a new fill should be Normal, not {e.fill_blend}")
+    uid = e.uid
+    close(_rough(ob, mat, top), 0.8, 0.02, "a white Normal fill overrides the 0.5 mask")
+    _blend_node(mat, uid).inputs[1].default_value = 0.4
+    close(_rough(ob, mat, top), 0.2 + 0.6 * 0.4, 0.02, "the fill replaces the value below")
+    mix = addon.sources.source_nodes(mat.node_tree, uid, 'ADJ')['MIX']
+    addon.adjustments.mix_socket(mix, "Factor_Float").default_value = 0.5   # 0.5 -> 0.4 halfway
+    close(_rough(ob, mat, top), 0.2 + 0.6 * 0.45, 0.02, "Normal at half opacity blends")
+    _entry(mat, uid).fill_blend = 'MULTIPLY'
+    close(_rough(ob, mat, top), 0.2 + 0.6 * (0.5 + (0.2 - 0.5) * 0.5), 0.02, "switch to Multiply")
+    _entry(mat, uid).fill_blend = 'NORMAL'
+    close(_rough(ob, mat, top), 0.2 + 0.6 * 0.45, 0.02, "and back to Normal")
 
 
 def test_fill_opacity_and_eye(addon):

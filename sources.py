@@ -277,13 +277,17 @@ def _chain_fill(tree, a, out):
         mix[ROLE_KEY] = 'MIX'
         mix.width = 240
     mix.label = f"{a.name} Opacity"
-    main.operation = a.fill_blend
+    normal = a.fill_blend == 'NORMAL'
+    # Normal: the blend node passes the fill through (0 + fill), whatever is below.
+    main.operation = 'ADD' if normal else a.fill_blend
     a_in = adjustments.mix_socket(mix, "A_Color")
     b_in = adjustments.mix_socket(mix, "B_Color")
     for sock in (a_in, b_in, main.inputs[0]):
         _clear_links(tree, sock)
+    main.inputs[0].default_value = 0.0
     if out is not None and a.adj_enabled:
-        tree.links.new(out, main.inputs[0])
+        if not normal:
+            tree.links.new(out, main.inputs[0])
         tree.links.new(out, a_in)
         tree.links.new(main.outputs[0], b_in)
         out = adjustments.mix_output(mix)
@@ -292,7 +296,7 @@ def _chain_fill(tree, a, out):
 
 def _chain_filter(tree, a, out):
     """A baked filter in a mask's chain. The value so far goes into a reroute (the point that
-    Refresh bakes); once a result image exists the chain continues from that image sampled
+    Apply bakes); once a result image exists the chain continues from that image sampled
     with the UV map, before that the filter passes the value through."""
     have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)
     node_in, tex = have.get('IN'), have.get('OUT')

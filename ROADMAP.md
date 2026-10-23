@@ -77,16 +77,16 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [x] Live adjustment set: Levels, Hue/Saturation/Value, Brightness/Contrast, RGB Curves, Invert, Gamma, Gradient Map, Threshold (no Color Balance: Blender has no shader node for it). [H] (values checked against baked pixels)
 - [x] Operators: Add Adjustment (menu on the selected layer or mask), remove, move within the owner, eye toggle. [H]
 - [ ] Panel rows: items indented under their owner in the Layers list; an adjustment properties panel (type, channel, opacity, the node's own controls, the curve widget). [G]
-- [x] Mask fills: a Fill item on a mask (own source, blend Multiply/Add/Subtract/Darken/Lighten, opacity), items apply in order on the running mask value. Several masks per layer still work until the layout task retires them. [H]
+- [x] Mask fills: a Fill item on a mask (own source, blend Normal (default)/Multiply/Add/Subtract/Darken/Lighten, opacity), items apply in order on the running mask value. Several masks per layer still work until the layout task retires them. [H]
 - [x] The mask's built-in Invert/Brightness/Contrast are gone: they are ordinary adjustment items, so their order against fills and later filters is the user's choice. Mask group version 2. [H]
 - Known cosmetic issue (not fixing: the list is replaced by the mockup layout): items nested deepest in the list (for example under a mask inside a folder) sometimes get an empty line below them, probably from the row width at that indent.
 - [x] Tree view: layer and mask side by side, each with its item column, built from native widgets (the list stays as the other view). [H] draws; [G] look pending
 - [x] Retire several masks per layer: one mask per layer or folder, further values stacked as fills. Add Mask is unavailable once an owner has a mask. [H]
 - [x] Baked filters, opt-in: Kuwahara, Blur, Sharpen, Dilate/Erode as items on a mask with a Refresh button; one hidden packed image per item, deleted with it. [H]
-- [x] Filters know when they are out of date and refresh by themselves (debounced timer, Object Mode only, per-item switch). [H] (the timer running in the real GUI needs the user's check)
-- [ ] Auto Refresh is **off by default** and Object Mode only: a timer-driven refresh from Texture Paint deadlocked Blender in the GUI (found 2026-10-23). It now runs through the operator with a viewport context; needs a careful GUI test (Object Mode first) before it becomes the default.
+- [x] Filters show when they are out of date: the Apply button is red until applied and has a green dot when current, the row shows the same dot. No automatic refresh (removed: a timer-driven bake deadlocked Blender in Texture Paint, and a clock adds complexity). [H] draws; [G] colors
+- [ ] Open idea: some way to refresh filters without a timer, if a better approach turns up (the user is thinking about it).
 - [ ] Baked filters on layer channels (the bake already handles any socket). Not decided.
-- [ ] **Milestone checklist** [G]: tree view and rows, adjustments and fills on a mask, the mask button, Add Mask limits, a baked filter (add Kuwahara or Blur to a mask, press Refresh, check the result, the dot-hidden image in the image pickers, how long it takes), and Auto Refresh (change a value below the filter and let go: does it refresh by itself after a moment, and is it not baking while you drag? painting a mask, then leaving Texture Paint).
+- [ ] **Milestone checklist** [G]: tree view and rows, adjustments and fills on a mask, the mask button, Add Mask limits, a baked filter (add Kuwahara or Blur to a mask, press Refresh, check the result, the dot-hidden image in the image pickers, how long it takes), and the Apply button states (red when nothing is baked or something below changed, green dot when current; the row dot follows), and the new Normal fill blend (a new fill overrides what is below).
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 5, generators and assets:** Essence asset library (catalogs), noise/gradient/grunge assets, smart masks consuming baked maps.

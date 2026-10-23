@@ -42,7 +42,7 @@ class ESSENCE_UL_layers(bpy.types.UIList):
         node = tree.nodes.get(item.node_name) if tree is not None else None
 
         if item.kind == 'FILTER':
-            row.label(text="", icon='FILTER')
+            row.label(text="", icon=_filter_icon(item.id_data, item))
             row.prop(item, "name", text="", emboss=False)
             row.prop(item, "adj_enabled", text="", emboss=False,
                      icon='HIDE_OFF' if item.adj_enabled else 'HIDE_ON')
@@ -132,6 +132,13 @@ def _thumb(tree, item):
         return 0
 
 
+def _filter_icon(mat, item):
+    """Red dot: nothing baked yet or out of date. Green dot: the baked result is current."""
+    if filters.is_baked(item) and not filters.is_stale(mat, item):
+        return 'SEQUENCE_COLOR_04'
+    return 'SEQUENCE_COLOR_01'
+
+
 def _entry_row(layout, mat, item, active, add_mask=False):
     """One entry of the tree view: its icon, a button that selects it (pressed while it is the
     active one) and its eye toggle."""
@@ -160,7 +167,7 @@ def _entry_row(layout, mat, item, active, add_mask=False):
         if item.kind == 'MASK':
             toggle = node.inputs.get(nodes.MASK_ENABLE) if node is not None else None
     elif item.kind == 'FILTER':
-        row.label(text="", icon='FILE_REFRESH' if filters.is_stale(mat, item) else 'FILTER')
+        row.label(text="", icon=_filter_icon(mat, item))
     else:
         row.label(text="", icon='MODIFIER')
     row.operator("essence.select_entry", text=item.name, depress=active).uid = item.uid
@@ -301,7 +308,8 @@ def _adjustment_poll(cls, context):
 
 
 def _filter(layout, mat, e, owner):
-    """A baked filter: its type, the compositor node's settings, resolution and Refresh."""
+    """A baked filter: its type, the compositor node's settings, resolution and Apply (red when
+    the baked result is missing or out of date, a green dot when it is current)."""
     if owner is not None:
         layout.label(text=f"Filters {owner.name} (baked)", icon='FILTER')
     layout.prop(e, "filter_type", text="Filter")
@@ -314,16 +322,15 @@ def _filter(layout, mat, e, owner):
             if sock.name != t.input and hasattr(sock, "default_value"):
                 col.prop(sock, "default_value", text=sock.name)
     layout.prop(e, "filter_resolution", text="Resolution")
+    baked = filters.is_baked(e)
+    current = baked and not filters.is_stale(mat, e)
     row = layout.row(align=True)
-    row.operator("essence.filter_refresh", icon='FILE_REFRESH').uid = e.uid
-    row.prop(e, "filter_auto", text="", icon='TIME')
-    if not filters.is_baked(e):
-        layout.label(text="Not baked yet: passes the value through", icon='INFO')
-    elif filters.is_stale(mat, e):
-        layout.label(text="Out of date" + (": refreshing by itself" if e.filter_auto
-                                           else ": press Refresh"), icon='ERROR')
-    else:
-        layout.label(text="Up to date", icon='CHECKMARK')
+    row.scale_y = 1.3
+    row.alert = not current   # Blender's own red: something to apply
+    row.operator("essence.filter_apply", text="Apply",
+                 icon='SEQUENCE_COLOR_04' if current else 'SEQUENCE_COLOR_01').uid = e.uid
+    if not baked:
+        layout.label(text="Not applied yet: passes the value through", icon='INFO')
 
 
 def _fill(layout, mat, e, owner):

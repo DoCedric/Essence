@@ -31,7 +31,7 @@ _loaded = {"channels": channels, "adjustments": adjustments, "stack": stack,
 
 # Registration order. channels, adjustments, stack, sources and nodes only define data and
 # helpers.
-_modules = (props, ops, bake, filters, export, ui)
+_modules = (props, ops, bake, export, ui)
 
 
 def register():

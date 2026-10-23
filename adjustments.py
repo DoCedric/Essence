@@ -42,6 +42,7 @@ class AdjType:
 
 # A fill's blend with the mask value below: the Math node operation, label, description.
 FILL_BLENDS = [
+    ('NORMAL', "Normal", "Replace the value below (blended by Opacity)"),
     ('MULTIPLY', "Multiply", "Multiply with the value below (what stacked masks do)"),
     ('ADD', "Add", "Add to the value below"),
     ('SUBTRACT', "Subtract", "Subtract from the value below"),

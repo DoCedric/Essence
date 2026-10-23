@@ -132,6 +132,7 @@ def test_second_value_stacks_as_a_fill(addon):
     _add_mask(mat)                       # white image
     bpy.ops.essence.add_fill()
     fill = mat.essence.layers[mat.essence.active_index]
+    fill.fill_blend = 'MULTIPLY'
     mat.node_tree.nodes[fill.node_name].inputs[1].default_value = 0.5
     close(_rough(ob, mat, top), 0.5, 0.02, "mask 1.0 * fill 0.5")
 

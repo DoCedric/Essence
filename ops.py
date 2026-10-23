@@ -355,7 +355,7 @@ class ESSENCE_OT_add_fill(_Base, bpy.types.Operator):
         sources.SUSPEND = True
         try:
             e.adj_enabled = True
-            e.fill_blend = 'MULTIPLY'
+            e.fill_blend = 'NORMAL'
             e.source.channel = 'MASK'
             e.source.uid = uid
             e.source.kind = 'VALUE'  # white: neutral for Multiply; pick a source in the panel
@@ -372,7 +372,7 @@ class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
     bl_idname = "essence.add_filter"
     bl_label = "Add Baked Filter"
     bl_description = ("Add a baked filter on top of the active mask's items. It filters the "
-                      "value built so far into an image; press Refresh to bake it")
+                      "value built so far into an image; press Apply to bake it")
     bl_options = {'REGISTER', 'UNDO'}
 
     filter_type: EnumProperty(name="Filter", items=[(t.id, t.label, t.description)
@@ -408,9 +408,9 @@ class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
-class ESSENCE_OT_filter_refresh(_Base, bpy.types.Operator):
-    bl_idname = "essence.filter_refresh"
-    bl_label = "Refresh"
+class ESSENCE_OT_filter_apply(_Base, bpy.types.Operator):
+    bl_idname = "essence.filter_apply"
+    bl_label = "Apply"
     bl_description = ("Bake the mask value below this filter, run the filter on it and store "
                       "the result. Needed again after the items below change")
     bl_options = {'REGISTER', 'UNDO'}
@@ -433,9 +433,9 @@ class ESSENCE_OT_filter_refresh(_Base, bpy.types.Operator):
             return {'CANCELLED'}
         owner_uid = entry.parent
         try:
-            size = filters.refresh_entry(context, ob, mat, entry)
+            size = filters.apply_entry(context, ob, mat, entry)
         except Exception as e:  # noqa: BLE001
-            self.report({'ERROR'}, f"Refresh failed: {e}")
+            self.report({'ERROR'}, f"Apply failed: {e}")
             return {'CANCELLED'}
         _reapply(mat, owner_uid)
         self.report({'INFO'}, f"Baked filter at {size} px")
@@ -452,7 +452,7 @@ class ESSENCE_MT_add_adjustment(bpy.types.Menu):
         if owner is not None and owner.kind == 'MASK':
             self.layout.operator("essence.add_fill", text="Fill", icon='IMAGE_DATA')
             self.layout.separator()
-            self.layout.label(text="Baked filters (press Refresh)")
+            self.layout.label(text="Baked filters (press Apply)")
             for ft in filters.TYPES:
                 self.layout.operator("essence.add_filter", text=ft.label,
                                      icon='FILTER').filter_type = ft.id
@@ -605,7 +605,7 @@ classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
-    ESSENCE_OT_filter_refresh,
+    ESSENCE_OT_filter_apply,
     ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,

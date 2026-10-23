@@ -64,7 +64,7 @@ def test_blur_filter_softens_the_edge(addon):
     f = _add_filter(mat, mask_uid, 'BLUR')
     node = addon.filters.filter_node(_entry(mat, f))
     node.inputs['Size'].default_value = (30.0, 30.0)
-    check(bpy.ops.essence.filter_refresh(uid=f) == {'FINISHED'}, "refresh failed")
+    check(bpy.ops.essence.filter_apply(uid=f) == {'FINISHED'}, "refresh failed")
     result = bpy.data.images.get(addon.adjustments.FILTER_IMAGE_PREFIX + f)
     check(result is not None and result.name.startswith("."), "result image missing or visible")
     check(result.is_float and result.packed_file is not None, "result should be a packed float")
@@ -82,7 +82,7 @@ def test_every_filter_type_refreshes(addon):
     ob, mat, top, mask_uid, img = _setup()
     for t in addon.filters.TYPES:
         f = _add_filter(mat, mask_uid, t.id, resolution='256')
-        check(bpy.ops.essence.filter_refresh(uid=f) == {'FINISHED'}, f"{t.id} refresh failed")
+        check(bpy.ops.essence.filter_apply(uid=f) == {'FINISHED'}, f"{t.id} refresh failed")
         check(bpy.data.images.get(addon.adjustments.FILTER_IMAGE_PREFIX + f) is not None,
               f"{t.id}: no result")
 
@@ -93,7 +93,7 @@ def test_refresh_leaves_the_scene_as_it_was(addon):
     engine, samples = sc.render.engine, sc.cycles.samples
     scenes = len(bpy.data.scenes)
     f = _add_filter(mat, mask_uid, 'KUWAHARA')
-    bpy.ops.essence.filter_refresh(uid=f)
+    bpy.ops.essence.filter_apply(uid=f)
     check(sc.render.engine == engine and sc.cycles.samples == samples, "render settings changed")
     check(len(bpy.data.scenes) == scenes, "temp scene left behind")
     check(sc.compositing_node_group is None, "the user's compositor was touched")
@@ -107,8 +107,8 @@ def test_refresh_leaves_the_scene_as_it_was(addon):
 def test_refresh_again_replaces_the_image_and_removal_cleans_up(addon):
     ob, mat, top, mask_uid, img = _setup()
     f = _add_filter(mat, mask_uid, 'BLUR')
-    bpy.ops.essence.filter_refresh(uid=f)
-    bpy.ops.essence.filter_refresh(uid=f)
+    bpy.ops.essence.filter_apply(uid=f)
+    bpy.ops.essence.filter_apply(uid=f)
     results = [i for i in bpy.data.images if i.name.startswith(".Essence Filter ")]
     check(len(results) == 1, f"one image per filter expected: {[i.name for i in results]}")
     tex = addon.sources.source_nodes(mat.node_tree, f, 'ADJ')['OUT']
@@ -138,6 +138,6 @@ def test_filter_panel_and_rows_draw(addon):
     for t in addon.filters.TYPES:
         f = _add_filter(mat, mask_uid, t.id)
         log = _draw(ui._adjustment, ob)
-        check(any(c[0] == "operator" and c[1][0] == "essence.filter_refresh" for c in log),
-              f"{t.id}: no Refresh button")
+        check(any(c[0] == "operator" and c[1][0] == "essence.filter_apply" for c in log),
+              f"{t.id}: no Apply button")
         _draw(ui._stack, ob)

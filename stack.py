@@ -11,7 +11,7 @@ Blender UI list can show. Every entry has a `uid` and a `parent` (the uid of its
     fill        owned by a mask: blends another source onto the mask value built so far
                 (the items of a mask apply in order, adjustments and fills mixed)
     filter      owned by a mask: a baked neighbour filter (blur, Kuwahara, ...) of the value
-                built so far, kept as an image until it is refreshed
+                built so far, kept as an image until it is applied again
 
 The list is the post-order of that tree: everything an entry owns sits directly below it
 (lower index), so with the list drawn reversed an owner is followed by its items (a layer's

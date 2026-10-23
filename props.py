@@ -163,9 +163,6 @@ class EssenceLayer(bpy.types.PropertyGroup):
     filter_type: EnumProperty(name="Filter", items=[(t.id, t.label, t.description)
                                                     for t in filters.TYPES],
                               update=_adj_update)
-    filter_auto: BoolProperty(name="Auto Refresh", default=False,
-                              description="Refresh this filter by itself a moment after "
-                                          "something below it changed")
     filter_resolution: EnumProperty(name="Resolution", items=filters.RESOLUTIONS,
                                     default='1024',
                                     description="Size of the image the filter is baked at")

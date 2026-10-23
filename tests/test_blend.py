@@ -79,6 +79,7 @@ def test_mask_invert_and_stack(addon):
     # A second value is a Fill on the mask, applied after the Invert item: 0.75 * 0.5
     bpy.ops.essence.add_fill()
     fill = mat.essence.layers[mat.essence.active_index]
+    fill.fill_blend = 'MULTIPLY'
     mat.node_tree.nodes[fill.node_name].inputs[1].default_value = 0.5
     close(sample_socket(ob, mat, top.outputs["Roughness"])[0], 0.2 + 0.6 * 0.375, msg="stack")
 

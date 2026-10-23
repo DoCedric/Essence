@@ -1,7 +1,7 @@
 """Baked filters: neighbour-based image filters (Kuwahara, blur, sharpen, dilate/erode).
 
 A shader sees one pixel at a time, so these cannot be live nodes. A filter is an opt-in item
-(entry kind FILTER) on a mask. Refresh does three things:
+(entry kind FILTER) on a mask. Apply does three things:
 
     1. bake the mask value built so far (everything below the filter) into a float image,
        in UV space, with the same emission trick the export uses;
@@ -10,8 +10,10 @@ A shader sees one pixel at a time, so these cannot be live nodes. A filter is an
     3. keep the result in one image per item (".Essence Filter <uid>", the leading dot hides
        it from image pickers), which the chain samples with the UV map.
 
-Until the first Refresh the item passes the value through unchanged. Changing the items
-below a filter needs another Refresh: the filter works on a cache, by design.
+Until the first Apply the item passes the value through unchanged. Changing the items
+below a filter needs another Apply: the filter works on a cache, by design. The button is
+red while the cache is missing or out of date (see `signature`) and shows a green dot
+when it is current.
 """
 
 import hashlib
@@ -251,7 +253,7 @@ def cleanup():
 
 
 # --------------------------------------------------------------------------
-# Staleness and automatic refresh
+# Staleness
 # --------------------------------------------------------------------------
 
 # Node properties that do not change the value a node produces.
@@ -350,13 +352,13 @@ def is_stale(mat, entry):
     return is_baked(entry) and entry.get("essence_sig", "") != signature(mat, entry)
 
 
-def refresh_entry(context, ob, mat, entry):
+def apply_entry(context, ob, mat, entry):
     """Bake, filter and store the result of one filter item. Returns the size baked at.
     Raises on failure; nothing is left behind in the scene either way."""
     tree = mat.node_tree
     node_in = sources.source_nodes(tree, entry.uid, "ADJ").get('IN')
     if node_in is None:
-        raise RuntimeError("filter nodes missing, press Rebuild")
+        raise RuntimeError("filter nodes missing, press Rebuild Links")
     if not ob.data.uv_layers:
         raise RuntimeError("the object has no UV map")
     size = int(entry.filter_resolution)
@@ -371,105 +373,3 @@ def refresh_entry(context, ob, mat, entry):
     store_result(entry, result)
     entry["essence_sig"] = sig
     return size
-
-
-# State of the polling below: the signature seen on the previous tick per filter, and the
-# mode the active object was in.
-_seen = {}
-_last_mode = {}
-TICK = 0.5
-
-
-def tick(context=None):
-    """Called by a timer. Marks nothing itself: a filter is stale when its signature differs
-    from the one it was baked with. With Auto Refresh on, a stale filter is refreshed once its
-    signature stopped changing for a whole tick (so dragging a slider does not bake on every
-    step) and the object is in Object Mode.
-    Leaving Texture Paint marks every filter of the material stale, since painting changes
-    pixels no signature can see. Returns the delay until the next tick."""
-    context = context or bpy.context
-    ob = context.active_object
-    if ob is None or ob.type != 'MESH' or ob.active_material is None:
-        return TICK
-    mat = ob.active_material
-    if mat.node_tree is None or not any(e.kind == 'FILTER' for e in mat.essence.layers):
-        _last_mode.pop(ob.name, None)
-        return TICK
-    if _last_mode.get(ob.name) == 'TEXTURE_PAINT' and ob.mode != 'TEXTURE_PAINT':
-        for e in mat.essence.layers:
-            if e.kind == 'FILTER':
-                e["essence_sig"] = ""
-    _last_mode[ob.name] = ob.mode
-    for e in list(mat.essence.layers):
-        if e.kind != 'FILTER' or not is_baked(e):
-            continue
-        key = (mat.name, e.uid)
-        sig = signature(mat, e)
-        settled = _seen.get(key) == sig
-        _seen[key] = sig
-        if (e.get("essence_sig", "") != sig and settled and e.filter_auto and e.adj_enabled
-                and ob.mode == 'OBJECT'):
-            uid = e.uid
-            try:
-                _auto_refresh(context, ob, mat, e)
-            except Exception as ex:  # noqa: BLE001
-                print(f"Essence: automatic filter refresh failed: {ex}")
-                e = next((x for x in mat.essence.layers if x.uid == uid), None)
-                if e is not None:
-                    e["essence_sig"] = sig   # do not retry the same state every tick
-    return TICK
-
-
-def _ui_context():
-    """(window, area, region) of a 3D viewport, or None when there is no interface (a
-    background run)."""
-    for window in bpy.context.window_manager.windows:
-        for area in window.screen.areas:
-            if area.type == 'VIEW_3D':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        return window, area, region
-    return None
-
-
-def _auto_refresh(context, ob, mat, entry):
-    """Refresh the way a click on the button does, with a window, area and region around it:
-    the bake and the compositor render need them, and without them from a timer Blender
-    deadlocked. With no interface at all (tests, background runs) the work is done directly."""
-    ui = _ui_context()
-    if ui is None:
-        from . import nodes
-        owner_uid = entry.parent
-        refresh_entry(context, ob, mat, entry)
-        nodes.rebuild_stack(mat)
-        owner = next((x for x in mat.essence.layers if x.uid == owner_uid), None)
-        if owner is not None:
-            sources.apply_owner(mat, owner)
-            nodes.rebuild_stack(mat)
-        return
-    window, area, region = ui
-    with context.temp_override(window=window, area=area, region=region, active_object=ob,
-                               object=ob):
-        result = bpy.ops.essence.filter_refresh('EXEC_DEFAULT', uid=entry.uid)
-    if 'FINISHED' not in result:
-        raise RuntimeError("the refresh operator did not finish")
-
-
-def _timer():
-    try:
-        return tick()
-    except Exception as ex:  # noqa: BLE001 - a timer must never raise
-        print(f"Essence: filter timer: {ex}")
-        return TICK
-
-
-def register():
-    if not bpy.app.timers.is_registered(_timer):
-        bpy.app.timers.register(_timer, first_interval=TICK, persistent=True)
-
-
-def unregister():
-    if bpy.app.timers.is_registered(_timer):
-        bpy.app.timers.unregister(_timer)
-    _seen.clear()
-    _last_mode.clear()
