@@ -9,8 +9,9 @@ def _remap(addon, mat, mask_uid):
     return addon.sources.source_nodes(mat.node_tree, mask_uid, 'MASK')['REMAP']
 
 
-def _baked(addon, mat, mask_uid, filter_type='BLUR'):
+def _baked(addon, mat, mask_uid, filter_type='BLUR', auto=True):
     f = _add_filter(mat, mask_uid, filter_type)
+    _entry(mat, f).filter_auto = auto
     check(bpy.ops.essence.filter_refresh(uid=f) == {'FINISHED'}, "refresh failed")
     return f
 
@@ -144,14 +145,20 @@ def test_panel_and_row_show_the_state(addon):
     check('FILE_REFRESH' in icons, "the row of a stale filter should show the refresh icon")
 
 
-def test_auto_refresh_works_in_texture_paint_and_returns_to_it(addon):
+def test_no_auto_refresh_in_texture_paint_but_it_catches_up(addon):
     ob, mat, top, mask_uid, img = _setup()
     f = _baked(addon, mat, mask_uid)
     bpy.ops.object.mode_set(mode='TEXTURE_PAINT')
-    check(ob.mode == 'TEXTURE_PAINT', "setup: not in Texture Paint")
     _remap(addon, mat, mask_uid).inputs['To Max'].default_value = 0.5
-    _tick(addon, 3)
-    check(not _stale(addon, mat, f), "a filter must refresh while the object is in Texture Paint")
-    check(ob.mode == 'TEXTURE_PAINT', f"the object must be back in Texture Paint: {ob.mode}")
-    check(addon.filters._last_mode.get(ob.name) == 'TEXTURE_PAINT', "mode bookkeeping")
+    _tick(addon, 4)
+    check(_stale(addon, mat, f), "no timer-driven bake while painting")
+    check(ob.mode == 'TEXTURE_PAINT', "the mode must not be touched")
     bpy.ops.object.mode_set(mode='OBJECT')
+    _tick(addon, 3)
+    check(not _stale(addon, mat, f), "back in Object Mode it catches up")
+
+
+def test_auto_refresh_is_off_by_default(addon):
+    ob, mat, top, mask_uid, img = _setup()
+    f = _baked(addon, mat, mask_uid, auto=False)
+    check(_entry(mat, f).filter_auto is False, "Auto Refresh is opt-in until proven in the GUI")

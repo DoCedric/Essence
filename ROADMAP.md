@@ -84,6 +84,7 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [x] Retire several masks per layer: one mask per layer or folder, further values stacked as fills. Add Mask is unavailable once an owner has a mask. [H]
 - [x] Baked filters, opt-in: Kuwahara, Blur, Sharpen, Dilate/Erode as items on a mask with a Refresh button; one hidden packed image per item, deleted with it. [H]
 - [x] Filters know when they are out of date and refresh by themselves (debounced timer, Object Mode only, per-item switch). [H] (the timer running in the real GUI needs the user's check)
+- [ ] Auto Refresh is **off by default** and Object Mode only: a timer-driven refresh from Texture Paint deadlocked Blender in the GUI (found 2026-10-23). It now runs through the operator with a viewport context; needs a careful GUI test (Object Mode first) before it becomes the default.
 - [ ] Baked filters on layer channels (the bake already handles any socket). Not decided.
 - [ ] **Milestone checklist** [G]: tree view and rows, adjustments and fills on a mask, the mask button, Add Mask limits, a baked filter (add Kuwahara or Blur to a mask, press Refresh, check the result, the dot-hidden image in the image pickers, how long it takes), and Auto Refresh (change a value below the filter and let go: does it refresh by itself after a moment, and is it not baking while you drag? painting a mask, then leaving Texture Paint).
 

@@ -384,8 +384,7 @@ def tick(context=None):
     """Called by a timer. Marks nothing itself: a filter is stale when its signature differs
     from the one it was baked with. With Auto Refresh on, a stale filter is refreshed once its
     signature stopped changing for a whole tick (so dragging a slider does not bake on every
-    step) and the object is in Object Mode or Texture Paint (the bake leaves the mode for a
-    moment and goes back; Edit Mode and the others wait).
+    step) and the object is in Object Mode.
     Leaving Texture Paint marks every filter of the material stale, since painting changes
     pixels no signature can see. Returns the delay until the next tick."""
     context = context or bpy.context
@@ -409,23 +408,51 @@ def tick(context=None):
         settled = _seen.get(key) == sig
         _seen[key] = sig
         if (e.get("essence_sig", "") != sig and settled and e.filter_auto and e.adj_enabled
-                and ob.mode in ('OBJECT', 'TEXTURE_PAINT')):
+                and ob.mode == 'OBJECT'):
             uid = e.uid
             try:
-                refresh_entry(context, ob, mat, e)
+                _auto_refresh(context, ob, mat, e)
             except Exception as ex:  # noqa: BLE001
                 print(f"Essence: automatic filter refresh failed: {ex}")
                 e = next((x for x in mat.essence.layers if x.uid == uid), None)
                 if e is not None:
                     e["essence_sig"] = sig   # do not retry the same state every tick
-                continue
-            from . import nodes
-            nodes.rebuild_stack(mat)
-            owner = next((x for x in mat.essence.layers if x.uid == e.parent), None)
-            if owner is not None:
-                sources.apply_owner(mat, owner)
-                nodes.rebuild_stack(mat)
     return TICK
+
+
+def _ui_context():
+    """(window, area, region) of a 3D viewport, or None when there is no interface (a
+    background run)."""
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        return window, area, region
+    return None
+
+
+def _auto_refresh(context, ob, mat, entry):
+    """Refresh the way a click on the button does, with a window, area and region around it:
+    the bake and the compositor render need them, and without them from a timer Blender
+    deadlocked. With no interface at all (tests, background runs) the work is done directly."""
+    ui = _ui_context()
+    if ui is None:
+        from . import nodes
+        owner_uid = entry.parent
+        refresh_entry(context, ob, mat, entry)
+        nodes.rebuild_stack(mat)
+        owner = next((x for x in mat.essence.layers if x.uid == owner_uid), None)
+        if owner is not None:
+            sources.apply_owner(mat, owner)
+            nodes.rebuild_stack(mat)
+        return
+    window, area, region = ui
+    with context.temp_override(window=window, area=area, region=region, active_object=ob,
+                               object=ob):
+        result = bpy.ops.essence.filter_refresh('EXEC_DEFAULT', uid=entry.uid)
+    if 'FINISHED' not in result:
+        raise RuntimeError("the refresh operator did not finish")
 
 
 def _timer():
