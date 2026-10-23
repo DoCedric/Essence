@@ -521,7 +521,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 5. ~~**Blend mode wiring**~~ Decided: layer group variants (see B3, "Group variants").
 6. **Layer sources UI**: how the picker for image/procedural per channel stays compact (one popover per channel, or a "Sources" subpanel with a row per channel).
 7. ~~**Channel list vs fixed layer group interface**~~ Decided: the channel set is part of the same group variant key, so a material only has the sockets of its channels.
-8. **Compositor use for filters**: confirm that the 5.x compositor (node group based, GPU) can be driven from an addon operator on a single image with an acceptable round trip, and whether it can write to an image datablock directly or needs a File Output/Viewer step.
+8. ~~**Compositor use for filters**~~ Answered (verified headless, `tests/test_compositor.py`): a filter runs in a **throwaway scene** (`bpy.data.scenes.new`) with a compositor node group (`scene.compositing_node_group`): Image node, filter nodes, Group Output. Rendered with the Workbench engine at the image's size with `write_still` to a temporary EXR, which is loaded and packed (the Render Result image has no pixels in background mode). The user's own scene and compositor are never touched, and the temp scene, group and folder are removed. Tested with the Kuwahara node: noise in flat areas drops about 20x and a hard edge stays hard. About 1 to 2 s per run, mostly engine start-up.
 9. **Texture set model** for objects sharing a material with different UVs (see the B8 limitation).
 10. **Mesh maps vs live generators**: which generators have a live (Cycles-free) form and which need a baked mesh map. Decide per generator.
 
