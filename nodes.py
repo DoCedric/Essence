@@ -31,6 +31,10 @@ VERSION_KEY = "essence_version"
 BUMP_NODE_NAME = "Essence Bump"
 NORMAL_NODE_NAME = "Essence Normal Map"
 BAKED_NORMAL_NODE = "Essence_Bake_NORMAL"  # the Normal slot, also the bake target
+AO_STRENGTH_NODE = "Essence AO Strength"   # Value node, the slider
+AO_COLOR_NODE = "Essence AO Color"         # Base Color * AO
+AO_SPEC_FACTOR_NODE = "Essence AO Specular Factor"
+AO_SPEC_NODE = "Essence AO Specular"       # Specular IOR Level * AO
 
 
 # --------------------------------------------------------------------------
@@ -537,6 +541,100 @@ def apply_normal_map(mat, image_node):
     return nm
 
 
+def _ao_node(tree, name, idname, loc, **props):
+    node = tree.nodes.get(name)
+    if node is None or node.bl_idname != idname:
+        node = tree.nodes.new(idname)
+        node.name = node.label = name
+        for k, v in props.items():
+            setattr(node, k, v)
+    node.location = loc
+    return node
+
+
+def _insert_before(tree, node, a_sock, dst):
+    """Put `node` (whose `a_sock` input takes the original value) in front of `dst`. Safe to
+    repeat: if `dst` is already fed by `node`, the original source is rediscovered through
+    `a_sock`. An unlinked destination hands its default over to `a_sock` the first time."""
+    src = None
+    if dst.is_linked:
+        src = dst.links[0].from_socket
+        if src.node == node:
+            src = a_sock.links[0].from_socket if a_sock.is_linked else None
+            _clear_links(tree, dst)
+            if src is not None:
+                tree.links.new(src, a_sock)
+            return
+    else:
+        a_sock.default_value = dst.default_value
+    _clear_links(tree, a_sock)
+    if src is not None:
+        tree.links.new(src, a_sock)
+
+
+def _remove_before(tree, node, a_sock, dst):
+    """Undo `_insert_before`: feed `dst` from whatever fed `a_sock` again."""
+    if dst.is_linked and dst.links[0].from_node == node:
+        src = a_sock.links[0].from_socket if a_sock.is_linked else None
+        _clear_links(tree, dst)
+        if src is not None:
+            tree.links.new(src, dst)
+
+
+def apply_ao(mat):
+    """Use the AO mesh map slot's image at the end of the shading tree, like the AO pass of
+    a PBR renderer: it darkens Base Color and lowers Specular IOR Level by
+    `lerp(1, AO, Strength)`. It sits after the layer stack and Export reads the layer
+    outputs, so exported maps are not affected. An empty slot unhooks it again (the nodes
+    and the strength stay). Idempotent."""
+    tree = mat.node_tree
+    bsdf = find_principled(tree)
+    slot = tree.nodes.get(map_slot_name('AO'))
+    if bsdf is None or slot is None or slot.bl_idname != 'ShaderNodeTexImage':
+        return None
+    x, y = bsdf.location.x - 250, bsdf.location.y + 450
+    strength = tree.nodes.get(AO_STRENGTH_NODE)
+    has_image = slot.image is not None
+    if not has_image and strength is None:
+        return None
+    fresh = strength is None
+    strength = _ao_node(tree, AO_STRENGTH_NODE, 'ShaderNodeValue', (x - 500, y))
+    if fresh:
+        strength.outputs[0].default_value = 1.0
+    color = _ao_node(tree, AO_COLOR_NODE, 'ShaderNodeMix', (x, y),
+                     data_type='RGBA', blend_type='MULTIPLY')
+    factor = _ao_node(tree, AO_SPEC_FACTOR_NODE, 'ShaderNodeMix', (x - 250, y - 250),
+                      data_type='FLOAT')
+    spec = _ao_node(tree, AO_SPEC_NODE, 'ShaderNodeMath', (x, y - 250), operation='MULTIPLY')
+    factor_in = _by_ident(color.inputs, "Factor_Float")
+    a_color = _by_ident(color.inputs, "A_Color")
+    base_color = bsdf.inputs['Base Color']
+    spec_level = bsdf.inputs['Specular IOR Level']
+    if not has_image:
+        _remove_before(tree, color, a_color, base_color)
+        _remove_before(tree, spec, spec.inputs[1], spec_level)
+        return strength
+    slot.location = (x - 500, y - 250)
+    _insert_before(tree, color, a_color, base_color)
+    _insert_before(tree, spec, spec.inputs[1], spec_level)
+    b_color = _by_ident(color.inputs, "B_Color")
+    for sock in (factor_in, b_color, _by_ident(factor.inputs, "Factor_Float")):
+        _clear_links(tree, sock)
+    tree.links.new(strength.outputs[0], factor_in)
+    tree.links.new(slot.outputs['Color'], b_color)
+    tree.links.new(strength.outputs[0], _by_ident(factor.inputs, "Factor_Float"))
+    _by_ident(factor.inputs, "A_Float").default_value = 1.0
+    _clear_links(tree, _by_ident(factor.inputs, "B_Float"))
+    tree.links.new(slot.outputs['Color'], _by_ident(factor.inputs, "B_Float"))
+    _clear_links(tree, spec.inputs[0])
+    tree.links.new(_by_ident(factor.outputs, "Result_Float"), spec.inputs[0])
+    _clear_links(tree, base_color)
+    tree.links.new(_by_ident(color.outputs, "Result_Color"), base_color)
+    _clear_links(tree, spec_level)
+    tree.links.new(spec.outputs[0], spec_level)
+    return strength
+
+
 def _clear_links(tree, sock):
     for l in list(sock.links):
         tree.links.remove(l)
@@ -557,6 +655,7 @@ def rebuild_stack(mat):
     entries = [(e, tree.nodes.get(e.node_name)) for e in layers if e.kind != 'MASK']
     entries = [(e, n) for e, n in entries if n is not None]
     if not entries:
+        apply_ao(mat)
         return
 
     active = active_channels(mat)
@@ -620,6 +719,8 @@ def rebuild_stack(mat):
         tree.links.new(baked.outputs['Color'], nm.inputs['Color'])
     elif tree.nodes.get(NORMAL_NODE_NAME) is not None:
         _clear_links(tree, tree.nodes[NORMAL_NODE_NAME].inputs['Color'])
+
+    apply_ao(mat)
 
     for m in layers:
         if m.kind == 'MASK' and m.uid and tree.nodes.get(m.node_name) is not None:

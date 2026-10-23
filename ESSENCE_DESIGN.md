@@ -164,6 +164,8 @@ Notes:
 ### Mesh maps and the Normal slot ✅
 The **Mesh Maps** panel has one slot per map (Normal and Ambient Occlusion for now; curvature, thickness, position and ID join with the mesh-map sprint, and generators will read from them). A slot is an image node named `Essence_Bake_<MAP>`: a bake fills it, or the user picks any image. The **Normal** slot is wired as **image, Normal Map node (Tangent), Bump node's Normal input, BSDF Normal**: the normal map is evaluated before the bump, as Blender requires, and layer height feeds the Bump node's Height, so both combine in the single Bump node. An empty slot feeds nothing. The Normal Map **Strength** sits in the slot. Export reads the AO slot for the MaskMap.
 
+**AO overlay** ✅ *(verified headless)*: an image in the AO slot is also used at the end of the shading tree, like the AO pass of a PBR renderer. A Strength slider (the `Essence AO Strength` Value node) controls `lerp(1, AO, Strength)`, which multiplies **Base Color** (`Essence AO Color`, a Multiply Mix node) and **Specular IOR Level** (`Essence AO Specular`, a Math node carrying the BSDF's own specular value). Strength 0 changes nothing; an empty slot unhooks the overlay and keeps the nodes and the strength. It sits after the layer stack and Export bakes the layer outputs, so exported maps never carry it (the MaskMap still gets the AO in its own channel). Blender cannot restrict AO to indirect light only (Substance does), so the multiplier also dims direct light in the viewport: that is the accepted approximation. A future Specular layer channel feeds the Math node's input, so the order stays stack, then AO.
+
 While a Normal (Tangent) bake runs, the BSDF's Normal input is temporarily unlinked, so the bake does not capture the material's own bump or normal map. A low-poly-only tangent bake is therefore flat.
 
 ### Export ✅
@@ -196,7 +198,7 @@ Channels are data (`channels.py`). The Principled BSDF already exposes nearly ev
 | Normal | Not a layer channel: one normal map per material, see Mesh maps. Layer detail goes through Bump | | 🚫 as a channel (decided; avoids a per-layer normal blend cost) | |
 | Opacity / Alpha | BSDF Alpha | Mix + blend modes | ✅ BaseMap alpha on export | |
 | Emission (color + strength) | BSDF Emission Color; strength set to 1 when the channel is switched on | Mix + blend modes | ✅ own file on export | |
-| Ambient Occlusion | not a BSDF input; kept as an exported channel and optional viewport multiply | Multiply | 🟡 baked and exported, not a layer channel | P1 |
+| Ambient Occlusion | not a BSDF input; kept as an exported channel and a viewport overlay with a Strength slider (Base Color and Specular), see Mesh maps | Multiply | 🟡 baked, exported and overlaid, not a layer channel | P1 |
 | Specular level / Specular tint | BSDF Specular IOR Level / Tint | Mix | ⬜ | P1 |
 | Coat (weight, roughness, tint, normal) | BSDF Coat inputs | Mix | ⬜ | P2 |
 | Sheen (weight, roughness, tint) | BSDF Sheen inputs | Mix | ⬜ | P2 |
@@ -537,6 +539,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 
 - Anti-aliasing: a high-poly edge falling mid-pixel is hard at Off and gets intermediate values at 4x, the image keeps its final size and float type, and a size times factor over 8192 px is refused before anything is created.
 - Re-baking at a different size replaces the image (found in the GUI: `Image.scale` is silently ignored on a packed image, so a re-bake kept the old resolution). The bake now makes a fresh image and moves the users over.
+- AO overlay: Base Color and Specular IOR Level follow `lerp(1, AO, Strength)` at strengths 1, 0.5 and 0 (real baked pixels), rebuild is idempotent, an empty slot hands Base Color back to the stack, an AO bake wires itself, and the Unity export is unaffected.
 
 **Still to confirm in the GUI (milestone checklist):**
 - `template_ID_preview(..., open="image.open")`, and the layer-row thumbnail via `preview_ensure`.

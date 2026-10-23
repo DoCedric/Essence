@@ -96,3 +96,100 @@ def test_removed_normal_channel_migrates(addon):
     check(bpy.ops.essence.rebuild() == {'FINISHED'}, "rebuild failed")
     check(all(c.id != 'NORMAL' for c in mat.essence.channels), "stale channel state kept")
     check(all(x.channel != 'NORMAL' for x in layer.sources), "stale source kept")
+
+
+def _grey_ao(value):
+    img = bpy.data.images.new(f"ao_{value}", 16, 16, float_buffer=True)
+    img.generated_color = (value, value, value, 1.0)
+    img.colorspace_settings.name = 'Non-Color'
+    return img
+
+
+def _ao_setup(addon, ao_value=0.25):
+    ob = make_plane()
+    bpy.ops.essence.add_layer()
+    mat = ob.active_material
+    top = mat.node_tree.nodes[mat.essence.layers[-1].node_name]
+    top.inputs["Color B"].default_value = (0.8, 0.4, 0.2, 1.0)
+    _slot(addon, mat, 'AO').image = _grey_ao(ao_value)
+    bpy.ops.essence.rebuild()
+    return ob, mat
+
+
+def test_ao_darkens_color_and_specular(addon):
+    ob, mat = _ao_setup(addon, 0.25)
+    tree = mat.node_tree
+    bsdf = addon.nodes.find_principled(tree)
+    color_mix = tree.nodes[addon.nodes.AO_COLOR_NODE]
+    check(bsdf.inputs['Base Color'].links[0].from_node == color_mix, "AO not before Base Color")
+    spec_mul = tree.nodes[addon.nodes.AO_SPEC_NODE]
+    check(bsdf.inputs['Specular IOR Level'].links[0].from_node == spec_mul, "AO not on specular")
+    strength = tree.nodes[addon.nodes.AO_STRENGTH_NODE]
+    out = lambda sock: sample_socket(ob, mat, sock)  # noqa: E731
+    result = next(o for o in color_mix.outputs if o.identifier == "Result_Color")
+    full = out(result)
+    close(full[0], 0.8 * 0.25, 0.02, "color red at strength 1")
+    close(full[1], 0.4 * 0.25, 0.02, "color green at strength 1")
+    close(out(spec_mul.outputs[0])[0], 0.5 * 0.25, 0.02, "specular at strength 1")
+    strength.outputs[0].default_value = 0.5   # lerp(1, 0.25, 0.5) = 0.625
+    half = out(result)
+    close(half[0], 0.8 * 0.625, 0.02, "color red at strength 0.5")
+    close(out(spec_mul.outputs[0])[0], 0.5 * 0.625, 0.02, "specular at strength 0.5")
+    strength.outputs[0].default_value = 0.0
+    close(out(result)[0], 0.8, 0.02, "strength 0 leaves the color alone")
+
+
+def test_ao_rebuild_is_idempotent_and_removable(addon):
+    ob, mat = _ao_setup(addon, 0.25)
+    tree = mat.node_tree
+    bsdf = addon.nodes.find_principled(tree)
+    stack_out = tree.nodes[mat.essence.layers[-1].node_name]
+    for _ in range(3):
+        bpy.ops.essence.rebuild()
+    color_mix = tree.nodes[addon.nodes.AO_COLOR_NODE]
+    a = next(s for s in color_mix.inputs if s.identifier == "A_Color")
+    check(a.links[0].from_node == stack_out, "layer stack should feed the AO color node once")
+    check(len([n for n in tree.nodes if n.name.startswith("Essence AO Color")]) == 1,
+          "duplicate AO nodes")
+    spec_mul = tree.nodes[addon.nodes.AO_SPEC_NODE]
+    close(spec_mul.inputs[1].default_value, 0.5, 0.001, "specular default carried over")
+    _slot(addon, mat, 'AO').image = None
+    bpy.ops.essence.rebuild()
+    check(bsdf.inputs['Base Color'].links[0].from_node == stack_out,
+          "an empty AO slot should hand Base Color back to the stack")
+    check(not bsdf.inputs['Specular IOR Level'].is_linked, "specular should be unlinked again")
+    close(tree.nodes[addon.nodes.AO_STRENGTH_NODE].outputs[0].default_value, 1.0, 0.001, "strength kept")
+
+
+def test_ao_bake_wires_the_shader(addon):
+    ob = make_plane()
+    bpy.ops.essence.add_layer()
+    mat = ob.active_material
+    sc = bpy.context.scene
+    sc.essence_bake_map = 'AO'
+    sc.essence_bake_size = '128'
+    sc.essence_bake_samples = 4
+    check(bpy.ops.essence.bake() == {'FINISHED'}, "bake failed")
+    bsdf = addon.nodes.find_principled(mat.node_tree)
+    check(bsdf.inputs['Base Color'].links[0].from_node.name == addon.nodes.AO_COLOR_NODE,
+          "a fresh AO bake should be wired into the shader")
+
+
+def test_export_ignores_the_ao_overlay(addon):
+    import os
+    import shutil
+    import tempfile
+    ob, mat = _ao_setup(addon, 0.25)
+    folder = tempfile.mkdtemp(prefix="essence_export_")
+    try:
+        sc = bpy.context.scene
+        sc.essence_export_format = 'OPEN_EXR'
+        sc.essence_export_size = '512'
+        sc.essence_export_dir = folder
+        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export failed")
+        out = bpy.data.images.load(os.path.join(folder, f"{bpy.path.clean_name(mat.name)}_BaseMap.exr"))
+        w, h = out.size
+        i = ((h // 2) * w + w // 2) * 4
+        close(list(out.pixels)[i], 0.8, 0.03, "BaseMap red must not carry the AO darkening")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)

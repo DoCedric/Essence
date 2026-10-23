@@ -385,6 +385,9 @@ class ESSENCE_OT_bake(bpy.types.Operator):
                 node = mat.node_tree.nodes.get(_bake_node_name(map_type))
                 if node is not None:
                     essence_nodes.apply_normal_map(mat, node)
+        elif map_type == 'AO':
+            for mat in _ensure_materials(obj):
+                essence_nodes.apply_ao(mat)
         return image
 
     def execute(self, context):

@@ -333,6 +333,10 @@ def _maps(self, context):
             nm = tree.nodes.get(nodes.NORMAL_NODE_NAME)
             if nm is not None:
                 box.prop(nm.inputs['Strength'], "default_value", text="Strength")
+        elif map_id == 'AO':
+            ao = tree.nodes.get(nodes.AO_STRENGTH_NODE)
+            if ao is not None:
+                box.prop(ao.outputs[0], "default_value", text="Strength", slider=True)
     if not found:
         layout.label(text="Add a layer first")
 
