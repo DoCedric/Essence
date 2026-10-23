@@ -153,3 +153,22 @@ def test_panels_survive_stale_channel_data(addon):
     mat.essence.active_index = [e.name for e in mat.essence.layers].index(layer.name)
     for fn in (ui._material, ui._props, ui._stack, ui._maps):
         _draw(fn, ob)
+
+
+def test_maps_panel_survives_a_legacy_ao_strength_node(addon):
+    """A Value node as the AO strength (earlier version) must not break the panel, and the
+    current Mix node shows the slider."""
+    from essence import ui
+    ob, mat = _setup(addon)
+    old = mat.node_tree.nodes.new('ShaderNodeValue')
+    old.name = old.label = addon.nodes.AO_STRENGTH_NODE
+    log = _draw(ui._maps, ob)
+    check(any(c[0] == "operator" and c[1][0] == "essence.rebuild" for c in log),
+          "legacy strength node should offer an upgrade")
+    mat.node_tree.nodes.remove(old)
+    img = bpy.data.images.new("ao", 8, 8)
+    mat.node_tree.nodes[addon.nodes.map_slot_name('AO')].image = img
+    bpy.ops.essence.rebuild()
+    log = _draw(ui._maps, ob)
+    check(any(c[0] == "prop" and c[2].get("text") == "Strength" and c[2].get("slider")
+              for c in log), "AO strength slider not drawn")

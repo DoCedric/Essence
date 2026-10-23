@@ -336,8 +336,12 @@ def _maps(self, context):
         elif map_id == 'AO':
             ao = tree.nodes.get(nodes.AO_STRENGTH_NODE)
             if ao is not None:
-                factor = next(i for i in ao.inputs if i.identifier == "Factor_Float")
-                box.prop(factor, "default_value", text="Strength", slider=True)
+                factor = next((i for i in ao.inputs if i.identifier == "Factor_Float"), None)
+                if factor is not None:
+                    box.prop(factor, "default_value", text="Strength", slider=True)
+                else:  # made by an earlier version (a Value node): Rebuild replaces it
+                    box.operator("essence.rebuild", text="Upgrade AO Strength",
+                                 icon='FILE_REFRESH')
     if not found:
         layout.label(text="Add a layer first")
 
