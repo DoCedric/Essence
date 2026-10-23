@@ -207,19 +207,3 @@ def test_ao_strength_slider_is_limited_to_0_1(addon):
     prop = sock.bl_rna.properties["default_value"]
     check(prop.hard_min == 0.0 and prop.hard_max == 1.0,
           f"slider range is {prop.hard_min}..{prop.hard_max}")
-
-
-def test_ao_strength_migrates_from_value_node(addon):
-    """A file made when the strength was a Value node keeps its strength."""
-    ob, mat = _ao_setup(addon, 0.25)
-    tree = mat.node_tree
-    tree.nodes.remove(tree.nodes[addon.nodes.AO_STRENGTH_NODE])
-    old = tree.nodes.new('ShaderNodeValue')
-    old.name = old.label = addon.nodes.AO_STRENGTH_NODE
-    old.outputs[0].default_value = 0.4
-    bpy.ops.essence.rebuild()
-    node = tree.nodes[addon.nodes.AO_STRENGTH_NODE]
-    check(node.bl_idname == 'ShaderNodeMix', "strength node was not replaced")
-    close(_factor(node).default_value, 0.4, 0.001, "strength carried over")
-    check(len([n for n in tree.nodes if n.name.startswith("Essence AO Strength")]) == 1,
-          "duplicate strength nodes")

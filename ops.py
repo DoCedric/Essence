@@ -5,7 +5,7 @@ from . import nodes, sources, stack
 from .channels import SOURCE_BY_ID
 
 
-def _material(context, create=False, migrate=False):
+def _material(context, create=False):
     ob = context.active_object
     if ob is None or ob.type != 'MESH':
         return None
@@ -14,8 +14,6 @@ def _material(context, create=False, migrate=False):
         mat = bpy.data.materials.new(f"{ob.name} Essence")
         ob.data.materials.append(mat)
         ob.active_material = mat
-    if mat is not None and migrate:  # only from execute(), never from poll()
-        nodes.migrate(mat)
     return mat
 
 
@@ -53,7 +51,7 @@ class ESSENCE_OT_add_layer(_Base, bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        mat = _material(context, create=True, migrate=True)
+        mat = _material(context, create=True)
         s = mat.essence
         nodes.ensure_tree(mat)
         name = f"Layer {sum(1 for x in s.layers if x.kind == 'LAYER') + 1}"
@@ -83,7 +81,7 @@ class ESSENCE_OT_add_folder(_Base, bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        mat = _material(context, create=True, migrate=True)
+        mat = _material(context, create=True)
         s = mat.essence
         nodes.ensure_tree(mat)
         name = f"Folder {sum(1 for x in s.layers if x.kind == 'FOLDER') + 1}"
@@ -117,7 +115,7 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
         return mat is not None and len(mat.essence.layers) > 0
 
     def execute(self, context):
-        mat = _material(context, migrate=True)
+        mat = _material(context)
         s = mat.essence
         i = s.active_index
         e = _active(mat)
@@ -149,7 +147,7 @@ class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
         return mat is not None and len(mat.essence.layers) > 1
 
     def execute(self, context):
-        mat = _material(context, migrate=True)
+        mat = _material(context)
         s = mat.essence
         e = _active(mat)
         if e is None:
@@ -190,7 +188,7 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
         return mat is not None and _active(mat) is not None
 
     def execute(self, context):
-        mat = _material(context, migrate=True)
+        mat = _material(context)
         s = mat.essence
         cur = _active(mat)
         owner = _owner(mat, cur) if cur is not None else None
@@ -329,15 +327,13 @@ class ESSENCE_OT_exit_paint(_Base, bpy.types.Operator):
 class ESSENCE_OT_rebuild(_Base, bpy.types.Operator):
     bl_idname = "essence.rebuild"
     bl_label = "Rebuild Links"
-    bl_description = ("Re-create the links of the stack, refresh the node groups and "
-                      "upgrade layers from older versions of Essence")
+    bl_description = "Re-create the links of the stack and refresh the node groups"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         mat = _material(context)
         if mat is None or mat.node_tree is None:
             return {'CANCELLED'}
-        nodes.migrate(mat)  # before the groups upgrade: it reads their old inputs
         for e in mat.essence.layers:
             n = mat.node_tree.nodes.get(e.node_name)
             group = nodes.group_for(mat, e)

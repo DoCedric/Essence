@@ -99,10 +99,6 @@ def _stack(self, context):
         col.operator("essence.add_folder", icon='NEWFOLDER')
         return
     s = mat.essence
-    if nodes.needs_migration(mat):
-        box = layout.box()
-        box.label(text="Made with an older Essence", icon='INFO')
-        box.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
     row = layout.row()
     row.template_list("ESSENCE_UL_layers", "", s, "layers", s, "active_index",
                       rows=8, sort_reverse=True, sort_lock=True)
@@ -154,7 +150,6 @@ def _channel(layout, mat, e, node, ch):
              icon='CHECKBOX_HLT' if enable.default_value else 'CHECKBOX_DEHLT')
     row.label(text=ch.label)
     if src is None:
-        row.operator("essence.rebuild", text="Upgrade", icon='FILE_REFRESH')
         return
     row.prop(src, "kind", text="")
     # A disabled channel has no effect, so its settings stay out of the way.
@@ -230,8 +225,6 @@ def _props(self, context):
     layout.prop(e, "name", text="Name")
     if e.kind == 'FOLDER':
         layout.label(text="The folder's masks limit all layers inside", icon='INFO')
-    elif nodes.OPACITY not in node.inputs:
-        layout.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
     else:
         layout.prop(node.inputs[nodes.OPACITY], "default_value", text="Opacity", slider=True)
         for ch in active_channels(mat):
@@ -256,7 +249,6 @@ def _mask(self, context):
         layout.label(text=f"Masks {owner.name}", icon='MOD_MASK')
     src = sources.get_source(e, 'MASK')
     if src is None:
-        layout.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
         return
     layout.prop(src, "kind", text="Source")
     # An image source shows a thumbnail grid of every image in the file, with Open and unlink.
@@ -264,13 +256,10 @@ def _mask(self, context):
     _source_controls(col, mat, e, src, MASK_SOURCE, node.inputs[nodes.MASK_VALUE],
                      preview=True)
     img = getattr(tree.nodes.get(e.mask_node_name), "image", None) if tree else None
-    if nodes.MASK_INVERT in node.inputs:
-        col = layout.column(align=True)
-        col.prop(node.inputs[nodes.MASK_INVERT], "default_value", text="Invert", toggle=True)
-        col.prop(node.inputs[nodes.MASK_BRIGHTNESS], "default_value", text="Brightness")
-        col.prop(node.inputs[nodes.MASK_CONTRAST], "default_value", text="Contrast")
-    else:
-        layout.operator("essence.rebuild", text="Upgrade Layers", icon='FILE_REFRESH')
+    col = layout.column(align=True)
+    col.prop(node.inputs[nodes.MASK_INVERT], "default_value", text="Invert", toggle=True)
+    col.prop(node.inputs[nodes.MASK_BRIGHTNESS], "default_value", text="Brightness")
+    col.prop(node.inputs[nodes.MASK_CONTRAST], "default_value", text="Contrast")
     if context.active_object.mode == 'TEXTURE_PAINT':
         layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
     else:
@@ -336,12 +325,8 @@ def _maps(self, context):
         elif map_id == 'AO':
             ao = tree.nodes.get(nodes.AO_STRENGTH_NODE)
             if ao is not None:
-                factor = next((i for i in ao.inputs if i.identifier == "Factor_Float"), None)
-                if factor is not None:
-                    box.prop(factor, "default_value", text="Strength", slider=True)
-                else:  # made by an earlier version (a Value node): Rebuild replaces it
-                    box.operator("essence.rebuild", text="Upgrade AO Strength",
-                                 icon='FILE_REFRESH')
+                factor = next(i for i in ao.inputs if i.identifier == "Factor_Float")
+                box.prop(factor, "default_value", text="Strength", slider=True)
     if not found:
         layout.label(text="Add a layer first")
 

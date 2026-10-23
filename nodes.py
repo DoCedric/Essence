@@ -330,11 +330,6 @@ def _ensure_group(name, version, folder, key=None):
             return ng
     if ng is None:
         ng = bpy.data.node_groups.new(name, 'ShaderNodeTree')
-    elif not mask:
-        # Upgrading rebuilds the interface for every material using the group, which drops
-        # the old per-layer mask inputs. Convert those to mask entries first.
-        for mat in bpy.data.materials:
-            migrate(mat)
     saved = _snapshot_values(ng)
     saved_links = _snapshot_links(ng)
     if mask:
@@ -598,21 +593,14 @@ def apply_ao(mat):
     if not has_image and strength is None:
         return None
     # A Mix node (A=0, B=1) passes its Factor through, so the slider is a real 0 to 1 input.
-    # (A Value node's output has no range.) A Value node from an earlier version is replaced.
-    value = 1.0
-    if strength is not None and strength.bl_idname == 'ShaderNodeValue':
-        value = strength.outputs[0].default_value
-        tree.nodes.remove(strength)
-        strength = None
-    elif strength is not None:
-        value = _by_ident(strength.inputs, "Factor_Float").default_value
+    # (A Value node's output has no range.)
     fresh = strength is None
     strength = _ao_node(tree, AO_STRENGTH_NODE, 'ShaderNodeMix', (x - 500, y),
                         data_type='FLOAT')
     if fresh:
         _by_ident(strength.inputs, "A_Float").default_value = 0.0
         _by_ident(strength.inputs, "B_Float").default_value = 1.0
-        _by_ident(strength.inputs, "Factor_Float").default_value = min(max(value, 0.0), 1.0)
+        _by_ident(strength.inputs, "Factor_Float").default_value = 1.0
     strength_out = _by_ident(strength.outputs, "Result_Float")
     color = _ao_node(tree, AO_COLOR_NODE, 'ShaderNodeMix', (x, y),
                      data_type='RGBA', blend_type='MULTIPLY')
@@ -825,50 +813,3 @@ def add_mask_node(mat, label, image):
     node.label = label
     node.width = 240
     return node, img_node
-
-
-def needs_migration(mat):
-    """True if the material has entries from before uids and mask entries existed."""
-    return any(not e.uid or (e.kind != 'MASK' and e.mask_node_name)
-               for e in mat.essence.layers)
-
-
-def migrate(mat):
-    """Turn the old single mask stored on a layer or folder into a mask entry. Must run
-    before the layer groups are upgraded, since that drops the old adjustment inputs."""
-    if mat.node_tree is None or not needs_migration(mat):
-        return False
-    tree = mat.node_tree
-    layers = mat.essence.layers
-    stack.ensure_uids(layers)
-    for i in range(len(layers)):
-        e = layers[i]
-        if e.kind == 'MASK' or not e.mask_node_name:
-            continue
-        owner_node = tree.nodes.get(e.node_name)
-        old_image = e.mask_node_name
-        img = tree.nodes.get(old_image)
-        node = tree.nodes.new('ShaderNodeGroup')
-        node.node_tree = ensure_mask_group()
-        node.width = 240
-        node.label = node.name
-        if owner_node is not None:
-            for sock in (MASK_INVERT, MASK_BRIGHTNESS, MASK_CONTRAST):
-                old = owner_node.inputs.get(sock)
-                if old is not None:
-                    node.inputs[sock].default_value = old.default_value
-        owner_uid = e.uid
-        owner_name = e.name
-        m = layers.add()
-        m.kind = 'MASK'
-        m.uid = stack.new_uid()
-        m.parent = owner_uid
-        m.name = "Mask"
-        m.node_name = node.name
-        m.mask_node_name = old_image
-        node.label = f"{owner_name} Mask"
-        if img is not None:
-            img.label = f"{owner_name} Mask"
-        layers[i].mask_node_name = ""
-    stack.Tree(layers).apply()
-    return True

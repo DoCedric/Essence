@@ -357,8 +357,8 @@ def layout_mask(tree, entry, mask_node):
 
 
 def ensure_mask_source(mat, entry):
-    """Give a mask entry its source. Masks made before sources existed have their image node
-    linked straight into the mask group; that node becomes the Image source's texture node."""
+    """Give a mask entry its source. A new mask has its image node linked straight into the
+    mask group; that node becomes the Image source's texture node."""
     src = entry.source
     if src.channel == 'MASK':
         return False

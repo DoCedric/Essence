@@ -57,7 +57,7 @@ Essence uses Blender's own panels, lists, properties, asset browser and editors.
 Nothing in the code or the generated node structure should assume today's feature set stays true. Concretely:
 - Channels are defined as data (name, socket type, blend method, default value, target socket), not hard-coded in the node-building logic. Adding a channel means adding a definition, not rewriting the layer builder.
 - Blend mode is a per-channel property of a layer. Letting the user pick one must not require restructuring layers.
-- Generated node groups carry a version, so layers made by an older Essence can be detected and upgraded.
+- Generated node groups carry a version, so a changed group definition is rebuilt on Rebuild (values and links kept by socket name). While the addon is unreleased there is no migration of older data formats, no "Upgrade" buttons: only Rebuild Links.
 - The layer node has a stable, documented set of inputs and outputs so that added channels extend it rather than replace it.
 - Export targets, mask generators and layer presets are data (presets and assets), not code paths.
 
@@ -531,7 +531,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 - Node group interface calls, Mix socket identifiers, Bool sockets converting to float, Brightness/Contrast identifiers (and that brightness brightens, negative darkens).
 - Layer, folder and mask operators (add, move across folder borders, remove, ungroup), list stays in canonical order, save/reload round trip.
 - Blend math against real baked pixel values: mask lerp, bump add, mask invert, mask stack multiply, disabled mask = white, channel enable leak, folder lerp (incl. bump).
-- Group version upgrade keeps socket values; legacy single-mask layers migrate to mask entries.
+- Group version upgrade keeps socket values.
 - Bake: AO, World Gradient (cube and zero-height plane), Normal (world, tangent), settings restored afterwards, tangent bake wires Normal Map into Bump into BSDF, high-to-low normal bake with a High Poly collection (tilted plane leaves the expected mark, high-poly is not a target).
 - Export (Unity HDRP, EXR): BaseMap, MaskMap (R metallic, G white without AO, B white, A smoothness) and Normal values, temp images and nodes cleaned up, and the exported normal equals the baked normal when layer height is zero.
 
