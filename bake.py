@@ -11,7 +11,7 @@ import os
 
 import bpy
 import bpy.utils.previews
-from bpy.props import EnumProperty, FloatProperty, IntProperty, PointerProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
 from mathutils import Vector
 
 from . import nodes as essence_nodes
@@ -83,11 +83,21 @@ def _ensure_materials(obj):
     return [mat]
 
 
-def _bake_image(base, size, map_type):
+def _bake_image(base, size, map_type, float_buffer=True):
     name = f"{base}_{SUFFIX[map_type]}"
     img = bpy.data.images.get(name)
+    if img is not None and img.is_float != float_buffer:
+        # The buffer type can't change in place; references are kept by reusing the name
+        # only when the type matches, so replace the image's users instead.
+        new = bpy.data.images.new(f"{name}.tmp", size, size, alpha=False,
+                                  float_buffer=float_buffer)
+        img.user_remap(new)
+        bpy.data.images.remove(img)
+        new.name = name
+        img = new
     if img is None:
-        img = bpy.data.images.new(name, size, size, alpha=False)
+        img = bpy.data.images.new(name, size, size, alpha=False,
+                                  float_buffer=float_buffer)
     elif tuple(img.size) != (size, size):
         img.scale(size, size)
     img.colorspace_settings.name = 'Non-Color'
@@ -249,7 +259,7 @@ def _override_high_materials(obj, build_color, done):
 
 # Cycles bake settings Essence touches; saved before and restored after every bake.
 _BAKE_ATTRS = ('margin', 'normal_space', 'normal_r', 'normal_g', 'normal_b',
-               'use_selected_to_active', 'use_cage', 'cage_extrusion',
+               'use_selected_to_active', 'use_cage', 'cage_extrusion', 'cage_object',
                'max_ray_distance', 'target')
 
 
@@ -313,16 +323,25 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         bake.use_selected_to_active = bool(high)
         if high:
             extrusion = context.scene.essence_bake_extrusion or auto_extrusion(obj)
-            bake.use_cage = False
-            bake.cage_extrusion = extrusion
-            # Rays start `extrusion` above the low surface; reach `extrusion` below it.
-            bake.max_ray_distance = extrusion * 2
+            cage = context.scene.essence_bake_cage
+            if cage is not None:
+                # Rays start on the cage and travel to the low surface; the cage replaces
+                # the extrusion and the distance limit.
+                bake.use_cage = True
+                bake.cage_object = cage
+                bake.max_ray_distance = 0.0
+            else:
+                bake.use_cage = False
+                bake.cage_extrusion = extrusion
+                # Rays start `extrusion` above the low surface; reach `extrusion` below.
+                bake.max_ray_distance = extrusion * 2
             for h in high:
                 h.select_set(True)
         obj.select_set(True)
         context.view_layer.objects.active = obj
 
-        image = _bake_image(obj.name, size, map_type)
+        image = _bake_image(obj.name, size, map_type,
+                            context.scene.essence_bake_float)
         teardowns = []
         try:
             overridden = set()
@@ -470,6 +489,13 @@ def register():
         name="Extrusion", default=0.0, min=0.0, subtype='DISTANCE',
         description="How far above the low-poly surface rays start. "
                     "0 = automatic (2% of the object's size)")
+    S.essence_bake_cage = PointerProperty(
+        name="Cage", type=bpy.types.Object, poll=lambda self, o: o.type == 'MESH',
+        description="Optional cage mesh: rays start on it instead of at the extrusion "
+                    "offset. Needs the same topology as the low-poly, pushed outwards")
+    S.essence_bake_float = BoolProperty(
+        name="Float", default=True,
+        description="Bake into a 32-bit float image (no banding, four times the memory)")
     bpy.utils.register_class(ESSENCE_OT_bake)
 
 
@@ -479,7 +505,8 @@ def unregister():
     S = bpy.types.Scene
     for p in ("essence_bake_map", "essence_bake_size",
               "essence_bake_samples", "essence_bake_margin",
-              "essence_bake_high", "essence_bake_extrusion"):
+              "essence_bake_high", "essence_bake_extrusion",
+              "essence_bake_cage", "essence_bake_float"):
         delattr(S, p)
     if _previews is not None:
         bpy.utils.previews.remove(_previews)

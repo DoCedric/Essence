@@ -346,12 +346,15 @@ def _bake(self, context):
         box = layout.box()
         box.prop(scene, "essence_bake_high", text="High Poly")
         if scene.essence_bake_high is not None:
-            box.prop(scene, "essence_bake_extrusion", text="Extrusion")
+            box.prop(scene, "essence_bake_cage", text="Cage")
+            if scene.essence_bake_cage is None:
+                box.prop(scene, "essence_bake_extrusion", text="Extrusion")
             box.label(text="Bakes selected low-poly objects", icon='INFO')
     col = layout.column(align=True)
     col.prop(scene, "essence_bake_size", text="Size")
     col.prop(scene, "essence_bake_samples", text="Samples")
     col.prop(scene, "essence_bake_margin", text="Margin")
+    col.prop(scene, "essence_bake_float")
     layout.operator("essence.bake", icon='RENDER_STILL')
 
 

@@ -202,7 +202,7 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
         if self.source == 'PAINT':
             v = 0.0 if self.fill == 'BLACK' else 1.0
             img = bpy.data.images.new(f"{mat.name}_{owner.name}_{name}", self.size,
-                                      self.size, alpha=False)
+                                      self.size, alpha=False, float_buffer=True)
             img.generated_color = (v, v, v, 1.0)
             img.colorspace_settings.name = 'Non-Color'
             img.pack()
