@@ -91,9 +91,29 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [ ] Baked filters on layer channels (the bake already handles any socket). Not decided.
 - [ ] **Milestone checklist** [G]: tree view and rows, adjustments and fills on a mask, the mask button, Add Mask limits, a baked filter (add Kuwahara or Blur to a mask, press Refresh, check the result, the dot-hidden image in the image pickers, how long it takes), and the Apply button states (red when nothing is baked or something below changed, green dot when current; the row dot follows), and the new Normal fill blend (a new fill overrides what is below).
 
+## Sprint 5: Live generators, then more baked maps (`sprint-5-generators`)
+Goal: generators that react to the mesh, live where the shader can do it for free and from baked maps only where it cannot. Decided with the user: a shader reads normals and positions at no real cost, so direction, slope and gradient generators are **live** and need no bake; baking is for what needs the neighbourhood of a point (curvature, thickness) or information a shader cannot read (IDs, high-poly data). The Normal (World) bake stays a utility but gets no mesh map slot. Texture paint brushes are **not** in this sprint (open: a brush asset pack, or painting helpers such as the bucket modes).
+
+What a shader reads live: Geometry Normal and Position (world space), Texture Coordinate Normal (object space, the better default because the mask stays put when the object rotates), Texture Coordinate Generated (position across the bounding box, 0 to 1), and the `Essence Normal Map` node's output (a world-space normal that includes the baked high-poly detail; never the Bump node, which includes the layer heights and would make a cycle).
+
+**Part 1, live generators (no baking)**
+- [ ] A `GENERATOR` source kind next to Procedural, for channel sources, mask sources and fills: node groups "Essence Gen ..." with a uniform interface (Mask or Color out, named inputs), version key, built through the same `sources.py` machinery. [H]
+- [ ] **Directional Light**: Direction, Space (object or world), Contrast, Balance, and a switch to use the detail normal from the Normal slot. [H] (values against baked pixels on a cube)
+- [ ] **Slope / Up mask**: how much a surface faces a chosen axis, with a threshold and softness. [H]
+- [ ] **Height Gradient and Position Gradient**, live from Generated coordinates: axis, range, remap. Replaces the baked World Gradient for masks (the bake stays for export-style uses). [H]
+- [ ] Panel: generator picker and controls in the Source rows of layers, masks and fills. [G]
+
+**Part 2, more baked maps (Mesh Maps slots)**
+- [ ] **Curvature** (convex and concave). Open: method, either the baked normal run through the compositor, or Pointiness/Bevel through an emission override (Cycles-only, noisier). Decide with a quick test of both on a real mesh. [H]
+- [ ] **Position** (object-space XYZ with bounding-box remap), **Thickness** (inside AO), **ID maps** (material, object, UV island). [H]
+- [ ] A Mesh Maps slot, bake entry and thumbnail for each; they follow the existing `Essence_Bake_<MAP>` slot pattern and the float/anti-aliasing/cage options. [H]
+- [ ] **Generators that read them**: Edge Wear (curvature), Dirt and Cavity (AO, curvature, thickness), mask by ID (a color or index picker). [H]
+- [ ] Open decisions to settle with the user when reached: the curvature method, the ID picker UI, whether baking groups and multi-object bake fit in this sprint or the next.
+
+- [ ] **Milestone checklist** [G]: generator picker usability, how a Directional Light looks on a real mesh (object versus world space, with and without detail normal), the new bake maps.
+
 ## Later sprints (outline, to be detailed)
-- **Sprint 5, generators and assets:** Essence asset library (catalogs), noise/gradient/grunge assets, smart masks consuming baked maps.
-- **Sprint 6, mesh maps:** curvature, position, thickness, ID maps, height from mesh, baking groups, multi-object bake.
+- **Sprint 6, asset library and mesh-map leftovers:** Essence asset library (catalogs), noise/gradient/grunge assets, generators and smart masks as assets, height from mesh, baking groups, multi-object bake.
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
 - **Sprint 8, painting and viewport:** paint layers, paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), channel/mask/layer solo (including alt-click on a mask or layer thumbnail in the tree view to preview it), texture set settings.
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material.

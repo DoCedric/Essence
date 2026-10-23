@@ -329,6 +329,8 @@ Substance ships thousands of Designer procedurals; Essence does not rebuild that
 
 **Procedural cost.** Procedural nodes are evaluated live at every shading point (every fragment in EEVEE, every sample and bounce in Cycles), unlike Substance, which computes a procedural once into a cached bitmap. The coordinate space (UV vs Object) is not the cost driver; the node is: Noise detail (octaves) scales roughly linearly, Dimensions 2D < 3D < 4D, Voronoi Smooth F1 and Distance to Edge cost more than F1, and distortion adds on top. Guidance for generator assets: default to 2D where the result is flat, keep default detail low, and note the cost in the asset description. For heavy procedural stacks the remedy is **Freeze to image** (B12), a later performance step, not a P0 requirement.
 
+**Live versus baked generators.** A generator is live (L) when everything it needs is something a shader reads at no real cost: the surface normal (Geometry node in world space, Texture Coordinate in object space, or the Essence Normal Map node's output for a normal that includes the baked high-poly detail), the position (Geometry, or Texture Coordinate Generated across the bounding box), and plain math on them. Directional light, slope, up and gradient masks are live, work in EEVEE and Cycles alike and export correctly (the export bakes the stack's outputs). A generator reads a **baked mesh map** (B) when it needs the neighbourhood of a point or something a shader cannot read in both renderers: curvature, thickness and AO (the Pointiness, Bevel and AO nodes are Cycles-only or screen-space), ID maps (a shader cannot read a material index) and anything derived from a high-poly. Edge wear, dirt and cavity masks therefore read baked maps; light and slope masks do not. The object-space normal is the default for light masks so they do not change when the object is rotated.
+
 **Interface contract for assets.** A generator asset exposes: `Mask` or `Color` output, inputs named `Scale`, `Contrast`, `Balance`, `Seed`, mesh-map inputs where relevant (`Curvature`, `AO`, `Thickness`, `Position`). Because they are normal node groups, users author their own and drop them in their library.
 
 ### B7. Filters and adjustments
@@ -368,7 +370,7 @@ Substance's bakers, mapped to Cycles and emission-override tricks. All result im
 | **Thickness** | Cycles AO with inverted normals (inside AO) via emission override | ⬜ | P1 |
 | **ID maps**: Material ID, Object/Mesh ID, random color per island | Emission override of Material Index / Object Info Random | ⬜ | P1 (Artistant has Mesh ID, Object Gradient) |
 | **Height from mesh** | Position delta high vs low, along the normal | ⬜ | P1 |
-| World-space direction (up/down/side masks) | Emission override | ⬜ | P2 |
+| World-space direction (up/down/side masks) | **Live** from the Geometry normal (Sprint 5), no bake | L | ⬜ | P1 |
 | Bent normals | Cycles with custom shader | ⬜ | P3 |
 | Opacity (from alpha geometry) | Emission override | ⬜ | P3 |
 | Baked **diffuse/color** (Cycles DIFFUSE, color only) for transferring vertex colors or textures high to low | Cycles bake | ⬜ | P2 |
