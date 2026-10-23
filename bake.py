@@ -92,9 +92,10 @@ def _ensure_materials(obj):
 def _bake_image(base, size, map_type, float_buffer=True):
     name = f"{base}_{SUFFIX[map_type]}"
     img = bpy.data.images.get(name)
-    if img is not None and img.is_float != float_buffer:
-        # The buffer type can't change in place; references are kept by reusing the name
-        # only when the type matches, so replace the image's users instead.
+    if img is not None and (img.is_float != float_buffer or tuple(img.size) != (size, size)):
+        # Neither the buffer type nor (for a packed image) the size can change in place:
+        # Image.scale is silently ignored once the image is packed. Make a new image and
+        # move the users over, so references such as mask slots survive.
         new = bpy.data.images.new(f"{name}.tmp", size, size, alpha=False,
                                   float_buffer=float_buffer)
         img.user_remap(new)
@@ -104,8 +105,6 @@ def _bake_image(base, size, map_type, float_buffer=True):
     if img is None:
         img = bpy.data.images.new(name, size, size, alpha=False,
                                   float_buffer=float_buffer)
-    elif tuple(img.size) != (size, size):
-        img.scale(size, size)
     img.colorspace_settings.name = 'Non-Color'
     return img
 

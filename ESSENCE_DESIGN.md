@@ -536,6 +536,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 - Cage: a high-poly 0.5 above a low-poly is missed with the automatic extrusion and captured (correct tilted world normal) once a cage plane sits above it; bake settings are restored. Float buffers: bakes and new paint masks are float, switching the Float toggle keeps the image name and its users.
 
 - Anti-aliasing: a high-poly edge falling mid-pixel is hard at Off and gets intermediate values at 4x, the image keeps its final size and float type, and a size times factor over 8192 px is refused before anything is created.
+- Re-baking at a different size replaces the image (found in the GUI: `Image.scale` is silently ignored on a packed image, so a re-bake kept the old resolution). The bake now makes a fresh image and moves the users over.
 
 **Still to confirm in the GUI (milestone checklist):**
 - `template_ID_preview(..., open="image.open")`, and the layer-row thumbnail via `preview_ensure`.

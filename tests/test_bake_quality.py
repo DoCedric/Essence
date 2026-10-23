@@ -162,3 +162,26 @@ def test_bake_aa_size_limit(addon):
     except RuntimeError as e:
         check("limit" in str(e), f"unexpected error: {e}")
     check(bpy.data.images.get("P_AO") is None, "no image should be created when over the limit")
+
+
+def test_rebake_at_a_new_size_replaces_the_image(addon):
+    make_plane("P", size=2.0)
+    sc = bpy.context.scene
+    sc.essence_bake_map = 'AO'
+    sc.essence_bake_samples = 2
+    sc.essence_bake_margin = 0
+    holder = bpy.data.materials.new("Holder")
+    holder.use_nodes = True
+    node = holder.node_tree.nodes.new('ShaderNodeTexImage')
+    for size, aa, expect in (("128", '1', 128), ("256", '1', 256), ("256", '2', 256),
+                             ("128", '2', 128)):
+        sc.essence_bake_size = size
+        sc.essence_bake_aa = aa
+        check(bpy.ops.essence.bake() == {'FINISHED'}, f"bake {size} aa{aa} failed")
+        img = bpy.data.images["P_AO"]
+        check(tuple(img.size) == (expect, expect), f"{size} aa{aa}: image is {tuple(img.size)}")
+        check(len(img.pixels) == expect * expect * 4, "pixel buffer size differs from image size")
+        node.image = img
+    check(node.image is bpy.data.images["P_AO"], "reference to the baked image was lost")
+    check(len([i for i in bpy.data.images if i.name.startswith("P_AO")]) == 1,
+          "old bake images were left behind")
