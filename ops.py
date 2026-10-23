@@ -32,7 +32,7 @@ def _active_mask(context):
 def _owner(mat, e):
     """The layer or folder entry that `e` belongs to (`e` itself if it is not a mask or an
     adjustment; an adjustment of a mask belongs to that mask's layer)."""
-    while e is not None and e.kind in ('MASK', 'ADJUSTMENT'):
+    while e is not None and (e.kind == 'MASK' or e.kind in stack.ITEM_KINDS):
         e = next((x for x in mat.essence.layers if x.uid == e.parent), None)
     return e
 
@@ -42,7 +42,7 @@ def _adjustment_owner(mat, e):
     when it is a layer or mask, the owner when it is an adjustment, None for a folder."""
     if e is None:
         return None
-    if e.kind == 'ADJUSTMENT':
+    if e.kind in stack.ITEM_KINDS:
         e = next((x for x in mat.essence.layers if x.uid == e.parent), None)
     return e if e is not None and e.kind in ('LAYER', 'MASK') else None
 
@@ -141,7 +141,7 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
         if e is None:
             return {'CANCELLED'}
         tree = mat.node_tree
-        adjusted = e.parent if e.kind == 'ADJUSTMENT' else ""
+        adjusted = e.parent if e.kind in stack.ITEM_KINDS else ""
         for names in stack.remove_entries(s.layers, e.uid):
             for n in names:
                 node = tree.nodes.get(n) if n else None
@@ -181,7 +181,7 @@ class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
             return {'CANCELLED'}
         tree.apply()
         nodes.rebuild_stack(mat)
-        if e.kind == 'ADJUSTMENT':
+        if e.kind in stack.ITEM_KINDS:
             _reapply(mat, e.parent)
         s.active_index = tree.index(uid)
         return {'FINISHED'}
@@ -284,11 +284,55 @@ class ESSENCE_OT_add_adjustment(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_add_fill(_Base, bpy.types.Operator):
+    bl_idname = "essence.add_fill"
+    bl_label = "Add Fill"
+    bl_description = ("Add a fill on top of the active mask: another source (image, "
+                      "procedural or value) blended onto the mask value built so far")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        mat = _material(context)
+        owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
+        return owner is not None and owner.kind == 'MASK'
+
+    def execute(self, context):
+        mat = _material(context)
+        s = mat.essence
+        owner_uid = _adjustment_owner(mat, _active(mat)).uid
+        n = sum(1 for x in s.layers if x.kind == 'FILL' and x.parent == owner_uid)
+        e = s.layers.add()
+        e.kind = 'FILL'
+        e.uid = uid = stack.new_uid()
+        e.parent = owner_uid
+        e.name = "Fill" if n == 0 else f"Fill {n + 1}"
+        sources.SUSPEND = True
+        try:
+            e.adj_enabled = True
+            e.fill_blend = 'MULTIPLY'
+            e.source.channel = 'MASK'
+            e.source.uid = uid
+            e.source.kind = 'VALUE'  # white: neutral for Multiply; pick a source in the panel
+        finally:
+            sources.SUSPEND = False
+        tree = stack.Tree(s.layers)
+        tree.apply()
+        _reapply(mat, owner_uid)
+        s.active_index = tree.index(uid)
+        return {'FINISHED'}
+
+
 class ESSENCE_MT_add_adjustment(bpy.types.Menu):
     bl_idname = "ESSENCE_MT_add_adjustment"
     bl_label = "Add Adjustment"
 
     def draw(self, context):
+        mat = _material(context)
+        owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
+        if owner is not None and owner.kind == 'MASK':
+            self.layout.operator("essence.add_fill", text="Fill", icon='IMAGE_DATA')
+            self.layout.separator()
         for t in adjustments.TYPES:
             op = self.layout.operator("essence.add_adjustment", text=t.label)
             op.adj_type = t.id
@@ -435,7 +479,7 @@ class ESSENCE_MT_add_mask(bpy.types.Menu):
 
 classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
-    ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment,
+    ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,

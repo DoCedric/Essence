@@ -202,3 +202,27 @@ def test_adjustment_panel_shows_every_parameter(addon):
         labels = [c[2].get("text") for c in log if c[0] == "prop"]
         for _, label in t.params:
             check(label in labels, f"{t.label}: control {label!r} not drawn ({labels})")
+
+
+def test_draw_fills_every_source(addon):
+    from essence import ui
+    ob, mat = _setup(addon)
+    mask = next(e.name for e in mat.essence.layers if e.kind == 'MASK')
+    for kind in ('VALUE', 'IMAGE', 'PROCEDURAL'):
+        _select(mat, mask)
+        bpy.ops.essence.add_fill()
+        fill = mat.essence.layers[mat.essence.active_index]
+        fill.source.kind = kind
+        log = _draw(ui._adjustment, ob)
+        check(any(c[0] == "prop" and c[1][1] == "fill_blend" for c in log),
+              f"{kind} fill: blend mode not drawn")
+        _draw(ui._stack, ob)
+        item_log = []
+        panel = SimpleNamespace(layout=Rec(item_log))
+        fill = mat.essence.layers[mat.essence.active_index]
+        ui.ESSENCE_UL_layers.draw_item(panel, bpy.context, panel.layout, mat.essence, fill, 0,
+                                       mat.essence, "active_index", 0)
+        check(any(c[0] == "prop" and c[1][1] == "adj_enabled" for c in item_log),
+              "fill row should show its eye toggle")
+    _select(mat, mask)
+    _draw(ui._mask, ob)

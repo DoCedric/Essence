@@ -768,10 +768,10 @@ def rebuild_stack(mat):
     apply_ao(mat)
 
     for m in layers:
-        if m.kind == 'MASK' and m.uid and tree.nodes.get(m.node_name) is not None:
+        if m.kind in ('MASK', 'FILL') and m.uid and tree.nodes.get(m.node_name) is not None:
             sources.ensure_mask_source(mat, m)
     index = sources.source_index(tree)
-    adjs = [a for a in layers if a.kind == 'ADJUSTMENT']
+    adjs = [a for a in layers if a.kind in stack.ITEM_KINDS]
     _begin_links(tree)
     try:
         for e, node in entries:

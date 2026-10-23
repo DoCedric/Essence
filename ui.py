@@ -26,7 +26,7 @@ def _active(mat):
 def _depth(layers, item):
     """Indent level of a list row: folders 0, their layers 1, masks one more than the
     owner."""
-    if item.kind in ('MASK', 'ADJUSTMENT'):
+    if item.kind in ('MASK', 'ADJUSTMENT', 'FILL'):
         owner = next((e for e in layers if e.uid == item.parent), None)
         return (_depth(layers, owner) if owner is not None else 0) + 1
     return 1 if item.parent else 0
@@ -40,6 +40,25 @@ class ESSENCE_UL_layers(bpy.types.UIList):
         if depth:
             row.separator(factor=2.0 * depth)
         node = tree.nodes.get(item.node_name) if tree is not None else None
+
+        if item.kind == 'FILL':
+            img_node = tree.nodes.get(item.mask_node_name) if tree is not None else None
+            img = getattr(img_node, "image", None)
+            icon_id = 0
+            if img is not None:
+                try:
+                    img.preview_ensure()
+                    icon_id = img.preview.icon_id
+                except Exception:  # noqa: BLE001
+                    pass
+            if icon_id:
+                row.label(text="", icon_value=icon_id)
+            else:
+                row.label(text="", icon='IMAGE_DATA')
+            row.prop(item, "name", text="", emboss=False)
+            row.prop(item, "adj_enabled", text="", emboss=False,
+                     icon='HIDE_OFF' if item.adj_enabled else 'HIDE_ON')
+            return
 
         if item.kind == 'ADJUSTMENT':
             row.label(text="", icon='MODIFIER')
@@ -143,7 +162,29 @@ def _adjustment_poll(cls, context):
     if mat is None or not mat.essence.layers:
         return False
     e, _ = _active(mat)
-    return e is not None and e.kind == 'ADJUSTMENT'
+    return e is not None and e.kind in ('ADJUSTMENT', 'FILL')
+
+
+def _fill(layout, mat, e, owner):
+    """A mask's fill: a source of its own, blended onto the mask value below it."""
+    tree = mat.node_tree
+    if owner is not None:
+        layout.label(text=f"Fills {owner.name}", icon='IMAGE_DATA')
+    layout.prop(e, "fill_blend", text="Blend")
+    layout.prop(e, "adj_enabled", text="Enabled")
+    found = sources.source_nodes(tree, e.uid, adjustments.ADJ_KEY) if tree else {}
+    main, mix = found.get('MAIN'), found.get('MIX')
+    if main is None or mix is None:
+        layout.operator("essence.rebuild", text="Fill nodes missing, rebuild", icon='FILE_REFRESH')
+        return
+    layout.prop(adjustments.mix_socket(mix, "Factor_Float"), "default_value",
+                text="Opacity", slider=True)
+    src = sources.get_source(e, 'MASK')
+    if src is None:
+        return
+    layout.prop(src, "kind", text="Source")
+    col = layout.column()
+    _source_controls(col, mat, e, src, MASK_SOURCE, main.inputs[1], preview=True)
 
 
 def _adjustment(self, context):
@@ -153,6 +194,9 @@ def _adjustment(self, context):
     tree = mat.node_tree
     owner = next((x for x in mat.essence.layers if x.uid == e.parent), None)
     layout.prop(e, "name", text="Name")
+    if e.kind == 'FILL':
+        _fill(layout, mat, e, owner)
+        return
     if owner is not None:
         layout.label(text=f"Adjusts {owner.name}", icon='MODIFIER')
     layout.prop(e, "adj_type", text="Type")

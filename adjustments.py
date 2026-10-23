@@ -36,6 +36,25 @@ class AdjType:
     widget: str = ""            # 'curve' or 'ramp': a native template the panel draws
 
 
+# A fill's blend with the mask value below: the Math node operation, label, description.
+FILL_BLENDS = [
+    ('MULTIPLY', "Multiply", "Multiply with the value below (what stacked masks do)"),
+    ('ADD', "Add", "Add to the value below"),
+    ('SUBTRACT', "Subtract", "Subtract from the value below"),
+    ('MINIMUM', "Darken", "The smaller of the two"),
+    ('MAXIMUM', "Lighten", "The larger of the two"),
+]
+
+
+def new_fill_main(tree):
+    """The blend node of a fill: input 0 is the value below, input 1 the fill's source."""
+    n = tree.nodes.new('ShaderNodeMath')
+    n.operation = 'MULTIPLY'
+    n.use_clamp = True
+    n.inputs[1].default_value = 1.0
+    return n
+
+
 LEVELS_GROUP = "Essence Adj Levels"
 LEVELS_VERSION = 1
 

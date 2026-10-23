@@ -243,6 +243,10 @@ def apply_owner(mat, owner):
     """Re-apply the sources of a layer (every channel) or a mask, after its adjustments
     changed."""
     if owner.kind == 'MASK':
+        for f in adjustment_entries(mat, owner.uid, 'MASK'):  # fills feed their blend node first
+            if f.kind == 'FILL':
+                ensure_mask_source(mat, f)
+                apply(mat, f, 'MASK')
         apply(mat, owner, 'MASK')
     elif owner.kind == 'LAYER':
         for ch in CHANNELS:
@@ -251,14 +255,48 @@ def apply_owner(mat, owner):
 
 def adjustment_entries(mat, owner_uid, ch_id):
     """The adjustments of an owner for one channel (all of a mask's), bottom-to-top."""
-    return [a for a in mat.essence.layers if a.kind == 'ADJUSTMENT' and a.parent == owner_uid
-            and (ch_id == 'MASK' or a.adj_channel == ch_id)]
+    return [a for a in mat.essence.layers if a.parent == owner_uid and (
+            (a.kind == 'ADJUSTMENT' and (ch_id == 'MASK' or a.adj_channel == ch_id))
+            or (a.kind == 'FILL' and ch_id == 'MASK'))]
+
+
+def _chain_fill(tree, a, out):
+    """Wire a fill into a mask's chain: blend(value so far, the fill's source), then the
+    Opacity mix. The fill's own source nodes are wired by `apply` on the fill."""
+    have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)
+    main, mix = have.get('MAIN'), have.get('MIX')
+    if main is None:
+        main = adjustments.new_fill_main(tree)
+        main[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
+        main[ROLE_KEY] = 'MAIN'
+        main.label = f"{a.name} Blend"
+        a.node_name = main.name
+    if mix is None:
+        mix = adjustments.new_mix(tree)
+        mix[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
+        mix[ROLE_KEY] = 'MIX'
+        mix.width = 240
+    mix.label = f"{a.name} Opacity"
+    main.operation = a.fill_blend
+    a_in = adjustments.mix_socket(mix, "A_Color")
+    b_in = adjustments.mix_socket(mix, "B_Color")
+    for sock in (a_in, b_in, main.inputs[0]):
+        _clear_links(tree, sock)
+    if out is not None and a.adj_enabled:
+        tree.links.new(out, main.inputs[0])
+        tree.links.new(out, a_in)
+        tree.links.new(main.outputs[0], b_in)
+        out = adjustments.mix_output(mix)
+    return out
 
 
 def _chain(tree, adjs, out):
     """Create or update the nodes of `adjs` and wire the enabled ones in series after `out`
     (None: nothing to feed, so every adjustment stays unlinked). Returns the new end."""
     for a in adjs:
+        if a.kind == 'FILL':
+            out = _chain_fill(tree, a, out)
+            continue
         t = adjustments.BY_ID[a.adj_type]
         have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)
         main = have.get('MAIN')
@@ -324,7 +362,9 @@ def apply(mat, entry, ch_id):
     have = source_nodes(tree, entry.uid, ch_id)
 
     switched = False
-    b_in = layer_node.inputs["Value" if is_mask else f"{ch.label} B"]
+    # A mask's value goes to its group's Value; a fill's to the second input of its blend node.
+    b_in = (layer_node.inputs[1] if entry.kind == 'FILL'
+            else layer_node.inputs["Value" if is_mask else f"{ch.label} B"])
     for role, node in list(have.items()):
         if role not in wanted or node.bl_idname != wanted[role]:
             if role == 'CONST':  # the value goes back to the socket it was adjusting
@@ -441,6 +481,14 @@ def _place_adjustments(tree, adjs, index, x, y, step):
             if n is not None:
                 place(n, x, y)
                 y += step * _STEP[role]
+        if a.kind == 'FILL':  # the fill's own source nodes continue the column
+            src_nodes = (index.get(tag(a.uid, 'MASK'), {}) if index is not None
+                         else source_nodes(tree, a.uid, 'MASK'))
+            for role in _ROLE_ORDER:
+                n = src_nodes.get(role)
+                if n is not None:
+                    place(n, x, y)
+                    y += step * _STEP[role]
     return y
 
 

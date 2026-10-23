@@ -2,7 +2,7 @@ import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, IntProperty,
                        PointerProperty, StringProperty)
 
-from . import adjustments, blends, nodes, sources
+from . import adjustments, blends, nodes, sources, stack
 from .channels import BY_ID, CHANNELS, SOURCE_BY_ID
 
 
@@ -93,12 +93,13 @@ def _adj_channel_items(self, context):
 def _adj_update(self, context):
     """An adjustment changed: rewire the chain it belongs to."""
     mat = self.id_data
-    if sources.SUSPEND or mat.node_tree is None or self.kind != 'ADJUSTMENT':
+    if sources.SUSPEND or mat.node_tree is None or self.kind not in stack.ITEM_KINDS:
         return
     owner = next((e for e in mat.essence.layers if e.uid == self.parent), None)
     if owner is None:
         return
-    if (adjustments.BY_ID[self.adj_type].color_only and owner.kind == 'LAYER'
+    if (self.kind == 'ADJUSTMENT' and adjustments.BY_ID[self.adj_type].color_only
+            and owner.kind == 'LAYER'
             and BY_ID[self.adj_channel].socket_type != 'NodeSocketColor'):
         sources.SUSPEND = True  # a color-only adjustment cannot act on a float channel
         try:
@@ -138,7 +139,8 @@ class EssenceLayer(bpy.types.PropertyGroup):
     mask group node and `mask_node_name` the image node. See stack.py."""
     name: StringProperty(name="Name", update=_name_update)
     kind: EnumProperty(items=[('LAYER', "Layer", ""), ('FOLDER', "Folder", ""),
-                              ('MASK', "Mask", ""), ('ADJUSTMENT', "Adjustment", "")],
+                              ('MASK', "Mask", ""), ('ADJUSTMENT', "Adjustment", ""),
+                              ('FILL', "Fill", "")],
                        default='LAYER')
     uid: StringProperty()
     parent: StringProperty()   # uid of the owner (folder or layer), empty at top level
@@ -151,7 +153,10 @@ class EssenceLayer(bpy.types.PropertyGroup):
     adj_type: EnumProperty(name="Type", items=adjustments.TYPE_ITEMS, update=_adj_update)
     adj_channel: EnumProperty(name="Channel", items=_adj_channel_items, update=_adj_update)
     adj_enabled: BoolProperty(name="Enabled", default=True, update=_adj_update,
-                              description="Apply this adjustment")
+                              description="Apply this adjustment or fill")
+    # Fills only (a mask's item with its own `source`): how it combines with the value below.
+    fill_blend: EnumProperty(name="Blend", items=adjustments.FILL_BLENDS, update=_adj_update,
+                             description="How this fill combines with the mask value below it")
 
 
 def _active_update(self, context):

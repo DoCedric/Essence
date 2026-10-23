@@ -133,6 +133,13 @@ Each item is a few ordinary nodes tagged `essence_source` `<uid>:ADJ`, so it sta
 
 In the Layers list the items sit indented under their owner (a layer's items, then its masks, each mask followed by its items). Add Adjustment is a menu in the list column and in the layer and mask panels; the Adjustment Properties panel shows type, channel, opacity, the node's controls and the curve or gradient widget. The target layout (layer and mask side by side, each with an item column) needs native widgets instead of a `UIList` and is a separate task.
 
+### Mask fills ✅ *(verified headless, GUI check pending)*
+A mask is a stack: its running value starts at the mask's own source and the items of the mask apply **bottom to top**, adjustments and fills mixed. An **adjustment** transforms the value built so far; a **fill** (entry kind `FILL`, owned by a mask) blends a source of its own onto it. A fill's source has the same options as a mask source (Value, Image, Procedural, projection, mapping, remap) and a blend mode: **Multiply** (default, what stacked masks do), Add, Subtract, Darken (min) and Lighten (max), plus an Opacity and an eye. A new fill is a white Value, neutral for Multiply.
+
+Nodes: a fill is a Math node (the blend: input 0 the value below, input 1 the fill's source, clamped) tagged like an adjustment, followed by the Opacity mix. Its source nodes are the usual tagged source nodes of the fill's uid, wired into the Math node's second input. A mask that is a plain Value gets a constant to run the stack on. Items reorder with the up/down arrows, so an adjustment can act on everything below it or only on one fill.
+
+With fills a second mask is a Fill item set to Multiply, so several masks per layer are no longer needed. They still work for now; retiring them and the one-mask-per-layer UI come with the mockup layout. Painting a fill's image is not wired yet (Paint Mask works on the mask's own image).
+
 ### Folders ✅
 A folder holds layers and has its own mask stack, which limits the combined effect of everything inside. One level only.
 - **Node structure:** layers inside a folder chain as normal, starting from the stack below. A **folder node** (shared node group "Essence Folder", version 3: 3 added Visible) lerps every channel between the stack below (A) and the end of the inner chain (B) by the folder mask: `A + (B - A) * mask`. Bump included, since the inner chain's bump is `A + sum of inner heights`. An empty folder passes the stack through.
@@ -550,6 +557,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 - Re-baking at a different size replaces the image (found in the GUI: `Image.scale` is silently ignored on a packed image, so a re-bake kept the old resolution). The bake now makes a fresh image and moves the users over.
 - AO overlay: Base Color and Specular IOR Level follow `lerp(1, AO, Strength)` at strengths 1, 0.5 and 0 (real baked pixels), rebuild is idempotent, an empty slot hands Base Color back to the stack, an AO bake wires itself, and the Unity export is unaffected.
 - Adjustments: invert, gamma, levels (input and output range), saturation, brightness, identity curves, gradient map and threshold against baked pixels, on color and float channels, on a Value, an Image source and a mask; Opacity, the eye, chain order and moving an item, switching an item's type, hand edits surviving a rebuild, removal of owners and items, and every panel and list row drawing for every type.
+- Mask fills: Multiply, Add, Subtract, Darken and Lighten against baked pixels on a Value mask, Opacity, the eye, image and procedural fill sources, items applying in order (an Invert before or after a fill), removal of a fill restoring the mask, a fill only on masks, and the panel and list rows drawing for every source kind.
 
 **Still to confirm in the GUI (milestone checklist):**
 - `template_ID_preview(..., open="image.open")`, and the layer-row thumbnail via `preview_ensure`.

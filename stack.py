@@ -8,6 +8,8 @@ Blender UI list can show. Every entry has a `uid` and a `parent` (the uid of its
     mask     owned by a layer or a folder
     adjustment  owned by a layer or a mask: a step that transforms the owner's own content
                 (a layer channel's input, or the mask value) before it is blended
+    fill        owned by a mask: blends another source onto the mask value built so far
+                (the items of a mask apply in order, adjustments and fills mixed)
 
 The list is the post-order of that tree: everything an entry owns sits directly below it
 (lower index), so with the list drawn reversed an owner is followed by its items (a layer's
@@ -19,6 +21,10 @@ All edits go through `Tree`: change the tree, then `apply()` to reorder the flat
 """
 
 import uuid
+
+
+# Entries owned by a layer or mask that transform or extend its content, in order.
+ITEM_KINDS = ('ADJUSTMENT', 'FILL')
 
 
 def new_uid():
@@ -47,8 +53,9 @@ class Tree:
         self.orphans = []  # entries whose owner is missing; kept so nothing is lost
         for e in layers:
             p = e.parent if e.parent in self.kind else ""
-            if e.kind == 'ADJUSTMENT':
-                if p and self.kind[p] in ('LAYER', 'MASK'):
+            if e.kind in ITEM_KINDS:
+                if p and self.kind[p] in (('LAYER', 'MASK') if e.kind == 'ADJUSTMENT'
+                                          else ('MASK',)):
                     self.adjs.setdefault(p, []).append(e.uid)
                 else:
                     self.orphans.append(e.uid)
@@ -71,11 +78,11 @@ class Tree:
     def owner_of(self, uid):
         """The layer/folder a mask belongs to (the layer or mask for an adjustment), else
         the entry itself."""
-        return self.parent[uid] if self.kind[uid] in ('MASK', 'ADJUSTMENT') else uid
+        return self.parent[uid] if self.kind[uid] in ('MASK',) + ITEM_KINDS else uid
 
     def siblings(self, uid):
         p = self.parent[uid]
-        if self.kind[uid] == 'ADJUSTMENT':
+        if self.kind[uid] in ITEM_KINDS:
             return self.adjs[p]
         if self.kind[uid] == 'MASK':
             return self.masks[p]
@@ -160,7 +167,7 @@ def mask_entries(layers, owner_uid):
 
 def adjustment_entries(layers, owner_uid):
     """The adjustments of a layer or mask, bottom-to-top (the order they are applied in)."""
-    return [e for e in layers if e.kind == 'ADJUSTMENT' and e.parent == owner_uid]
+    return [e for e in layers if e.kind in ITEM_KINDS and e.parent == owner_uid]
 
 
 def remove_entries(layers, uid):
@@ -172,7 +179,7 @@ def remove_entries(layers, uid):
     if target.kind in ('LAYER', 'FOLDER'):
         doomed.update(e.uid for e in layers if e.kind == 'MASK' and e.parent == uid)
     # What the doomed layers and masks own: their adjustments.
-    doomed.update(e.uid for e in layers if e.kind == 'ADJUSTMENT' and e.parent in doomed)
+    doomed.update(e.uid for e in layers if e.kind in ITEM_KINDS and e.parent in doomed)
     if target.kind == 'FOLDER':
         for e in layers:
             if e.kind == 'LAYER' and e.parent == uid:
