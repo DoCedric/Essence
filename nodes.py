@@ -597,10 +597,23 @@ def apply_ao(mat):
     has_image = slot.image is not None
     if not has_image and strength is None:
         return None
+    # A Mix node (A=0, B=1) passes its Factor through, so the slider is a real 0 to 1 input.
+    # (A Value node's output has no range.) A Value node from an earlier version is replaced.
+    value = 1.0
+    if strength is not None and strength.bl_idname == 'ShaderNodeValue':
+        value = strength.outputs[0].default_value
+        tree.nodes.remove(strength)
+        strength = None
+    elif strength is not None:
+        value = _by_ident(strength.inputs, "Factor_Float").default_value
     fresh = strength is None
-    strength = _ao_node(tree, AO_STRENGTH_NODE, 'ShaderNodeValue', (x - 500, y))
+    strength = _ao_node(tree, AO_STRENGTH_NODE, 'ShaderNodeMix', (x - 500, y),
+                        data_type='FLOAT')
     if fresh:
-        strength.outputs[0].default_value = 1.0
+        _by_ident(strength.inputs, "A_Float").default_value = 0.0
+        _by_ident(strength.inputs, "B_Float").default_value = 1.0
+        _by_ident(strength.inputs, "Factor_Float").default_value = min(max(value, 0.0), 1.0)
+    strength_out = _by_ident(strength.outputs, "Result_Float")
     color = _ao_node(tree, AO_COLOR_NODE, 'ShaderNodeMix', (x, y),
                      data_type='RGBA', blend_type='MULTIPLY')
     factor = _ao_node(tree, AO_SPEC_FACTOR_NODE, 'ShaderNodeMix', (x - 250, y - 250),
@@ -620,9 +633,9 @@ def apply_ao(mat):
     b_color = _by_ident(color.inputs, "B_Color")
     for sock in (factor_in, b_color, _by_ident(factor.inputs, "Factor_Float")):
         _clear_links(tree, sock)
-    tree.links.new(strength.outputs[0], factor_in)
+    tree.links.new(strength_out, factor_in)
     tree.links.new(slot.outputs['Color'], b_color)
-    tree.links.new(strength.outputs[0], _by_ident(factor.inputs, "Factor_Float"))
+    tree.links.new(strength_out, _by_ident(factor.inputs, "Factor_Float"))
     _by_ident(factor.inputs, "A_Float").default_value = 1.0
     _clear_links(tree, _by_ident(factor.inputs, "B_Float"))
     tree.links.new(slot.outputs['Color'], _by_ident(factor.inputs, "B_Float"))

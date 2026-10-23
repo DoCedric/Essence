@@ -98,6 +98,10 @@ def test_removed_normal_channel_migrates(addon):
     check(all(x.channel != 'NORMAL' for x in layer.sources), "stale source kept")
 
 
+def _factor(node):
+    return next(i for i in node.inputs if i.identifier == "Factor_Float")
+
+
 def _grey_ao(value):
     img = bpy.data.images.new(f"ao_{value}", 16, 16, float_buffer=True)
     img.generated_color = (value, value, value, 1.0)
@@ -131,11 +135,11 @@ def test_ao_darkens_color_and_specular(addon):
     close(full[0], 0.8 * 0.25, 0.02, "color red at strength 1")
     close(full[1], 0.4 * 0.25, 0.02, "color green at strength 1")
     close(out(spec_mul.outputs[0])[0], 0.5 * 0.25, 0.02, "specular at strength 1")
-    strength.outputs[0].default_value = 0.5   # lerp(1, 0.25, 0.5) = 0.625
+    _factor(strength).default_value = 0.5   # lerp(1, 0.25, 0.5) = 0.625
     half = out(result)
     close(half[0], 0.8 * 0.625, 0.02, "color red at strength 0.5")
     close(out(spec_mul.outputs[0])[0], 0.5 * 0.625, 0.02, "specular at strength 0.5")
-    strength.outputs[0].default_value = 0.0
+    _factor(strength).default_value = 0.0
     close(out(result)[0], 0.8, 0.02, "strength 0 leaves the color alone")
 
 
@@ -158,7 +162,7 @@ def test_ao_rebuild_is_idempotent_and_removable(addon):
     check(bsdf.inputs['Base Color'].links[0].from_node == stack_out,
           "an empty AO slot should hand Base Color back to the stack")
     check(not bsdf.inputs['Specular IOR Level'].is_linked, "specular should be unlinked again")
-    close(tree.nodes[addon.nodes.AO_STRENGTH_NODE].outputs[0].default_value, 1.0, 0.001, "strength kept")
+    close(_factor(tree.nodes[addon.nodes.AO_STRENGTH_NODE]).default_value, 1.0, 0.001, "strength kept")
 
 
 def test_ao_bake_wires_the_shader(addon):
@@ -193,3 +197,29 @@ def test_export_ignores_the_ao_overlay(addon):
         close(list(out.pixels)[i], 0.8, 0.03, "BaseMap red must not carry the AO darkening")
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_ao_strength_slider_is_limited_to_0_1(addon):
+    ob, mat = _ao_setup(addon, 0.25)
+    node = mat.node_tree.nodes[addon.nodes.AO_STRENGTH_NODE]
+    sock = _factor(node)
+    check(sock.default_value == 1.0, "default strength should be 1")
+    prop = sock.bl_rna.properties["default_value"]
+    check(prop.hard_min == 0.0 and prop.hard_max == 1.0,
+          f"slider range is {prop.hard_min}..{prop.hard_max}")
+
+
+def test_ao_strength_migrates_from_value_node(addon):
+    """A file made when the strength was a Value node keeps its strength."""
+    ob, mat = _ao_setup(addon, 0.25)
+    tree = mat.node_tree
+    tree.nodes.remove(tree.nodes[addon.nodes.AO_STRENGTH_NODE])
+    old = tree.nodes.new('ShaderNodeValue')
+    old.name = old.label = addon.nodes.AO_STRENGTH_NODE
+    old.outputs[0].default_value = 0.4
+    bpy.ops.essence.rebuild()
+    node = tree.nodes[addon.nodes.AO_STRENGTH_NODE]
+    check(node.bl_idname == 'ShaderNodeMix', "strength node was not replaced")
+    close(_factor(node).default_value, 0.4, 0.001, "strength carried over")
+    check(len([n for n in tree.nodes if n.name.startswith("Essence AO Strength")]) == 1,
+          "duplicate strength nodes")
