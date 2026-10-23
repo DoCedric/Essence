@@ -11,7 +11,8 @@ bl_info = {
 import importlib
 
 # Dependency order: each module may import the ones before it.
-_names = ("channels", "stack", "sources", "nodes", "props", "ops", "bake", "export", "ui")
+_names = ("channels", "adjustments", "stack", "sources", "nodes", "bake", "filters", "props",
+          "ops", "export", "ui")
 
 # Blender's "Reload Scripts" only re-imports this file, not the submodules, so reload
 # them here (this file is re-executed on reload, while `_loaded` still exists).
@@ -21,13 +22,16 @@ if "_loaded" in locals():
         if _n in _loaded:
             importlib.reload(_loaded[_n])
 
-from . import channels, stack, sources, nodes, props, ops, bake, export, ui  # noqa: E402
+from . import (channels, adjustments, stack, sources, nodes, bake, filters, props,  # noqa: E402
+               ops, export, ui)
 
-_loaded = {"channels": channels, "stack": stack, "sources": sources, "nodes": nodes,
-           "props": props, "ops": ops, "bake": bake, "export": export, "ui": ui}
+_loaded = {"channels": channels, "adjustments": adjustments, "stack": stack,
+           "sources": sources, "nodes": nodes, "bake": bake, "filters": filters,
+           "props": props, "ops": ops, "export": export, "ui": ui}
 
-# Registration order. channels and nodes only define data and helpers.
-_modules = (props, ops, bake, export, ui)
+# Registration order. channels, adjustments, stack, sources and nodes only define data and
+# helpers.
+_modules = (props, ops, bake, filters, export, ui)
 
 
 def register():

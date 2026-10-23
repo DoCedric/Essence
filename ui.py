@@ -160,7 +160,7 @@ def _entry_row(layout, mat, item, active, add_mask=False):
         if item.kind == 'MASK':
             toggle = node.inputs.get(nodes.MASK_ENABLE) if node is not None else None
     elif item.kind == 'FILTER':
-        row.label(text="", icon='FILTER')
+        row.label(text="", icon='FILE_REFRESH' if filters.is_stale(mat, item) else 'FILTER')
     else:
         row.label(text="", icon='MODIFIER')
     row.operator("essence.select_entry", text=item.name, depress=active).uid = item.uid
@@ -314,11 +314,16 @@ def _filter(layout, mat, e, owner):
             if sock.name != t.input and hasattr(sock, "default_value"):
                 col.prop(sock, "default_value", text=sock.name)
     layout.prop(e, "filter_resolution", text="Resolution")
-    layout.operator("essence.filter_refresh", icon='FILE_REFRESH').uid = e.uid
-    if filters.result_image(e.uid) is None:
+    row = layout.row(align=True)
+    row.operator("essence.filter_refresh", icon='FILE_REFRESH').uid = e.uid
+    row.prop(e, "filter_auto", text="", icon='TIME')
+    if not filters.is_baked(e):
         layout.label(text="Not baked yet: passes the value through", icon='INFO')
+    elif filters.is_stale(mat, e):
+        layout.label(text="Out of date" + (": refreshing by itself" if e.filter_auto
+                                           else ": press Refresh"), icon='ERROR')
     else:
-        layout.label(text="Refresh after changing the items below", icon='INFO')
+        layout.label(text="Up to date", icon='CHECKMARK')
 
 
 def _fill(layout, mat, e, owner):

@@ -14,6 +14,7 @@ Until the first Refresh the item passes the value through unchanged. Changing th
 below a filter needs another Refresh: the filter works on a cache, by design.
 """
 
+import hashlib
 import os
 import shutil
 import tempfile
@@ -22,6 +23,7 @@ from typing import Tuple
 
 import bpy
 
+from . import sources, stack
 from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials
 
 from .adjustments import FILTER_GROUP_PREFIX as GROUP_PREFIX
@@ -246,3 +248,200 @@ def cleanup():
     for img in [i for i in bpy.data.images if i.name.startswith(IMAGE_PREFIX)]:
         if img.name[len(IMAGE_PREFIX):] not in live:
             bpy.data.images.remove(img)
+
+
+# --------------------------------------------------------------------------
+# Staleness and automatic refresh
+# --------------------------------------------------------------------------
+
+# Node properties that do not change the value a node produces.
+_SKIP = {'rna_type', 'name', 'label', 'location', 'location_absolute', 'width', 'height',
+         'dimensions', 'select', 'hide', 'show_options', 'show_preview', 'show_texture',
+         'parent', 'color', 'use_custom_color', 'inputs', 'outputs', 'internal_links',
+         'warning_propagation', 'is_active_output', 'panel_states', 'color_tag',
+         'bl_idname', 'bl_label', 'bl_description', 'bl_icon', 'bl_static_type',
+         'bl_width_default', 'bl_width_min', 'bl_width_max', 'bl_height_default',
+         'bl_height_min', 'bl_height_max', 'type', 'node_tree', 'image', 'color_ramp',
+         'mapping', 'image_user', 'text', 'script', 'object', 'material', 'node_tree'}
+_SCALARS = ('BOOLEAN', 'INT', 'FLOAT', 'ENUM', 'STRING')
+
+
+def _num(v):
+    try:
+        return tuple(round(x, 5) for x in v)
+    except TypeError:
+        return round(v, 5) if isinstance(v, float) else v
+
+
+def _node_state(node):
+    state = [node.bl_idname]
+    for p in node.bl_rna.properties:
+        if p.identifier in _SKIP or p.type not in _SCALARS:
+            continue
+        v = getattr(node, p.identifier, None)
+        state.append((p.identifier, _num(v) if not isinstance(v, set) else sorted(v)))
+    for s in node.inputs:
+        if hasattr(s, "default_value") and not s.is_linked:
+            state.append((s.identifier, _num(s.default_value)))
+    img = getattr(node, "image", None)
+    if img is not None:
+        state.append(("image", img.name, tuple(img.size), img.is_float))
+    tree = getattr(node, "node_tree", None)
+    if tree is not None:
+        state.append(("group", tree.name))
+    ramp = getattr(node, "color_ramp", None)
+    if ramp is not None:
+        state.append(("ramp", ramp.interpolation,
+                      [(round(e.position, 5), _num(e.color)) for e in ramp.elements]))
+    mapping = getattr(node, "mapping", None)
+    if mapping is not None and hasattr(mapping, "curves"):
+        state.append(("curves", [[(round(p.location[0], 5), round(p.location[1], 5))
+                                  for p in c.points] for c in mapping.curves]))
+    return state
+
+
+def _source_state(src):
+    return (src.kind, src.projection, src.proc_type) if src is not None else ()
+
+
+def signature(mat, entry):
+    """A digest of everything that decides what a filter would bake: the mask's own source,
+    every item below the filter (their nodes, order and switches; a filter below counts by the
+    signature it was baked with) and the filter's own settings. Moving nodes or renaming
+    does not change it."""
+    tree = mat.node_tree
+    layers = mat.essence.layers
+    state = []
+    mask = next((e for e in layers if e.uid == entry.parent), None)
+    if mask is not None:
+        state.append(_source_state(mask.source))
+        for n in sorted(sources.source_nodes(tree, mask.uid, 'MASK').values(),
+                        key=lambda n: n.name):
+            state.append(_node_state(n))
+    for item in stack.adjustment_entries(layers, entry.parent):
+        if item.uid == entry.uid:
+            break
+        state.append((item.kind, item.adj_enabled, item.adj_type, item.fill_blend,
+                      item.filter_type, item.get("essence_sig", "")))
+        nodes = dict(sources.source_nodes(tree, item.uid, 'ADJ'))
+        nodes.pop('OUT', None)   # a filter's result is covered by its baked signature
+        nodes.pop('IN', None)
+        if item.kind == 'FILL':
+            nodes.update({"src_" + r: n for r, n in
+                          sources.source_nodes(tree, item.uid, 'MASK').items()})
+            state.append(_source_state(item.source))
+        for key in sorted(nodes):
+            state.append((key, _node_state(nodes[key])))
+    state.append((entry.filter_type, entry.filter_resolution, entry.adj_enabled))
+    ng = bpy.data.node_groups.get(group_name(entry.uid))
+    if ng is not None:
+        for n in sorted(ng.nodes, key=lambda n: n.name):
+            if n.name != "Source":
+                state.append(_node_state(n))
+    return hashlib.md5(repr(state).encode()).hexdigest()
+
+
+def is_baked(entry):
+    return result_image(entry.uid) is not None
+
+
+def is_stale(mat, entry):
+    """A result exists but what it was baked from has changed since."""
+    return is_baked(entry) and entry.get("essence_sig", "") != signature(mat, entry)
+
+
+def refresh_entry(context, ob, mat, entry):
+    """Bake, filter and store the result of one filter item. Returns the size baked at.
+    Raises on failure; nothing is left behind in the scene either way."""
+    tree = mat.node_tree
+    node_in = sources.source_nodes(tree, entry.uid, "ADJ").get('IN')
+    if node_in is None:
+        raise RuntimeError("filter nodes missing, press Rebuild")
+    if not ob.data.uv_layers:
+        raise RuntimeError("the object has no UV map")
+    size = int(entry.filter_resolution)
+    uid, in_name = entry.uid, node_in.name
+    sig = signature(mat, entry)   # of the state that is about to be baked
+    image = bake_value(context, ob, mat, lambda t: t.nodes[in_name].outputs[0], size)
+    try:
+        result = run_compositor(entry, image)
+    finally:
+        bpy.data.images.remove(image)
+    entry = next(e for e in mat.essence.layers if e.uid == uid)
+    store_result(entry, result)
+    entry["essence_sig"] = sig
+    return size
+
+
+# State of the polling below: the signature seen on the previous tick per filter, and the
+# mode the active object was in.
+_seen = {}
+_last_mode = {}
+TICK = 0.5
+
+
+def tick(context=None):
+    """Called by a timer. Marks nothing itself: a filter is stale when its signature differs
+    from the one it was baked with. With Auto Refresh on, a stale filter is refreshed once its
+    signature stopped changing for a whole tick (so dragging a slider does not bake on every
+    step) and the object is in Object Mode (a bake would pull it out of Texture Paint).
+    Leaving Texture Paint marks every filter of the material stale, since painting changes
+    pixels no signature can see. Returns the delay until the next tick."""
+    context = context or bpy.context
+    ob = context.active_object
+    if ob is None or ob.type != 'MESH' or ob.active_material is None:
+        return TICK
+    mat = ob.active_material
+    if mat.node_tree is None or not any(e.kind == 'FILTER' for e in mat.essence.layers):
+        _last_mode.pop(ob.name, None)
+        return TICK
+    if _last_mode.get(ob.name) == 'TEXTURE_PAINT' and ob.mode != 'TEXTURE_PAINT':
+        for e in mat.essence.layers:
+            if e.kind == 'FILTER':
+                e["essence_sig"] = ""
+    _last_mode[ob.name] = ob.mode
+    for e in list(mat.essence.layers):
+        if e.kind != 'FILTER' or not is_baked(e):
+            continue
+        key = (mat.name, e.uid)
+        sig = signature(mat, e)
+        settled = _seen.get(key) == sig
+        _seen[key] = sig
+        if (e.get("essence_sig", "") != sig and settled and e.filter_auto and e.adj_enabled
+                and ob.mode == 'OBJECT'):
+            uid = e.uid
+            try:
+                refresh_entry(context, ob, mat, e)
+            except Exception as ex:  # noqa: BLE001
+                print(f"Essence: automatic filter refresh failed: {ex}")
+                e = next((x for x in mat.essence.layers if x.uid == uid), None)
+                if e is not None:
+                    e["essence_sig"] = sig   # do not retry the same state every tick
+                continue
+            from . import nodes
+            nodes.rebuild_stack(mat)
+            owner = next((x for x in mat.essence.layers if x.uid == e.parent), None)
+            if owner is not None:
+                sources.apply_owner(mat, owner)
+                nodes.rebuild_stack(mat)
+    return TICK
+
+
+def _timer():
+    try:
+        return tick()
+    except Exception as ex:  # noqa: BLE001 - a timer must never raise
+        print(f"Essence: filter timer: {ex}")
+        return TICK
+
+
+def register():
+    if not bpy.app.timers.is_registered(_timer):
+        bpy.app.timers.register(_timer, first_interval=TICK, persistent=True)
+
+
+def unregister():
+    if bpy.app.timers.is_registered(_timer):
+        bpy.app.timers.unregister(_timer)
+    _seen.clear()
+    _last_mode.clear()

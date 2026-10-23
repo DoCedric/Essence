@@ -431,25 +431,12 @@ class ESSENCE_OT_filter_refresh(_Base, bpy.types.Operator):
         if not ob.data.uv_layers:
             self.report({'ERROR'}, "The object has no UV map")
             return {'CANCELLED'}
-        tree = mat.node_tree
-        node_in = sources.source_nodes(tree, entry.uid, adjustments.ADJ_KEY).get('IN')
-        if node_in is None:
-            self.report({'ERROR'}, "Filter nodes missing, press Rebuild")
-            return {'CANCELLED'}
-        size = int(entry.filter_resolution)
-        owner_uid, uid = entry.parent, entry.uid
+        owner_uid = entry.parent
         try:
-            image = filters.bake_value(context, ob, mat,
-                                       lambda t: t.nodes[node_in.name].outputs[0], size)
-            try:
-                result = filters.run_compositor(entry, image)
-            finally:
-                bpy.data.images.remove(image)
+            size = filters.refresh_entry(context, ob, mat, entry)
         except Exception as e:  # noqa: BLE001
             self.report({'ERROR'}, f"Refresh failed: {e}")
             return {'CANCELLED'}
-        entry = next(e for e in mat.essence.layers if e.uid == uid)
-        filters.store_result(entry, result)
         _reapply(mat, owner_uid)
         self.report({'INFO'}, f"Baked filter at {size} px")
         return {'FINISHED'}
