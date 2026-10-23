@@ -106,6 +106,8 @@ def _adj_update(self, context):
             self.adj_channel = next(c.id for c in CHANNELS if c.socket_type == 'NodeSocketColor')
         finally:
             sources.SUSPEND = False
+    if self.kind == 'ADJUSTMENT' and self.name in {t.label for t in adjustments.TYPES}:
+        self.name = adjustments.BY_ID[self.adj_type].label  # a default name follows the type
     sources.apply_owner(mat, owner)
     nodes.rebuild_stack(mat)
 
@@ -172,6 +174,9 @@ def _active_update(self, context):
 
 class EssenceMaterial(bpy.types.PropertyGroup):
     layers: CollectionProperty(type=EssenceLayer)
+    use_tree: BoolProperty(name="Tree View", default=True,
+                           description="Show the stack as boxes with each layer's masks beside "
+                                       "it, instead of a flat list")
     channels: CollectionProperty(type=EssenceChannelState)
     active_index: IntProperty(update=_active_update)
 

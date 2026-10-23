@@ -80,7 +80,8 @@ Goal: live adjustments that transform the content of a layer channel or of a mas
 - [x] Mask fills: a Fill item on a mask (own source, blend Multiply/Add/Subtract/Darken/Lighten, opacity), items apply in order on the running mask value. Several masks per layer still work until the layout task retires them. [H]
 - [ ] Mask Invert/Brightness/Contrast stay as they are for now; fold them into items later.
 - Known cosmetic issue (not fixing: the list is replaced by the mockup layout): items nested deepest in the list (for example under a mask inside a folder) sometimes get an empty line below them, probably from the row width at that indent.
-- [ ] Mockup layout: layer and mask side by side, each with its item column, built from native widgets instead of a UIList. A separate task, judged in the GUI. [G]
+- [x] Tree view: layer and mask side by side, each with its item column, built from native widgets (the list stays as the other view). [H] draws; [G] look pending
+- [ ] Retire several masks per layer (one mask per layer, stacked with fills) once the tree view is approved.
 - [ ] **Milestone checklist** [G].
 
 ## Later sprints (outline, to be detailed)

@@ -244,6 +244,24 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_select_entry(_Base, bpy.types.Operator):
+    bl_idname = "essence.select_entry"
+    bl_label = "Select"
+    bl_description = "Select this entry"
+    bl_options = {'INTERNAL'}
+
+    uid: StringProperty()
+
+    def execute(self, context):
+        mat = _material(context)
+        s = mat.essence
+        for i, e in enumerate(s.layers):
+            if e.uid == self.uid:
+                s.active_index = i
+                return {'FINISHED'}
+        return {'CANCELLED'}
+
+
 class ESSENCE_OT_add_adjustment(_Base, bpy.types.Operator):
     bl_idname = "essence.add_adjustment"
     bl_label = "Add Adjustment"
@@ -480,6 +498,7 @@ class ESSENCE_MT_add_mask(bpy.types.Menu):
 classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
+    ESSENCE_OT_select_entry,
     ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,
