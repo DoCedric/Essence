@@ -48,6 +48,12 @@ def _map_items(self, context):
 _SIZES = tuple((str(s), f"{s} x {s}", "") for s in (128, 256, 512, 1024, 2048, 4096))
 
 
+_AA = (('1', "Off", "Bake at the final size"),
+       ('2', "2x", "Bake at twice the size and average down: smoother edges, 4x the pixels"),
+       ('4', "4x", "Bake at four times the size and average down: 16x the pixels"))
+_MAX_BAKE_SIZE = 8192
+
+
 def _bake_node_name(map_type):
     return f"Essence_Bake_{map_type}"
 
@@ -102,6 +108,14 @@ def _bake_image(base, size, map_type, float_buffer=True):
         img.scale(size, size)
     img.colorspace_settings.name = 'Non-Color'
     return img
+
+
+def _downscale(image, size):
+    """Halve `image` until it is `size` square. Each halving averages 2x2 pixels exactly,
+    which a single bilinear jump from 4x would not (it skips texels)."""
+    while image.size[0] > size:
+        half = max(size, image.size[0] // 2)
+        image.scale(half, half)
 
 
 def _activate_target(mat, image, map_type):
@@ -340,7 +354,8 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         obj.select_set(True)
         context.view_layer.objects.active = obj
 
-        image = _bake_image(obj.name, size, map_type,
+        aa = int(context.scene.essence_bake_aa)
+        image = _bake_image(obj.name, size * aa, map_type,
                             context.scene.essence_bake_float)
         teardowns = []
         try:
@@ -363,6 +378,8 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         finally:
             for t in reversed(teardowns):
                 t()
+        if aa > 1:
+            _downscale(image, size)
         image.pack()
         if map_type == 'NORMAL':
             for mat in _ensure_materials(obj):
@@ -386,6 +403,12 @@ class ESSENCE_OT_bake(bpy.types.Operator):
                 return {'CANCELLED'}
             # The high-poly objects are the source, never a bake target.
             meshes = [o for o in meshes if o not in set(high)]
+
+        if size * int(scene.essence_bake_aa) > _MAX_BAKE_SIZE:
+            self.report({'ERROR'}, f"{size} px with {scene.essence_bake_aa}x anti-aliasing "
+                        f"bakes at {size * int(scene.essence_bake_aa)} px, above the "
+                        f"{_MAX_BAKE_SIZE} px limit. Lower the size or anti-aliasing")
+            return {'CANCELLED'}
 
         todo = [o for o in meshes if o.data.uv_layers]
         if not todo:
@@ -422,7 +445,7 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             scene.render.bake.normal_g = 'POS_Y'  # OpenGL (+Y), Blender's convention
             scene.render.bake.normal_b = 'POS_Z'
             scene.cycles.samples = scene.essence_bake_samples
-            scene.render.bake.margin = scene.essence_bake_margin
+            scene.render.bake.margin = scene.essence_bake_margin * int(scene.essence_bake_aa)
             for obj in todo:
                 try:
                     last_image = self._bake_object(context, obj, map_type, size,
@@ -493,6 +516,11 @@ def register():
         name="Cage", type=bpy.types.Object, poll=lambda self, o: o.type == 'MESH',
         description="Optional cage mesh: rays start on it instead of at the extrusion "
                     "offset. Needs the same topology as the low-poly, pushed outwards")
+    S.essence_bake_aa = EnumProperty(
+        name="Anti-aliasing", items=_AA, default='1',
+        description="Supersampling: bake larger, then average down to the final size "
+                    "(Cycles samples only smooth shading, not the hard edges between "
+                    "hit and miss, or between UV islands and the background)")
     S.essence_bake_float = BoolProperty(
         name="Float", default=True,
         description="Bake into a 32-bit float image (no banding, four times the memory)")
@@ -506,7 +534,7 @@ def unregister():
     for p in ("essence_bake_map", "essence_bake_size",
               "essence_bake_samples", "essence_bake_margin",
               "essence_bake_high", "essence_bake_extrusion",
-              "essence_bake_cage", "essence_bake_float"):
+              "essence_bake_cage", "essence_bake_float", "essence_bake_aa"):
         delattr(S, p)
     if _previews is not None:
         bpy.utils.previews.remove(_previews)

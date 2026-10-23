@@ -349,7 +349,7 @@ Substance's bakers, mapped to Cycles and emission-override tricks. All result im
 | Match by name (`_low` / `_high` suffix) as an alternative to a High Poly collection | Collection or name pairing | ⬜ | P2 |
 | **Baking groups** (sets of objects and bake settings) | Scene collection of bake settings | ⬜ | P1 |
 | Multi-object bake into one texture set (shared UV) | Cycles bake to one image | 🟡 one image per object today | P1 |
-| Anti-aliasing / bake supersampling | Cycles samples plus downscale from a larger bake | 🟡 samples only | P2 |
+| Anti-aliasing / bake supersampling | Anti-aliasing option (Off, 2x, 4x): bake at that multiple of the size (margin scaled too), then halve repeatedly with `Image.scale` so each step is an exact 2x2 average. Capped at 8192 px baked. Cycles samples cannot do this: they smooth shading, not the hard edges between hit and miss or between islands and background | ✅ verified headless | |
 | Margin / dilation | Cycles margin | ✅ | |
 | **UDIM** bake and paint | Blender UDIM image support | ⬜ | P2 |
 | Bake presets (save settings) | Asset or Scene property | ⬜ | P3 |
@@ -534,6 +534,8 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 - Export (Unity HDRP, EXR): BaseMap, MaskMap (R metallic, G white without AO, B white, A smoothness) and Normal values, temp images and nodes cleaned up, and the exported normal equals the baked normal when layer height is zero.
 
 - Cage: a high-poly 0.5 above a low-poly is missed with the automatic extrusion and captured (correct tilted world normal) once a cage plane sits above it; bake settings are restored. Float buffers: bakes and new paint masks are float, switching the Float toggle keeps the image name and its users.
+
+- Anti-aliasing: a high-poly edge falling mid-pixel is hard at Off and gets intermediate values at 4x, the image keeps its final size and float type, and a size times factor over 8192 px is refused before anything is created.
 
 **Still to confirm in the GUI (milestone checklist):**
 - `template_ID_preview(..., open="image.open")`, and the layer-row thumbnail via `preview_ensure`.

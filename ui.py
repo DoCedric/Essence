@@ -354,6 +354,7 @@ def _bake(self, context):
     col.prop(scene, "essence_bake_size", text="Size")
     col.prop(scene, "essence_bake_samples", text="Samples")
     col.prop(scene, "essence_bake_margin", text="Margin")
+    col.prop(scene, "essence_bake_aa", text="Anti-aliasing")
     col.prop(scene, "essence_bake_float")
     layout.operator("essence.bake", icon='RENDER_STILL')
 

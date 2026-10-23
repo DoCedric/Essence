@@ -108,3 +108,57 @@ def test_new_paint_mask_is_float(addon):
     check(imgs, "no mask image created")
     check(all(i.is_float for i in imgs), "paint mask is not a float image")
     check(imgs[0].colorspace_settings.name == 'Non-Color', "mask not Non-Color")
+
+
+def _edge_row(aa):
+    """Bake the world normal of a high-poly plane whose edge falls mid-pixel; return one
+    row of the green channel."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    from harness import load_addon
+    addon = load_addon()
+    addon.register()
+    try:
+        low = make_plane("Low", size=2.0)
+        coll = _high_collection(z=0.01, tilt=0)
+        high = coll.objects[0]
+        # 2 units wide, left edge at x = -0.9766: halfway into the second pixel of 128.
+        high.scale = (0.5, 0.5, 1.0)
+        high.location.x = 0.0234
+        _select(low)
+        sc = bpy.context.scene
+        sc.essence_bake_high = coll
+        sc.essence_bake_aa = aa
+        check(_bake() == {'FINISHED'}, f"bake with aa={aa} failed")
+        img = bpy.data.images["Low_NormalWorld"]
+        check(tuple(img.size) == (128, 128), f"final size should stay 128, got {tuple(img.size)}")
+        check(img.is_float, "image should be float")
+        w = img.size[0]
+        row = list(img.pixels)[(w // 2) * w * 4:(w // 2 + 1) * w * 4]
+        return [row[i * 4 + 1] for i in range(w)]
+    finally:
+        addon.unregister()
+
+
+def test_bake_antialiasing_smooths_edges(addon):
+    hard = _edge_row('1')
+    soft = _edge_row('4')
+    full = max(hard)
+    partial = lambda row: [v for v in row if 0.02 * full < v < 0.98 * full]  # noqa: E731
+    check(full > 0.3, f"high-poly left no mark: {full}")
+    check(not partial(hard), f"1x bake should have only hard edges: {partial(hard)}")
+    check(len(partial(soft)) >= 1, "4x bake should have an intermediate value on the edge")
+    check(abs(max(soft) - full) < 0.02, "interior value changed with anti-aliasing")
+
+
+def test_bake_aa_size_limit(addon):
+    make_plane("P", size=2.0)
+    sc = bpy.context.scene
+    sc.essence_bake_size = "4096"
+    sc.essence_bake_aa = '4'
+    sc.essence_bake_map = 'AO'
+    try:
+        bpy.ops.essence.bake()
+        raise AssertionError("expected the size limit to cancel the bake")
+    except RuntimeError as e:
+        check("limit" in str(e), f"unexpected error: {e}")
+    check(bpy.data.images.get("P_AO") is None, "no image should be created when over the limit")
