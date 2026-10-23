@@ -636,13 +636,54 @@ def apply_ao(mat):
     return strength
 
 
+# While a rebuild wires many sockets, {destination key: source key} of the tree's links.
+# `Socket.links` scans every link in the tree, which made a rebuild quadratic in the stack
+# size. None outside those phases. Only _set_link and _clear_links may change links while it
+# is active.
+_LINKS = None
+
+
+def _key(sock):
+    return (sock.node.name, sock.identifier)
+
+
+def _begin_links(tree):
+    global _LINKS
+    _LINKS = {_key(l.to_socket): _key(l.from_socket) for l in tree.links}
+
+
+def _end_links():
+    global _LINKS
+    _LINKS = None
+
+
+def _set_link(tree, dst, src):
+    """Make `src` the only link into `dst`, touching nothing when it already is (relinking
+    an unchanged graph is what made every rebuild slow)."""
+    if _LINKS is not None:
+        if _LINKS.get(_key(dst)) == _key(src):
+            return
+        _clear_links(tree, dst)
+        tree.links.new(src, dst)
+        _LINKS[_key(dst)] = _key(src)
+        return
+    if dst.is_linked and len(dst.links) == 1 and dst.links[0].from_socket == src:
+        return
+    _clear_links(tree, dst)
+    tree.links.new(src, dst)
+
+
 def _clear_links(tree, sock):
+    if _LINKS is not None:
+        if _LINKS.pop(_key(sock), None) is None:
+            return
     for l in list(sock.links):
         tree.links.remove(l)
 
 
 def rebuild_stack(mat):
     """Wire the layer nodes of `mat` into a chain and into the shader."""
+    _end_links()  # in case an earlier rebuild stopped on an error
     tree = mat.node_tree
     layers = mat.essence.layers
     ensure_channel_states(mat)
@@ -677,14 +718,14 @@ def rebuild_stack(mat):
     def link_chain(node, a_src, b_src=None):
         for ch in active:
             a = node.inputs[f"{ch.label} A"]
-            _clear_links(tree, a)
             if a_src is not None:
-                tree.links.new(a_src.outputs[ch.label], a)
+                _set_link(tree, a, a_src.outputs[ch.label])
+            else:
+                _clear_links(tree, a)
             if b_src is not None:
-                b = node.inputs[f"{ch.label} B"]
-                _clear_links(tree, b)
-                tree.links.new(b_src.outputs[ch.label], b)
+                _set_link(tree, node.inputs[f"{ch.label} B"], b_src.outputs[ch.label])
 
+    _begin_links(tree)
     prev = None
     base = None        # chain tail below the folder currently being filled
     open_uid = ""
@@ -709,9 +750,11 @@ def rebuild_stack(mat):
         if kind not in targets:
             continue
         dst = targets[kind].inputs[sock_name]
-        _clear_links(tree, dst)
         if ch.id in active_ids:
-            tree.links.new(prev.outputs[ch.label], dst)
+            _set_link(tree, dst, prev.outputs[ch.label])
+        else:
+            _clear_links(tree, dst)
+    _end_links()
     if baked is not None:
         # The Normal slot: a baked or picked tangent normal map feeds the Normal Map node,
         # which is evaluated before the bump (the layer height).
@@ -726,10 +769,15 @@ def rebuild_stack(mat):
     for m in layers:
         if m.kind == 'MASK' and m.uid and tree.nodes.get(m.node_name) is not None:
             sources.ensure_mask_source(mat, m)
-    for e, node in entries:
-        _link_masks(tree, layers, e, node)
-        if e.kind == 'LAYER' and e.uid:
-            sources.layout(tree, e, node)
+    index = sources.source_index(tree)
+    _begin_links(tree)
+    try:
+        for e, node in entries:
+            _link_masks(tree, layers, e, node, index)
+            if e.kind == 'LAYER' and e.uid:
+                sources.layout(tree, e, node, index)
+    finally:
+        _end_links()
 
 
 def refresh_all(mat, changed=()):
@@ -756,11 +804,10 @@ def refresh_all(mat, changed=()):
     rebuild_stack(mat)
 
 
-def _link_masks(tree, layers, owner, owner_node):
+def _link_masks(tree, layers, owner, owner_node, index=None):
     """Chain the owner's mask nodes (image -> mask node -> next mask node) into its Mask
     input, and lay them out in a column below the owner."""
     dst = owner_node.inputs[MASK_SOCKET]
-    _clear_links(tree, dst)
     prev = None
     x, y = owner_node.location.x, owner_node.location.y - 420
     for m in layers:
@@ -770,24 +817,28 @@ def _link_masks(tree, layers, owner, owner_node):
         if node is None:
             continue
         prev_in = node.inputs[MASK_PREVIOUS]
-        _clear_links(tree, prev_in)
         if prev is not None:
-            tree.links.new(prev.outputs[MASK_SOCKET], prev_in)
-        node.location = (x, y)
+            _set_link(tree, prev_in, prev.outputs[MASK_SOCKET])
+        else:
+            _clear_links(tree, prev_in)
+        sources.place(node, x, y)
         if m.source.channel == 'MASK':
             # The source nodes (see sources.py) feed Value; they sit below the mask node.
-            y = sources.layout_mask(tree, m, node)
+            y = sources.layout_mask(tree, m, node, index)
         else:
             image = tree.nodes.get(m.mask_node_name) if m.mask_node_name else None
             value_in = node.inputs[MASK_VALUE]
-            _clear_links(tree, value_in)
             if image is not None:
-                tree.links.new(image.outputs['Color'], value_in)
-                image.location = (x, y - 250)
+                _set_link(tree, value_in, image.outputs['Color'])
+                sources.place(image, x, y - 250)
+            else:
+                _clear_links(tree, value_in)
             y -= 650
         prev = node
     if prev is not None:
-        tree.links.new(prev.outputs[MASK_SOCKET], dst)
+        _set_link(tree, dst, prev.outputs[MASK_SOCKET])
+    else:
+        _clear_links(tree, dst)
 
 
 def add_layer_node(mat, name, folder=False):

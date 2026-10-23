@@ -65,8 +65,8 @@ Added after the Sprint 2 GUI check.
 - [x] Constant-folding check for disabled channels: folds in EEVEE. [H]
 - [x] Bake anti-aliasing (Off, 2x, 4x supersampling, TexTools style). [H]
 - [x] AO mesh map overlay with a Strength slider (darkens Base Color, lowers Specular), after the stack. [H]
-- [ ] Follow-up: stack build cost is quadratic in Python (50 procedural layers with masks take 240 s through the operators; each operator rebuilds everything). Profile and make Add Layer/Add Mask/source changes incremental. [H]
-- [ ] **Milestone checklist** [G]: Cage, Float and Anti-aliasing controls in the Bake panel, AO Strength slider (bake AO, then drag Strength and compare the viewport), a cage bake on a real high-poly.
+- [x] Follow-up: stack build cost was cubic in Python (50 procedural layers with masks took 242 s). Rebuild now skips unchanged links and indexes links and source nodes once: 29 s, and 0.9 s for 50 plain layers. [H]
+- [x] **Milestone checklist** [G] (confirmed by the user): Cage, Float and Anti-aliasing controls in the Bake panel, AO Strength slider (bake AO, then drag Strength and compare the viewport), a cage bake on a real high-poly.
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 4, adjustments and filters:** adjustment layers, filter stack on layer/mask, live adjustment set (levels, HSV, balance, curves, invert, gradient map, threshold), mask levels/curves, mask stack blend modes.

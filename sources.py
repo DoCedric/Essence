@@ -180,6 +180,24 @@ def source_nodes(tree, uid, ch_id):
     return {n[ROLE_KEY]: n for n in tree.nodes if n.get(SRC_KEY) == key and ROLE_KEY in n}
 
 
+def source_index(tree):
+    """{tag: {role: node}} for every source node, built in one pass over the tree. A rebuild
+    lays out every layer, so it builds this once instead of scanning per channel."""
+    index = {}
+    for n in tree.nodes:
+        key = n.get(SRC_KEY)
+        if key is not None and ROLE_KEY in n:
+            index.setdefault(key, {})[n[ROLE_KEY]] = n
+    return index
+
+
+def place(node, x, y):
+    """Move a node only when it is not there already (a write costs a UI update)."""
+    loc = node.location
+    if loc.x != x or loc.y != y:
+        node.location = (x, y)
+
+
 def remove_nodes(tree, uid, ch_id=None):
     for n in list(tree.nodes):
         key = str(n.get(SRC_KEY, ""))
@@ -327,31 +345,34 @@ _ROLE_ORDER = ('COORD', 'MAPPING', 'TEXTURE', 'REMAP', 'RAMP')
 _STEP = {'COORD': 230, 'MAPPING': 330, 'TEXTURE': 330, 'REMAP': 290, 'RAMP': 320}
 
 
-def layout(tree, entry, layer_node):
+def layout(tree, entry, layer_node, index=None):
     """Stack the source nodes of a layer in a column above its layer node."""
     x = layer_node.location.x
     y = layer_node.location.y + 480
     for ch in CHANNELS:
-        nodes = source_nodes(tree, entry.uid, ch.id)
+        nodes = (index.get(tag(entry.uid, ch.id), {}) if index is not None
+                 else source_nodes(tree, entry.uid, ch.id))
         for role in _ROLE_ORDER:
             n = nodes.get(role)
             if n is None:
                 continue
-            n.location = (x, y)
+            place(n, x, y)
             y += _STEP[role]
         if nodes:
             y += 60
 
 
-def layout_mask(tree, entry, mask_node):
+def layout_mask(tree, entry, mask_node, index=None):
     """Stack a mask's source nodes in a column below its mask node. Returns the y where the
     next mask can start."""
     x = mask_node.location.x
     y = mask_node.location.y - 320
+    nodes = (index.get(tag(entry.uid, 'MASK'), {}) if index is not None
+             else source_nodes(tree, entry.uid, 'MASK'))
     for role in _ROLE_ORDER:
-        n = source_nodes(tree, entry.uid, 'MASK').get(role)
+        n = nodes.get(role)
         if n is not None:
-            n.location = (x, y)
+            place(n, x, y)
             y -= _STEP[role]
     return y - 80
 
