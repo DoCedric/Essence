@@ -728,6 +728,7 @@ def rebuild_stack(mat):
         _clear_links(tree, tree.nodes[NORMAL_NODE_NAME].inputs['Color'])
 
     apply_ao(mat)
+    sources.wire_detail_normals(tree)
 
     for m in layers:
         if m.kind in ('MASK', 'FILL') and m.uid and tree.nodes.get(m.node_name) is not None:

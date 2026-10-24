@@ -367,7 +367,7 @@ def _node_state(node):
 
 
 def _source_state(src):
-    return (src.kind, src.projection, src.proc_type) if src is not None else ()
+    return (src.kind, src.projection, src.proc_type, src.gen_type) if src is not None else ()
 
 
 def signature(mat, entry):

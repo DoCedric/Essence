@@ -1,10 +1,14 @@
 """Layer sources: what drives a channel's B input.
 
-A channel can be a plain value (the B socket's own value), an image or a procedural. The
-image and procedural cases are ordinary shader nodes placed next to the layer node and wired
-into its B input:
+A channel can be a plain value (the B socket's own value), an image, a procedural or a
+generator. The image and procedural cases are ordinary shader nodes placed next to the layer
+node and wired into its B input:
 
     Texture Coordinate -> Mapping -> Image Texture / Procedural group -> [Map Range | Color Ramp] -> B
+
+A generator (see generators.py) reads the mesh itself, so it has no coordinates or mapping:
+
+    Generator group -> [Map Range | Color Ramp] -> B
 
 Every node made here carries two custom properties, `essence_source` ("<layer uid>:<channel id>")
 and `essence_role`, so they can be found again however the user renames or moves them. Nothing
@@ -13,7 +17,7 @@ here is hidden: the user can edit, replace or extend these nodes in the node edi
 
 import bpy
 
-from . import adjustments
+from . import adjustments, generators
 from .channels import CHANNELS, SOURCE_BY_ID, active_channels
 
 SRC_KEY = "essence_source"
@@ -23,7 +27,10 @@ PROC_VERSION = 1
 
 KINDS = [('VALUE', "Value", "A plain value", 'NONE', 0),
          ('IMAGE', "Image", "An image texture", 'NONE', 1),
-         ('PROCEDURAL', "Procedural", "A procedural texture", 'NONE', 2)]
+         ('PROCEDURAL', "Procedural", "A procedural texture", 'NONE', 2),
+         ('GENERATOR', "Generator",
+          "A live generator that reacts to the mesh: light direction, slope, gradients",
+          'NONE', 3)]
 
 
 def kind_items(src):
@@ -135,6 +142,52 @@ def _set_proc_group(node, proc_id):
                 sock.default_value = item.default_value
 
 
+def _set_gen_group(node, gen_id):
+    """Point a group node at a generator and reset its inputs to that generator's defaults
+    (see `_set_proc_group` for why)."""
+    ng = generators.ensure_group(gen_id)
+    node.node_tree = ng
+    for item in ng.interface.items_tree:
+        if item.in_out == 'INPUT' and item.name != generators.DETAIL_INPUT:
+            sock = node.inputs.get(item.name)
+            if sock is not None:
+                sock.default_value = item.default_value
+
+
+DETAIL_FALLBACK = "Essence Geometry Normal"
+
+
+def wire_detail_normals(tree):
+    """Feed the Essence Normal Map node's output (the world space normal with the baked detail)
+    into every generator's `Detail Normal` input. Always linked: the generator's own switch
+    decides whether it is used. Nothing depends on a layer, so this cannot make a cycle. With
+    an empty Normal slot there is no Normal Map node, and the detail is just the surface
+    normal: a Geometry node stands in for it."""
+    from . import nodes
+    users = [n.inputs[generators.DETAIL_INPUT] for n in tree.nodes
+             if n.bl_idname == 'ShaderNodeGroup' and n.node_tree is not None
+             and generators.DETAIL_INPUT in n.inputs]
+    fallback = tree.nodes.get(DETAIL_FALLBACK)
+    nm = tree.nodes.get(nodes.NORMAL_NODE_NAME)
+    if nm is not None or not users:
+        if fallback is not None:
+            tree.nodes.remove(fallback)
+        if not users:
+            return
+        out = nm.outputs['Normal']
+    else:
+        if fallback is None:
+            fallback = tree.nodes.new('ShaderNodeNewGeometry')
+            fallback.name = fallback.label = DETAIL_FALLBACK
+            x, y = users[0].node.location
+            fallback.location = (x - 300, y - 200)
+        out = fallback.outputs['Normal']
+    for sock in users:
+        if not (sock.is_linked and sock.links[0].from_socket == out):
+            _clear_links(tree, sock)
+            tree.links.new(out, sock)
+
+
 def tag(uid, ch_id):
     return f"{uid}:{ch_id}"
 
@@ -225,11 +278,12 @@ def _wanted(src, ch, adjusted=False):
             return {}
         return {'CONST': 'ShaderNodeValue' if ch.socket_type == 'NodeSocketFloat'
                 else 'ShaderNodeRGB'}
-    roles = {'COORD': 'ShaderNodeTexCoord', 'MAPPING': 'ShaderNodeMapping'}
+    roles = ({} if src.kind == 'GENERATOR'
+             else {'COORD': 'ShaderNodeTexCoord', 'MAPPING': 'ShaderNodeMapping'})
     roles['TEXTURE'] = 'ShaderNodeTexImage' if src.kind == 'IMAGE' else 'ShaderNodeGroup'
     if ch.socket_type == 'NodeSocketFloat':
         roles['REMAP'] = 'ShaderNodeMapRange'
-    elif src.kind == 'PROCEDURAL':
+    elif src.kind in ('PROCEDURAL', 'GENERATOR'):
         roles['RAMP'] = 'ShaderNodeValToRGB'
     return roles
 
@@ -437,6 +491,8 @@ def apply(mat, entry, ch_id):
         have[role] = n
         if role == 'TEXTURE' and src.kind == 'PROCEDURAL':
             _set_proc_group(n, src.proc_type)
+        elif role == 'TEXTURE' and src.kind == 'GENERATOR':
+            _set_gen_group(n, src.gen_type)
         elif role == 'TEXTURE':
             n.interpolation = 'Linear'
             if src.image_memory is not None:
@@ -470,17 +526,22 @@ def apply(mat, entry, ch_id):
     tex = have['TEXTURE']
     if src.kind == 'PROCEDURAL' and tex.node_tree is not ensure_proc_group(src.proc_type):
         _set_proc_group(tex, src.proc_type)
+    if src.kind == 'GENERATOR':
+        if tex.node_tree is not generators.ensure_group(src.gen_type):
+            _set_gen_group(tex, src.gen_type)
+        wire_detail_normals(tree)
     if src.kind == 'IMAGE':
         tex.projection = 'BOX' if src.projection == 'TRIPLANAR' else 'FLAT'
         tex.projection_blend = 0.2
 
     # Wiring. Only links between the nodes made here are replaced.
-    coord = 'UV' if src.projection == 'UV' else 'Object'
     links = tree.links
-    _clear_links(tree, have['MAPPING'].inputs['Vector'])
-    links.new(have['COORD'].outputs[coord], have['MAPPING'].inputs['Vector'])
-    _clear_links(tree, tex.inputs['Vector'])
-    links.new(have['MAPPING'].outputs['Vector'], tex.inputs['Vector'])
+    if src.kind != 'GENERATOR':
+        coord = 'UV' if src.projection == 'UV' else 'Object'
+        _clear_links(tree, have['MAPPING'].inputs['Vector'])
+        links.new(have['COORD'].outputs[coord], have['MAPPING'].inputs['Vector'])
+        _clear_links(tree, tex.inputs['Vector'])
+        links.new(have['MAPPING'].outputs['Vector'], tex.inputs['Vector'])
 
     if src.kind == 'IMAGE':
         out = tex.outputs['Color']

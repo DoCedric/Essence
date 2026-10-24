@@ -1,7 +1,7 @@
 import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
-from . import adjustments, filters, nodes, sources
+from . import adjustments, filters, generators, nodes, sources
 from .bake import HIGH_MAPS
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
@@ -478,7 +478,8 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
         return
 
     tex = found.get('TEXTURE')
-    if tex is None or 'MAPPING' not in found:
+    generator = src.kind == 'GENERATOR'
+    if tex is None or ('MAPPING' not in found and not generator):
         col.operator("essence.rebuild", text="Source nodes missing, rebuild",
                      icon='FILE_REFRESH')
         return
@@ -496,6 +497,11 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
                       icon='ERROR')
             sub.operator("essence.source_colorspace",
                          text=f"Set {ch.colorspace}").channel = ch.id
+    elif generator:
+        col.prop(src, "gen_type", text="Generator")
+        for s in tex.inputs:
+            if s.name not in generators.INTERNAL_INPUTS and not s.is_linked:
+                col.prop(s, "default_value", text=s.name)
     else:
         col.prop(src, "proc_type", text="Type")
         for s in tex.inputs:
@@ -509,6 +515,8 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
     ramp = found.get('RAMP')
     if ramp is not None:
         col.template_color_ramp(ramp, "color_ramp")
+    if generator:
+        return       # it reads the mesh: no projection or mapping
     col.separator()
     col.prop(src, "projection", expand=True)
     col.prop(src, "show_transform", emboss=False,

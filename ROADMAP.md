@@ -97,11 +97,11 @@ Goal: generators that react to the mesh, live where the shader can do it for fre
 What a shader reads live: Geometry Normal and Position (world space), Texture Coordinate Normal (object space, the better default because the mask stays put when the object rotates), Texture Coordinate Generated (position across the bounding box, 0 to 1), and the `Essence Normal Map` node's output (a world-space normal that includes the baked high-poly detail; never the Bump node, which includes the layer heights and would make a cycle).
 
 **Part 1, live generators (no baking)**
-- [ ] A `GENERATOR` source kind next to Procedural, for channel sources, mask sources and fills: node groups "Essence Gen ..." with a uniform interface (Mask or Color out, named inputs), version key, built through the same `sources.py` machinery. [H]
-- [ ] **Directional Light**: Direction, Space (object or world), Contrast, Balance, and a switch to use the detail normal from the Normal slot. [H] (values against baked pixels on a cube)
-- [ ] **Slope / Up mask**: how much a surface faces a chosen axis, with a threshold and softness. [H]
-- [ ] **Height Gradient and Position Gradient**, live from Generated coordinates: axis, range, remap. Replaces the baked World Gradient for masks (the bake stays for export-style uses). [H]
-- [ ] Panel: generator picker and controls in the Source rows of layers, masks and fills. [G]
+- [x] A `GENERATOR` source kind next to Procedural, for channel sources, mask sources and fills: node groups "Essence Gen ..." with a uniform interface (`Fac` out, named inputs), version key with a migration that keeps values and links, built through the same `sources.py` machinery; data and builders in `generators.py`. A generator has no coordinates or mapping. [H]
+- [x] **Directional Light**: Direction, Space (object or world), Contrast, Balance, and a switch to use the detail normal from the Normal slot. [H] (values against baked pixels on a cube)
+- [x] **Slope / Up mask**: how much a surface faces a chosen axis, with a threshold and softness. [H]
+- [x] **Height Gradient and Position Gradient** (one generator, "Gradient": Z is a height gradient, X and Y a position gradient), live from Generated coordinates: axis, range, remap. Replaces the baked World Gradient for masks (the bake stays for export-style uses). [H]
+- [x] Panel: generator picker and controls in the Source rows of layers, masks and fills. [H] draws; [G] look and usability pending
 
 **Part 2, more baked maps (Mesh Maps slots)**
 - [ ] **Curvature** (convex and concave). Open: method, either the baked normal run through the compositor, or Pointiness/Bevel through an emission override (Cycles-only, noisier). Decide with a quick test of both on a real mesh. [H]

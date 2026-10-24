@@ -11,8 +11,8 @@ bl_info = {
 import importlib
 
 # Dependency order: each module may import the ones before it.
-_names = ("channels", "adjustments", "stack", "sources", "nodes", "bake", "filters", "props",
-          "ops", "export", "bundled", "ui")
+_names = ("channels", "adjustments", "generators", "stack", "sources", "nodes", "bake",
+          "filters", "props", "ops", "export", "bundled", "ui")
 
 # Blender's "Reload Scripts" only re-imports this file, not the submodules, so reload
 # them here (this file is re-executed on reload, while `_loaded` still exists).
@@ -22,10 +22,11 @@ if "_loaded" in locals():
         if _n in _loaded:
             importlib.reload(_loaded[_n])
 
-from . import (channels, adjustments, stack, sources, nodes, bake, filters, props,  # noqa: E402
-               ops, export, bundled, ui)
+from . import (channels, adjustments, generators, stack, sources, nodes, bake,  # noqa: E402
+               filters, props, ops, export, bundled, ui)
 
-_loaded = {"channels": channels, "adjustments": adjustments, "stack": stack,
+_loaded = {"channels": channels, "adjustments": adjustments, "generators": generators,
+           "stack": stack,
            "sources": sources, "nodes": nodes, "bake": bake, "filters": filters,
            "props": props, "ops": ops, "export": export, "bundled": bundled, "ui": ui}
 

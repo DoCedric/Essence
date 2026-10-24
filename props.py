@@ -2,7 +2,7 @@ import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, IntProperty,
                        PointerProperty, StringProperty)
 
-from . import adjustments, blends, filters, nodes, sources, stack
+from . import adjustments, blends, filters, generators, nodes, sources, stack
 from .channels import BY_ID, CHANNELS, SOURCE_BY_ID
 
 
@@ -126,6 +126,8 @@ class EssenceSource(bpy.types.PropertyGroup):
                                  description="Show tiling, offset and rotation")
     projection: EnumProperty(name="Projection", items=sources.PROJECTIONS, default='UV',
                              update=_source_update)
+    gen_type: EnumProperty(name="Generator", items=generators.ITEMS, update=_source_update,
+                           description="What the generator reads from the mesh")
     proc_type: EnumProperty(name="Type", items=sources.PROC_ITEMS, default='NOISE',
                             update=_source_update)
     expanded: BoolProperty(name="Expanded", default=True,
