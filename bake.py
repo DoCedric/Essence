@@ -8,6 +8,7 @@ _emission_builder (or a native bake pass).
 """
 
 import os
+import uuid
 
 import bpy
 import bpy.utils.previews
@@ -479,6 +480,7 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         if aa > 1:
             _downscale(image, size)
         image.pack()
+        image["essence_stamp"] = uuid.uuid4().hex[:8]   # derived maps notice a new bake
         if map_type == 'NORMAL':
             for mat in _ensure_materials(obj):
                 node = mat.node_tree.nodes.get(_bake_node_name(map_type))

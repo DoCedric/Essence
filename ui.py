@@ -1,7 +1,7 @@
 import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
-from . import adjustments, filters, generators, gizmo, nodes, sources
+from . import adjustments, curvature, filters, generators, gizmo, nodes, sources
 from .bake import HIGH_MAPS
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
@@ -623,9 +623,11 @@ def _maps(self, context):
         return
     tree = mat.node_tree
     found = False
+    missing = False
     for map_id, label in nodes.MAP_SLOTS:
         node = tree.nodes.get(nodes.map_slot_name(map_id))
         if node is None:
+            missing = True
             continue
         found = True
         box = layout.box()
@@ -643,8 +645,33 @@ def _maps(self, context):
             if ao is not None:
                 factor = next(i for i in ao.inputs if i.identifier == "Factor_Float")
                 box.prop(factor, "default_value", text="Strength", slider=True)
+        elif map_id == 'CURVATURE':
+            _curvature(box, mat)
     if not found:
         layout.label(text="Add a layer first")
+    elif missing:    # a file from before some slots existed: a rebuild adds them
+        layout.operator("essence.rebuild", text="Add the new map slots", icon='FILE_REFRESH')
+
+
+def _curvature(box, mat):
+    """The Derive button of the Curvature slot: red while the result is missing or out of date,
+    a green dot when it is current."""
+    s = mat.essence
+    col = box.column(align=True)
+    col.prop(s, "curvature_width")
+    col.prop(s, "curvature_strength")
+    has_normal = curvature.normal_image(mat) is not None
+    current = has_normal and curvature.is_derived(mat) and not curvature.needs_derive(mat)
+    row = box.row(align=True)
+    row.scale_y = 1.3
+    row.enabled = has_normal
+    row.alert = has_normal and not current
+    row.operator("essence.derive_curvature", text="Derive from Normal",
+                 icon='STRIP_COLOR_04' if current else 'STRIP_COLOR_01')
+    if not has_normal:
+        box.label(text="Needs the Normal map: bake or pick one above", icon='INFO')
+    elif not curvature.is_derived(mat):
+        box.label(text="Not derived yet", icon='INFO')
 
 
 def _bake(self, context):

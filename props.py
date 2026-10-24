@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, IntProperty,
+from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, FloatProperty, IntProperty,
                        PointerProperty, StringProperty)
 
 from . import adjustments, blends, filters, generators, nodes, sources, stack
@@ -193,6 +193,16 @@ class EssenceMaterial(bpy.types.PropertyGroup):
                                        "it, instead of a flat list")
     channels: CollectionProperty(type=EssenceChannelState)
     active_index: IntProperty(update=_active_update)
+    # The curvature derived from the Normal slot (see curvature.py)
+    curvature_uid: StringProperty()
+    curvature_sig: StringProperty()
+    curvature_width: FloatProperty(
+        name="Width", default=1.0, min=0.0, soft_max=16.0,
+        description="Blur of the normal map in pixels before the curvature is taken: more is a "
+                    "wider, softer edge. Depends on the size of the map")
+    curvature_strength: FloatProperty(
+        name="Strength", default=1.5, min=0.0, soft_max=20.0,
+        description="How strongly curvature shows (set for a 1024 px map, scaled for others)")
 
 
 classes = (EssenceChannelState, EssenceSource, EssenceLayer, EssenceMaterial)

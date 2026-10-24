@@ -1,7 +1,7 @@
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import adjustments, filters, gizmo, nodes, sources, stack
+from . import adjustments, curvature, filters, gizmo, nodes, sources, stack
 from .channels import SOURCE_BY_ID
 
 
@@ -454,6 +454,31 @@ class ESSENCE_OT_light_gizmo(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_derive_curvature(_Base, bpy.types.Operator):
+    bl_idname = "essence.derive_curvature"
+    bl_label = "Derive Curvature"
+    bl_description = ("Derive the curvature from the Normal slot: convex edges bright, concave "
+                      "crevices dark, flat 0.5. Needed again after the normal or the settings "
+                      "change")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.type == 'MESH' and ob.active_material is not None
+
+    def execute(self, context):
+        ob = context.active_object
+        mat = ob.active_material
+        try:
+            curvature.derive(mat, ob.name)
+        except Exception as e:  # noqa: BLE001
+            self.report({'ERROR'}, f"Curvature failed: {e}")
+            return {'CANCELLED'}
+        self.report({'INFO'}, "Curvature derived")
+        return {'FINISHED'}
+
+
 class ESSENCE_OT_filter_apply(_Base, bpy.types.Operator):
     bl_idname = "essence.filter_apply"
     bl_label = "Apply"
@@ -686,7 +711,8 @@ classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
-    ESSENCE_OT_light_gizmo, ESSENCE_OT_filter_apply, ESSENCE_OT_filter_apply_all,
+    ESSENCE_OT_light_gizmo, ESSENCE_OT_derive_curvature, ESSENCE_OT_filter_apply,
+    ESSENCE_OT_filter_apply_all,
     ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,

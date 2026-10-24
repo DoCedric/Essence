@@ -222,7 +222,8 @@ def ensure_channel_states(mat):
 # it, and the user can pick any other image. The Normal slot feeds the shader (see
 # rebuild_stack); AO is read by export; generators read Normal and Position (see
 # sources.wire_baked_inputs); more maps come with the mesh-map sprint.
-MAP_SLOTS = (('NORMAL', "Normal"), ('AO', "Ambient Occlusion"), ('POSITION', "Position"))
+MAP_SLOTS = (('NORMAL', "Normal"), ('AO', "Ambient Occlusion"), ('POSITION', "Position"),
+             ('CURVATURE', "Curvature"))
 
 
 def map_slot_name(map_id):

@@ -251,6 +251,13 @@ def run_compositor(entry, image):
     result as a new, packed, float image."""
     log("compositor: building the group and the throwaway scene")
     ng, node = build_group(entry)
+    return run_compositor_group(ng, image)
+
+
+def run_compositor_group(ng, image):
+    """Run a compositor group (an Image node named "Source", one Image output) on `image` in
+    a throwaway scene at the image's size, and return the result as a new, packed, float,
+    Non-Color image. Shared by the baked filters and the curvature."""
     src = ng.nodes["Source"]
     scene = bpy.data.scenes.new("EssenceFilterTmp")
     folder = tempfile.mkdtemp(prefix="essence_filter_")
