@@ -146,6 +146,12 @@ def _set_gen_group(node, gen_id):
     """Point a group node at a generator and reset its inputs to that generator's defaults
     (see `_set_proc_group` for why)."""
     ng = generators.ensure_group(gen_id)
+    # Blender keeps links by socket position when the group changes: the Detail Normal of the
+    # light would land on the fourth input of the next generator. They mean nothing there.
+    tree = node.id_data
+    for sock in node.inputs:
+        for l in list(sock.links):
+            tree.links.remove(l)
     node.node_tree = ng
     for item in ng.interface.items_tree:
         if item.in_out == 'INPUT' and item.name != generators.DETAIL_INPUT:
@@ -191,6 +197,26 @@ def _feed(tree, input_name, source, fallback_name, fallback_idname, fallback_out
             tree.links.new(out, sock)
 
 
+def _drop_stale_feeds(tree, fed):
+    """Remove links from Essence's own map sources into generator inputs that are not the ones
+    they feed (left by older versions, which kept the links by position when a generator was
+    switched to another type)."""
+    from . import nodes
+    ours = {nodes.NORMAL_NODE_NAME, DETAIL_FALLBACK, POSITION_FALLBACK, CURVATURE_FALLBACK,
+            AO_FALLBACK, *(nodes.map_slot_name(m) for m, _label in nodes.MAP_SLOTS)}
+    for n in tree.nodes:
+        if n.bl_idname != 'ShaderNodeGroup' or n.node_tree is None:
+            continue
+        if not any(name in n.inputs for name in fed):
+            continue              # not a generator
+        for sock in n.inputs:
+            if sock.name in fed:
+                continue
+            for l in list(sock.links):
+                if l.from_node.name in ours:
+                    tree.links.remove(l)
+
+
 def wire_baked_inputs(tree):
     """Feed generators what they can read from the mesh maps instead of live: the Essence
     Normal Map node's output (the world space normal with the baked detail) into `Detail
@@ -199,6 +225,7 @@ def wire_baked_inputs(tree):
     Position slot, a Geometry node or the Generated coordinates stand in: the live value."""
     from . import nodes
     nm = tree.nodes.get(nodes.NORMAL_NODE_NAME)
+    _drop_stale_feeds(tree, generators.INTERNAL_INPUTS)
     _feed(tree, generators.DETAIL_INPUT, nm.outputs['Normal'] if nm is not None else None,
           DETAIL_FALLBACK, 'ShaderNodeNewGeometry', 'Normal')
     slot = tree.nodes.get(nodes.map_slot_name('POSITION'))

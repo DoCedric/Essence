@@ -155,3 +155,48 @@ def test_these_generators_work_on_masks_and_survive_a_reload(addon):
               "the generator and its map link survive a save")
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_switching_generator_type_leaves_no_stale_links(addon):
+    """Blender keeps links by socket position when a group changes: the light's Detail Normal
+    used to land on Dirt's Noise Scale and hide it from the panel."""
+    from essence import ui
+    from test_ui import _draw
+    ob, mat, e = _setup(addon, 'DIRECTIONAL_LIGHT')
+    src = next(s for s in e.sources if s.channel == 'ROUGHNESS')
+    check(_tex(addon, mat, e).inputs['Detail Normal'].is_linked, "the light is wired to the detail")
+    for gen_id in ('DIRT', 'EDGE_WEAR', 'CAVITY', 'SLOPE', 'GRADIENT', 'DIRECTIONAL_LIGHT', 'DIRT'):
+        src.gen_type = gen_id
+        tex = _tex(addon, mat, e)
+        fed = set(addon.generators.INTERNAL_INPUTS)
+        stray = [s.name for s in tex.inputs if s.is_linked and s.name not in fed]
+        check(not stray, f"{gen_id}: inputs linked that should be free: {stray}")
+        check(all(tex.inputs[n].is_linked for n in fed if n in tex.inputs),
+              f"{gen_id}: a map input is left open")
+        check(tex.outputs['Fac'].is_linked, f"{gen_id}: the output lost its link")
+    mat.essence.active_index = next(i for i, x in enumerate(mat.essence.layers) if x.uid == e.uid)
+    drawn = [getattr(c[1][0], "name", "") for c in _draw(ui._props, ob)
+             if c[0] == "prop" and c[1][1] == "default_value"]
+    check("Noise Scale" in drawn, f"Dirt's Noise Scale is not in the panel: {drawn}")
+
+
+def test_a_stale_link_from_an_older_version_is_repaired(addon):
+    ob, mat, e = _setup(addon, 'DIRT')
+    tree = mat.node_tree
+    tex = _tex(addon, mat, e)
+    nm = tree.nodes.get(addon.nodes.NORMAL_NODE_NAME)
+    source = nm.outputs['Normal'] if nm is not None else None
+    if source is None:
+        geo = tree.nodes.new('ShaderNodeNewGeometry')
+        geo.name = addon.sources.DETAIL_FALLBACK
+        source = geo.outputs['Normal']
+    tree.links.new(source, tex.inputs['Noise Scale'])         # what the old version left behind
+    check(tex.inputs['Noise Scale'].is_linked, "set up the stale link")
+    bpy.ops.essence.rebuild()
+    check(not _tex(addon, mat, e).inputs['Noise Scale'].is_linked, "a rebuild should remove it")
+    # a link the user made from some other node is theirs and stays
+    val = tree.nodes.new('ShaderNodeValue')
+    val.outputs[0].default_value = 9.0
+    tree.links.new(val.outputs[0], _tex(addon, mat, e).inputs['Noise Scale'])
+    bpy.ops.essence.rebuild()
+    check(_tex(addon, mat, e).inputs['Noise Scale'].is_linked, "a hand-wired input survives")
