@@ -23,7 +23,8 @@ from mathutils import Vector
 
 VERSION_KEY = "essence_version"
 DETAIL_INPUT = "Detail Normal"      # wired by Essence, not edited in the panel
-INTERNAL_INPUTS = (DETAIL_INPUT,)
+BAKED_POSITION_INPUT = "Baked Position"   # likewise: the Position slot, or Generated coordinates
+INTERNAL_INPUTS = (DETAIL_INPUT, BAKED_POSITION_INPUT)
 ROTATION_INPUT = "Rotation"         # an Euler input the temporary gizmo (gizmo.py) can drive
 
 
@@ -193,8 +194,10 @@ def _build_gradient(ng, gen):
     n_in, n_out = _interface(ng, gen)
     coords = ng.nodes.new('ShaderNodeTexCoord')
     coords.location = (-900, 200)
-    centered = _vector_math(ng, 'SUBTRACT', coords.outputs['Generated'], (0.5, 0.5, 0.5),
-                            x=-650, y=200)
+    # The live position, or the one baked from the high poly (the Position slot).
+    where = _mix_vector(ng, n_in.outputs["Use Baked Position"], coords.outputs['Generated'],
+                        n_in.outputs[BAKED_POSITION_INPUT], -800, 150, "Use baked position")
+    centered = _vector_math(ng, 'SUBTRACT', where, (0.5, 0.5, 0.5), x=-650, y=200)
     axis = rotated_axis(ng, n_in, "Gradient axis", x=-900, y=-100)
     dot = _vector_math(ng, 'DOT_PRODUCT', centered.outputs['Vector'], axis, x=-400, y=100)
     # Generated coordinates run 0..1 across the bounding box: along an axis this is that
@@ -249,10 +252,12 @@ GENERATORS = {g.id: g for g in (
     Gen('GRADIENT', "Gradient",
         "A gradient across the object's bounding box along an axis: Z is a height gradient, "
         "X and Y a position gradient",
-        2,
+        3,
         (_ROTATION,
          ("Start", _F, 0.0, {}),
-         ("End", _F, 1.0, {})),
+         ("End", _F, 1.0, {}),
+         ("Use Baked Position", 'NodeSocketBool', False, {}),
+         (BAKED_POSITION_INPUT, 'NodeSocketVector', (0.5, 0.5, 0.5), {"hide_value": True})),
         _build_gradient, _migrate_vector("Axis")),
 )}
 ITEMS = [(g.id, g.label, g.description) for g in GENERATORS.values()]

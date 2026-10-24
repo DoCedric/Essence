@@ -220,8 +220,9 @@ def ensure_channel_states(mat):
 
 # Mesh map slots: an image node per map, named like the bake panel's target node. A bake fills
 # it, and the user can pick any other image. The Normal slot feeds the shader (see
-# rebuild_stack); AO is read by export; more maps come with the mesh-map sprint.
-MAP_SLOTS = (('NORMAL', "Normal"), ('AO', "Ambient Occlusion"))
+# rebuild_stack); AO is read by export; generators read Normal and Position (see
+# sources.wire_baked_inputs); more maps come with the mesh-map sprint.
+MAP_SLOTS = (('NORMAL', "Normal"), ('AO', "Ambient Occlusion"), ('POSITION', "Position"))
 
 
 def map_slot_name(map_id):
@@ -728,7 +729,7 @@ def rebuild_stack(mat):
         _clear_links(tree, tree.nodes[NORMAL_NODE_NAME].inputs['Color'])
 
     apply_ao(mat)
-    sources.wire_detail_normals(tree)
+    sources.wire_baked_inputs(tree)
 
     for m in layers:
         if m.kind in ('MASK', 'FILL') and m.uid and tree.nodes.get(m.node_name) is not None:

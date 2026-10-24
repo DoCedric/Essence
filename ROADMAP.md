@@ -106,10 +106,11 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 
 **Part 2, more baked maps (Mesh Maps slots)**
 - [ ] **Curvature** (convex and concave). Method decided after a test on the user's high and low poly (`BG01_low`, 19 high-poly parts, 1024 px; images in the scratchpad, not committed): **derived from the Normal slot with the compositor**, the signed divergence of the tangent normal (convex bright, concave dark). It needs no bake of its own, works on any normal image the user picks, and is a derived map with an explicit Derive/Apply step and a red/green state like the baked filters (it reuses that machinery: a compositor group, a result image, a signature of the normal image and the settings). Settings: Width (pixels, so it depends on the map size) and Strength. Rejected: Pointiness (nearly flat on hard surface) and Bevel (unsigned, 3 times slower, noisy). To verify when built: the sign on a box with a bevel (convex edge bright), and the UV island border artifact. [H]
-- [ ] **Position** (object-space XYZ with bounding-box remap), **Thickness** (inside AO), **ID maps** (material, object, UV island). [H]
+- [x] **Position**: the low poly's Generated coordinates, baked from a high poly too; a Mesh Maps slot, a bake entry with a thumbnail, the same float, anti-aliasing and cage options. [H] baked values equal the live Generated coordinates on a moved, rotated and scaled object; from a high poly the z of its surface. [G] pending.
+- [ ] **Thickness** (inside AO), **ID maps** (object, material, mesh island, UV island). [H]
 - [ ] A Mesh Maps slot, bake entry and thumbnail for each; they follow the existing `Essence_Bake_<MAP>` slot pattern and the float/anti-aliasing/cage options. [H]
 - [ ] **Generators that read them**: Edge Wear (curvature), Dirt and Cavity (AO, curvature, thickness), mask by ID (a color or index picker). [H]
-- [ ] **Baked inputs for generators**: `Use Baked Position` on Gradient, wired from the Position slot like the detail normal (see "Baked inputs for live generators" in the design doc). [H]
+- [x] **Baked inputs for generators**: `Use Baked Position` on Gradient, wired from the Position slot like the detail normal (see "Baked inputs for live generators" in the design doc). [H] `tests/test_mesh_position.py`
 - [ ] **ID maps** with a choice of what an ID is: per object, per material, per mesh island, or per UV island (the first three are emission bakes that also transfer from a high poly; the UV island one is computed by Python as a mesh attribute and baked, since no shader node knows UV islands). [H]
 - [ ] Open decisions to settle with the user when reached: the ID picker UI, whether baking groups and multi-object bake fit in this sprint or the next.
 

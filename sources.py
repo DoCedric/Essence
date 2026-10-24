@@ -155,37 +155,52 @@ def _set_gen_group(node, gen_id):
 
 
 DETAIL_FALLBACK = "Essence Geometry Normal"
+POSITION_FALLBACK = "Essence Generated Coordinates"
 
 
-def wire_detail_normals(tree):
-    """Feed the Essence Normal Map node's output (the world space normal with the baked detail)
-    into every generator's `Detail Normal` input. Always linked: the generator's own switch
-    decides whether it is used. Nothing depends on a layer, so this cannot make a cycle. With
-    an empty Normal slot there is no Normal Map node, and the detail is just the surface
-    normal: a Geometry node stands in for it."""
-    from . import nodes
-    users = [n.inputs[generators.DETAIL_INPUT] for n in tree.nodes
+def _feed(tree, input_name, source, fallback_name, fallback_idname, fallback_output):
+    """Link `source` (a socket, or None) into the `input_name` input of every generator group
+    node, always linked so the generator's own switch decides whether it is used. With no
+    source a stand-in node (`fallback_name`) gives the live value, so the input is never left
+    open; it goes again once a source exists."""
+    users = [n.inputs[input_name] for n in tree.nodes
              if n.bl_idname == 'ShaderNodeGroup' and n.node_tree is not None
-             and generators.DETAIL_INPUT in n.inputs]
-    fallback = tree.nodes.get(DETAIL_FALLBACK)
-    nm = tree.nodes.get(nodes.NORMAL_NODE_NAME)
-    if nm is not None or not users:
+             and input_name in n.inputs]
+    fallback = tree.nodes.get(fallback_name)
+    if source is not None or not users:
         if fallback is not None:
             tree.nodes.remove(fallback)
         if not users:
             return
-        out = nm.outputs['Normal']
+        out = source
     else:
         if fallback is None:
-            fallback = tree.nodes.new('ShaderNodeNewGeometry')
-            fallback.name = fallback.label = DETAIL_FALLBACK
+            fallback = tree.nodes.new(fallback_idname)
+            fallback.name = fallback.label = fallback_name
             x, y = users[0].node.location
             fallback.location = (x - 300, y - 200)
-        out = fallback.outputs['Normal']
+        out = fallback.outputs[fallback_output]
     for sock in users:
         if not (sock.is_linked and sock.links[0].from_socket == out):
             _clear_links(tree, sock)
             tree.links.new(out, sock)
+
+
+def wire_baked_inputs(tree):
+    """Feed generators what they can read from the mesh maps instead of live: the Essence
+    Normal Map node's output (the world space normal with the baked detail) into `Detail
+    Normal`, and the Position slot's image into `Baked Position`. Nothing in the layer stack
+    feeds either, so this cannot make a cycle. Without a Normal Map node, or with an empty
+    Position slot, a Geometry node or the Generated coordinates stand in: the live value."""
+    from . import nodes
+    nm = tree.nodes.get(nodes.NORMAL_NODE_NAME)
+    _feed(tree, generators.DETAIL_INPUT, nm.outputs['Normal'] if nm is not None else None,
+          DETAIL_FALLBACK, 'ShaderNodeNewGeometry', 'Normal')
+    slot = tree.nodes.get(nodes.map_slot_name('POSITION'))
+    baked = (slot.outputs['Color'] if slot is not None and slot.bl_idname == 'ShaderNodeTexImage'
+             and slot.image is not None else None)
+    _feed(tree, generators.BAKED_POSITION_INPUT, baked,
+          POSITION_FALLBACK, 'ShaderNodeTexCoord', 'Generated')
 
 
 def tag(uid, ch_id):
@@ -532,7 +547,7 @@ def apply(mat, entry, ch_id):
     if src.kind == 'GENERATOR':
         if tex.node_tree is not generators.ensure_group(src.gen_type):
             _set_gen_group(tex, src.gen_type)
-        wire_detail_normals(tree)
+        wire_baked_inputs(tree)
     if src.kind == 'IMAGE':
         tex.projection = 'BOX' if src.projection == 'TRIPLANAR' else 'FLAT'
         tex.projection_blend = 0.2

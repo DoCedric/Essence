@@ -494,6 +494,7 @@ def test_old_axis_values_become_a_rotation(addon):
         tex.inputs['Axis'].default_value = direction
         bpy.ops.essence.rebuild()
         tex = _tex(addon, mat, e)
-        check(ng["essence_version"] == 2 and 'Axis' not in tex.inputs, f"{gen_id}: rebuilt")
+        check(ng["essence_version"] == addon.generators.GENERATORS[gen_id].version
+              and "Axis" not in tex.inputs, f"{gen_id}: rebuilt")
         check(_points_along(tex, direction), f"{gen_id}: the rotation should point along "
                                              f"{direction}: {tuple(tex.inputs['Rotation'].default_value)}")

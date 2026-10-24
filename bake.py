@@ -15,6 +15,7 @@ from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, Po
 from mathutils import Vector
 
 from . import nodes as essence_nodes
+from . import sources
 
 # id, label, description, Cycles bake pass
 MAP_TYPES = (
@@ -28,9 +29,13 @@ MAP_TYPES = (
     ('NORMAL_WORLD', "Normal (World)",
      "World-space normal of the mesh, remapped to 0-1 (ignores the material's bump)",
      'EMIT'),
+    ('POSITION', "Position",
+     "Where each texel is, 0 to 1 across the low-poly's bounding box (what the live Gradient "
+     "generator reads). Baked from a high-poly it is the position of the high-poly surface",
+     'EMIT'),
 )
 SUFFIX = {'AO': "AO", 'WORLD_GRADIENT': "WorldGradient",
-          'NORMAL': "Normal", 'NORMAL_WORLD': "NormalWorld"}
+          'NORMAL': "Normal", 'NORMAL_WORLD': "NormalWorld", 'POSITION': "Position"}
 
 _THUMB_DIR = os.path.join(os.path.dirname(__file__), "assets", "thumbnails")
 _previews = None
@@ -194,6 +199,49 @@ def _world_normal_builder():
         remap.inputs[2].default_value = (0.5, 0.5, 0.5)
         nt.links.new(geo.outputs['Normal'], remap.inputs[0])
         return remap.outputs['Vector'], [geo, remap]
+    return build
+
+
+def _position_builder(context, obj):
+    """The low poly's Generated coordinates, evaluated wherever the ray hits: its object space
+    position remapped to 0..1 across its bounding box (an axis with no extent reads 0.5, as
+    Blender does). A shader sees the hit point in world space, and a high-poly hit belongs to
+    another object, so the low poly's transform is applied by a Mapping node in Texture mode
+    (the inverse of its location, rotation and scale)."""
+    ev = obj.evaluated_get(context.evaluated_depsgraph_get())
+    corners = [Vector(c) for c in ev.bound_box]
+    lo = Vector(min(c[i] for c in corners) for i in range(3))
+    hi = Vector(max(c[i] for c in corners) for i in range(3))
+    center = (lo + hi) / 2
+    extent = Vector(e if e > 1e-6 else 1.0 for e in (hi - lo))
+    loc, rot, scale = obj.matrix_world.decompose()
+
+    def build(nt, x, y):
+        geo = nt.nodes.new('ShaderNodeNewGeometry')
+        geo.location = (x, y)
+        to_obj = nt.nodes.new('ShaderNodeMapping')
+        to_obj.vector_type = 'TEXTURE'      # the inverse of the object's transform
+        to_obj.inputs['Location'].default_value = loc
+        to_obj.inputs['Rotation'].default_value = rot.to_euler('XYZ')
+        to_obj.inputs['Scale'].default_value = scale
+        to_obj.location = (x + 200, y)
+        nt.links.new(geo.outputs['Position'], to_obj.inputs['Vector'])
+        sub = nt.nodes.new('ShaderNodeVectorMath')
+        sub.operation = 'SUBTRACT'
+        sub.inputs[1].default_value = center
+        sub.location = (x + 400, y)
+        nt.links.new(to_obj.outputs['Vector'], sub.inputs[0])
+        div = nt.nodes.new('ShaderNodeVectorMath')
+        div.operation = 'DIVIDE'
+        div.inputs[1].default_value = extent
+        div.location = (x + 600, y)
+        nt.links.new(sub.outputs['Vector'], div.inputs[0])
+        add = nt.nodes.new('ShaderNodeVectorMath')
+        add.operation = 'ADD'
+        add.inputs[1].default_value = (0.5, 0.5, 0.5)
+        add.location = (x + 800, y)
+        nt.links.new(div.outputs['Vector'], add.inputs[0])
+        return add.outputs['Vector'], [geo, to_obj, sub, div, add]
     return build
 
 
@@ -439,6 +487,9 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         elif map_type == 'AO':
             for mat in _ensure_materials(obj):
                 essence_nodes.apply_ao(mat)
+        elif map_type == 'POSITION':
+            for mat in _ensure_materials(obj):
+                sources.wire_baked_inputs(mat.node_tree)   # a generator may read it now
         return image
 
     def execute(self, context):
@@ -501,8 +552,10 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             scene.render.bake.margin = scene.essence_bake_margin * int(scene.essence_bake_aa)
             for obj in todo:
                 try:
-                    last_image = self._bake_object(context, obj, map_type, size,
-                                                   build_color, high)
+                    last_image = self._bake_object(
+                        context, obj, map_type, size,
+                        _position_builder(context, obj) if map_type == 'POSITION'
+                        else build_color, high)
                     baked.append(obj.name)
                 except Exception as e:  # noqa: BLE001
                     failed.append(f"{obj.name} ({e})")
