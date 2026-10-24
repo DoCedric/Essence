@@ -262,3 +262,86 @@ def test_a_file_from_before_the_slots_existed(addon):
     bpy.ops.essence.rebuild()
     check(all(tree.nodes.get(addon.nodes.map_slot_name(m)) is not None
               for m, _ in addon.nodes.MAP_SLOTS), "a rebuild adds every slot")
+
+
+def _two_island_normal(size=128):
+    """A tangent normal map for the two-island grid of test_mesh_id: the left island (u < 0.45)
+    leans one way, the right island (u > 0.55) the other, so the normal jumps in the gap
+    between them. The left island also has a real feature: a dip around u = 0.2."""
+    img = bpy.data.images.new("two", size, size, float_buffer=True)
+    img.colorspace_settings.name = 'Non-Color'
+    px = []
+    for y in range(size):
+        for x in range(size):
+            u = x / (size - 1)
+            nx = 0.5 if u < 0.5 else -0.5
+            if 0.18 < u < 0.22:
+                nx -= 0.4 * (1 - abs(u - 0.2) / 0.02)
+            nz = math.sqrt(max(0.0, 1 - nx * nx))
+            px += [nx * 0.5 + 0.5, 0.5, nz * 0.5 + 0.5, 1.0]
+    img.pixels.foreach_set(px)
+    img.update()
+    return img
+
+
+def test_a_jump_between_close_islands_leaves_no_line(addon):
+    from test_mesh_id import _grid, _two_islands
+    low = _grid("Low", _two_islands)
+    for o in bpy.context.view_layer.objects:
+        o.select_set(o is low)
+    bpy.context.view_layer.objects.active = low
+    bpy.ops.essence.add_layer()
+    mat = low.active_material
+    mat.essence.curvature_width = 1.0
+    img = _two_island_normal()
+    _put_normal(addon, mat, img)
+    # the test is only meaningful if the jump is really there and the plain derivative sees it
+    px = list(img.pixels)
+    w = img.size[0]
+    row = [px[(10 * w + x) * 4] for x in range(w)]
+    check(max(abs(row[x + 1] - row[x - 1]) for x in range(1, w - 1)) > 0.4,
+          "the test normal should have a hard jump between the islands")
+    check(_derive() == {'FINISHED'}, "derive failed")
+    out = bpy.data.images["Low_Curvature"]
+    c = [list(out.pixels)[(y * w + x) * 4] for y in range(w) for x in (range(w))]
+    at = lambda u, v: c[int(v * (w - 1)) * w + int(u * (w - 1))]
+    # across the gap and at the borders of both islands: flat grey
+    for u in (0.40, 0.43, 0.45, 0.48, 0.50, 0.52, 0.55, 0.57, 0.60):
+        for v in (0.2, 0.5, 0.8):
+            close(at(u, v), 0.5, 0.02, f"u={u} v={v}: a line where the islands meet")
+    # a real feature inside an island is still there
+    dip = min(at(u / 100, 0.5) for u in range(16, 25))
+    bright = max(at(u / 100, 0.5) for u in range(16, 25))
+    check(dip < 0.495 or bright > 0.505, f"the real dip in the left island is gone: {dip} {bright}")
+
+
+def test_the_border_reach_follows_the_width(addon):
+    ob, mat = _setup(addon)
+    _put_normal(addon, mat, _normal_image("n", 64, _ramp(1)))
+    for width, border in ((0.0, -2), (1.0, -3), (1.5, -4), (4.0, -6)):
+        mat.essence.curvature_width = width
+        _derive()
+        ng = bpy.data.node_groups[addon.curvature.group_name(mat)]
+        check(ng.nodes["Border"].inputs['Size'].default_value == border,
+              f"width {width}: border {ng.nodes['Border'].inputs['Size'].default_value}")
+
+
+def test_derive_leaves_nothing_behind_and_needs_a_uv_map(addon):
+    ob, mat = _setup(addon)
+    sc = bpy.context.scene
+    engine, samples, margin = sc.render.engine, sc.cycles.samples, sc.render.bake.margin
+    _put_normal(addon, mat, _normal_image("n", 64, _ramp(1)))
+    check(_derive() == {'FINISHED'}, "derive failed")
+    check(sc.render.engine == engine and sc.cycles.samples == samples, "render settings changed")
+    check(sc.render.bake.margin == margin, "the bake margin was left at 0")
+    check(not [i for i in bpy.data.images if i.name.startswith(".Essence")],
+          "a temporary image was left behind")
+    check(not [n for n in mat.node_tree.nodes if n.bl_idname == 'ShaderNodeEmission'],
+          "the bake override was left in the material")
+    ob.data.uv_layers.remove(ob.data.uv_layers[0])
+    try:
+        _derive()
+        msg = None
+    except RuntimeError as e:
+        msg = str(e)
+    check(msg and "UV" in msg, f"expected a message about the UV map: {msg}")

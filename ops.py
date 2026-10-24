@@ -471,7 +471,7 @@ class ESSENCE_OT_derive_curvature(_Base, bpy.types.Operator):
         ob = context.active_object
         mat = ob.active_material
         try:
-            curvature.derive(mat, ob.name)
+            curvature.derive(context, ob, mat)
         except Exception as e:  # noqa: BLE001
             self.report({'ERROR'}, f"Curvature failed: {e}")
             return {'CANCELLED'}

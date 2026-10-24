@@ -152,8 +152,8 @@ def filter_node(entry):
 class _BakeState:
     """Cycles bake settings, selection and mode saved and restored around a bake."""
 
-    def __init__(self, context, obj):
-        self.context, self.obj = context, obj
+    def __init__(self, context, obj, margin=None):
+        self.context, self.obj, self.margin = context, obj, margin
 
     def __enter__(self):
         c = self.context
@@ -182,7 +182,8 @@ class _BakeState:
         c.scene.cycles.device = 'CPU'
         self.bake.target = 'IMAGE_TEXTURES'
         self.bake.use_selected_to_active = False
-        self.bake.margin = c.scene.essence_bake_margin
+        self.bake.margin = (c.scene.essence_bake_margin if self.margin is None
+                            else self.margin)
         return self
 
     def __exit__(self, *exc):
@@ -208,9 +209,10 @@ class _BakeState:
         return False
 
 
-def bake_value(context, obj, mat, socket_of, size):
+def bake_value(context, obj, mat, socket_of, size, margin=None):
     """Bake what a shader socket outputs into a new float image (UV space, Non-Color).
-    `socket_of(tree)` returns the socket; nothing is left behind in the materials."""
+    `socket_of(tree)` returns the socket; nothing is left behind in the materials. `margin`
+    overrides the scene's bake margin (0 gives the plain island coverage)."""
     from .export import _temp_target
 
     image = bpy.data.images.new(".Essence Filter Input", size, size, alpha=False,
@@ -223,7 +225,7 @@ def bake_value(context, obj, mat, socket_of, size):
     teardowns = []
     try:
         log("bake: entering bake state (mode, selection, Cycles settings)")
-        with _BakeState(context, obj):
+        with _BakeState(context, obj, margin):
             log("bake: adding the temporary target and emission nodes")
             for m in _ensure_materials(obj):
                 if not m.use_nodes:
@@ -254,11 +256,15 @@ def run_compositor(entry, image):
     return run_compositor_group(ng, image)
 
 
-def run_compositor_group(ng, image):
+def run_compositor_group(ng, image, extra=None):
     """Run a compositor group (an Image node named "Source", one Image output) on `image` in
     a throwaway scene at the image's size, and return the result as a new, packed, float,
-    Non-Color image. Shared by the baked filters and the curvature."""
+    Non-Color image. `extra` maps the names of further Image nodes of the group to their
+    images. Shared by the baked filters and the curvature."""
+    extra = extra or {}
     src = ng.nodes["Source"]
+    for name, img in extra.items():
+        ng.nodes[name].image = img
     scene = bpy.data.scenes.new("EssenceFilterTmp")
     folder = tempfile.mkdtemp(prefix="essence_filter_")
     try:
@@ -291,6 +297,8 @@ def run_compositor_group(ng, image):
         return result
     finally:
         src.image = None
+        for name in extra:
+            ng.nodes[name].image = None
         shutil.rmtree(folder, ignore_errors=True)
         log("compositor: removing the throwaway scene")
         cam_data = scene.camera.data if scene.camera else None

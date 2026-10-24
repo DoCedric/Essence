@@ -14,6 +14,14 @@ The button is red while the result is missing or out of date (`signature`).
 
     Normal -> Blur(Width) -> shifted copies one pixel left, right, up, down
            -> (nx(x+1) - nx(x-1)) + (ny(y+1) - ny(y-1)) -> * Strength * size / 1024 -> + 0.5
+
+**Island borders.** Where two UV islands are close, their margins meet and the normal jumps
+from one island's tangent frame to the other's; the derivative reads that jump as a sharp
+edge, and it reaches the island's own border pixels through the blur and the one pixel
+neighbour lookup. So Derive also bakes the island coverage (the same bake with margin 0, a
+fraction of a second), and the group keeps the curvature only inside the islands, shrunk by
+the reach of the filter, and refills everything else (the padding and the contaminated border
+band) from the nearest island interior with Blender's Inpaint node, flat grey beyond.
 """
 
 import hashlib
@@ -26,6 +34,7 @@ from . import filters, nodes
 GROUP_PREFIX = "Essence Curvature "
 RESULT_SUFFIX = "Curvature"
 REFERENCE_SIZE = 1024.0     # the Strength is for a 1024 px map; bigger maps scale it down
+FILL_DISTANCE = 32          # how far the island interior is continued into the padding
 
 
 def group_name(mat):
@@ -76,7 +85,7 @@ def build_group(mat):
     out = next((n for n in ng.nodes if n.bl_idname == 'NodeGroupOutput'), None)
     if out is None:
         out = ng.nodes.new('NodeGroupOutput')
-    out.location = (1500, 0)
+    out.location = (2400, 0)
     src = _node(ng, 'CompositorNodeImage', "Source", -900, 0)
     blur = _node(ng, 'CompositorNodeBlur', "Width", -650, 0)
     _link(ng, src.outputs['Image'], blur.inputs['Image'])
@@ -116,7 +125,30 @@ def build_group(mat):
     for ch in ('Red', 'Green', 'Blue'):
         _link(ng, centered.outputs[0], comb.inputs[ch])
     comb.inputs['Alpha'].default_value = 1.0
-    _link(ng, comb.outputs['Image'], out.inputs[0])
+    # Keep the curvature inside the islands (shrunk), refill the rest from the interior.
+    cov = _node(ng, 'CompositorNodeImage', "Coverage", -900, -800)
+    border = _node(ng, 'CompositorNodeDilateErode', "Border", -650, -800)
+    _link(ng, cov.outputs['Image'], border.inputs['Mask'])
+    try:
+        border.inputs['Type'].default_value = 'Distance'
+    except (TypeError, ValueError):
+        pass
+    keep = _node(ng, 'CompositorNodeSetAlpha', "Inside the islands", 1450, 0)
+    _link(ng, comb.outputs['Image'], keep.inputs['Image'])
+    _link(ng, border.outputs['Mask'], keep.inputs['Alpha'])
+    try:
+        keep.inputs['Type'].default_value = 'Replace Alpha'
+    except (TypeError, ValueError):
+        pass
+    fill = _node(ng, 'CompositorNodeInpaint', "Fill", 1700, 0)
+    _link(ng, keep.outputs['Image'], fill.inputs['Image'])
+    grey = _node(ng, 'CompositorNodeRGB', "Flat", 1700, -300)
+    grey.outputs[0].default_value = (0.5, 0.5, 0.5, 1.0)
+    over = _node(ng, 'CompositorNodeAlphaOver', "Flat beyond the fill", 1950, 0)
+    _link(ng, grey.outputs['Color'], over.inputs['Background'])
+    _link(ng, fill.outputs['Image'], over.inputs['Foreground'])
+    over.inputs['Factor'].default_value = 1.0
+    _link(ng, over.outputs['Image'], out.inputs[0])
     return ng
 
 
@@ -124,6 +156,10 @@ def apply_settings(mat, ng, size):
     """Put the material's Width and Strength into the group's nodes."""
     s = mat.essence
     ng.nodes["Width"].inputs['Size'].default_value = (s.curvature_width, s.curvature_width)
+    # What the filter reaches: the one pixel neighbours plus the blur. Curvature closer than
+    # that to an island border is thrown away and refilled.
+    ng.nodes["Border"].inputs['Size'].default_value = -(int(s.curvature_width + 0.999) + 2)
+    ng.nodes["Fill"].inputs['Size'].default_value = FILL_DISTANCE
     # the derivative is per pixel, so a bigger map needs less of it for the same look
     ng.nodes["Strength"].inputs[1].default_value = s.curvature_strength * size / REFERENCE_SIZE
 
@@ -169,19 +205,38 @@ def needs_derive(mat):
             and (not is_derived(mat) or mat.essence.curvature_sig != signature(mat)))
 
 
-def derive(mat, name):
+def bake_coverage(context, ob, mat, size):
+    """A float image, white where the object's UV islands are and black elsewhere: the same
+    bake as any map, with a constant white emission and no margin."""
+    tree = mat.node_tree
+    white = tree.nodes.new('ShaderNodeRGB')
+    white.outputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
+    try:
+        return filters.bake_value(context, ob, mat, lambda t: white.outputs[0], size, margin=0)
+    finally:
+        tree.nodes.remove(white)
+
+
+def derive(context, ob, mat):
     """Run the compositor on the Normal slot and put the result in the Curvature slot, as a
-    packed float image called `<name>_Curvature` that replaces the previous one."""
+    packed float image called `<object>_Curvature` that replaces the previous one."""
     src_img = normal_image(mat)
     if src_img is None:
         raise RuntimeError("the Normal slot is empty: bake a normal or pick one first")
+    if not ob.data.uv_layers:
+        raise RuntimeError("the object has no UV map")
+    name = ob.name
     nodes.ensure_map_slots(mat)     # a file from before this slot existed does not have it
     t0 = time.perf_counter()
     filters.log(f"CURVATURE '{mat.name}' from '{src_img.name}' {tuple(src_img.size)}")
     ng = build_group(mat)
     apply_settings(mat, ng, src_img.size[0])
     sig = signature(mat)
-    result = filters.run_compositor_group(ng, src_img)
+    coverage = bake_coverage(context, ob, mat, src_img.size[0])
+    try:
+        result = filters.run_compositor_group(ng, src_img, {"Coverage": coverage})
+    finally:
+        bpy.data.images.remove(coverage)
     node = slot(mat)
     img_name = f"{name}_{RESULT_SUFFIX}"
     old = bpy.data.images.get(img_name)
