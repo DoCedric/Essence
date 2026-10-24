@@ -7,6 +7,9 @@ keeps working. Adding a map type means adding an entry to MAP_TYPES and a branch
 _emission_builder (or a native bake pass).
 """
 
+import colorsys
+import contextlib
+import hashlib
 import os
 import uuid
 
@@ -34,9 +37,26 @@ MAP_TYPES = (
      "Where each texel is, 0 to 1 across the low-poly's bounding box (what the live Gradient "
      "generator reads). Baked from a high-poly it is the position of the high-poly surface",
      'EMIT'),
+    ('ID', "ID",
+     "A flat color per part: per object, per material, per mesh island or per UV island "
+     "(choose below). The color is stable, so a mask can pick one", 'EMIT'),
 )
 SUFFIX = {'AO': "AO", 'WORLD_GRADIENT': "WorldGradient",
-          'NORMAL': "Normal", 'NORMAL_WORLD': "NormalWorld", 'POSITION': "Position"}
+          'NORMAL': "Normal", 'NORMAL_WORLD': "NormalWorld", 'POSITION': "Position",
+          'ID': "ID"}
+
+# What an ID map tells apart. All but the UV island work from a high poly too: the color is
+# that of the part the ray hits.
+ID_MODES = (
+    ('OBJECT', "Object", "One color per object: with a high poly, per high-poly part"),
+    ('MATERIAL', "Material", "One color per material"),
+    ('MESH_ISLAND', "Mesh Island",
+     "One color per connected piece of geometry (of the high poly when there is one)"),
+    ('UV_ISLAND', "UV Island",
+     "One color per UV island of the low poly itself (a High Poly collection is ignored)"),
+)
+UV_ISLAND_ATTRIBUTE = "essence_uv_island"
+_GOLDEN = 0.6180339887498949
 
 _THUMB_DIR = os.path.join(os.path.dirname(__file__), "assets", "thumbnails")
 _previews = None
@@ -243,6 +263,99 @@ def _position_builder(context, obj):
         add.location = (x + 800, y)
         nt.links.new(div.outputs['Vector'], add.inputs[0])
         return add.outputs['Vector'], [geo, to_obj, sub, div, add]
+    return build
+
+
+def name_color(name):
+    """A stable, saturated color for a name (a material's ID color)."""
+    h = int(hashlib.md5(name.encode()).hexdigest()[:8], 16) / 0xffffffff
+    return (*colorsys.hsv_to_rgb(h, 0.8, 0.9), 1.0)
+
+
+def uv_island_indices(mesh):
+    """The UV island of every polygon of `mesh` (its active UV map), numbered in order of
+    appearance. Faces that share a UV vertex (the same mesh vertex at the same UV position)
+    are in one island."""
+    uv = mesh.uv_layers.active
+    n = len(mesh.polygons)
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    coords = [0.0] * (2 * len(mesh.loops))
+    uv.uv.foreach_get("vector", coords)
+    verts = [0] * len(mesh.loops)
+    mesh.loops.foreach_get("vertex_index", verts)
+    seen = {}
+    for p in mesh.polygons:
+        for li in p.loop_indices:
+            key = (verts[li], round(coords[2 * li], 5), round(coords[2 * li + 1], 5))
+            other = seen.setdefault(key, p.index)
+            if other != p.index:
+                parent[find(p.index)] = find(other)
+    numbers, out = {}, []
+    for i in range(n):
+        out.append(numbers.setdefault(find(i), len(numbers)))
+    return out
+
+
+@contextlib.contextmanager
+def _uv_island_attribute(obj):
+    """Give the mesh a face attribute with one value per UV island while it is baked (a shader
+    cannot tell UV islands apart), and take it away again, whatever happens."""
+    mesh = obj.data
+    if UV_ISLAND_ATTRIBUTE in mesh.attributes:
+        mesh.attributes.remove(mesh.attributes[UV_ISLAND_ATTRIBUTE])
+    islands = uv_island_indices(mesh)
+    attr = mesh.attributes.new(UV_ISLAND_ATTRIBUTE, 'FLOAT', 'FACE')
+    attr.data.foreach_set("value", [(i * _GOLDEN) % 1.0 for i in islands])
+    try:
+        yield len(set(islands))
+    finally:
+        if UV_ISLAND_ATTRIBUTE in mesh.attributes:
+            mesh.attributes.remove(mesh.attributes[UV_ISLAND_ATTRIBUTE])
+
+
+def _material_of(node_tree):
+    """The material a node tree belongs to (an embedded tree is its own datablock, so its
+    id_data is the tree, not the material)."""
+    return next((m for m in bpy.data.materials if m.node_tree is node_tree), None)
+
+
+def _id_builder(mode):
+    """A flat color per part. Object, mesh island and UV island give a hue from a number the
+    shader can read (Object Info Random, Geometry Random Per Island, the island attribute);
+    a material is a constant color from its name, since its shader knows which material it is."""
+    def build(nt, x, y):
+        if mode == 'MATERIAL':
+            rgb = nt.nodes.new('ShaderNodeRGB')
+            mat = _material_of(nt)
+            rgb.outputs[0].default_value = name_color(mat.name if mat is not None else nt.name)
+            rgb.location = (x, y)
+            return rgb.outputs[0], [rgb]
+        if mode == 'OBJECT':
+            src = nt.nodes.new('ShaderNodeObjectInfo')
+            hue = src.outputs['Random']
+        elif mode == 'MESH_ISLAND':
+            src = nt.nodes.new('ShaderNodeNewGeometry')
+            hue = src.outputs['Random Per Island']
+        else:
+            src = nt.nodes.new('ShaderNodeAttribute')
+            src.attribute_type = 'GEOMETRY'
+            src.attribute_name = UV_ISLAND_ATTRIBUTE
+            hue = src.outputs['Factor']
+        src.location = (x, y)
+        comb = nt.nodes.new('ShaderNodeCombineColor')
+        comb.mode = 'HSV'
+        comb.inputs['Green'].default_value = 0.8
+        comb.inputs['Blue'].default_value = 0.9
+        comb.location = (x + 250, y)
+        nt.links.new(hue, comb.inputs['Red'])
+        return comb.outputs['Color'], [src, comb]
     return build
 
 
@@ -502,7 +615,8 @@ class ESSENCE_OT_bake(bpy.types.Operator):
 
         high = []
         collection = scene.essence_bake_high
-        if collection is not None and map_type in HIGH_MAPS:
+        uv_islands = map_type == 'ID' and scene.essence_bake_id == 'UV_ISLAND'
+        if collection is not None and map_type in HIGH_MAPS and not uv_islands:
             high = high_poly_objects(collection)
             if not high:
                 self.report({'ERROR'}, f"High-poly collection '{collection.name}' has no mesh objects")
@@ -529,6 +643,8 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             build_color = _gradient_builder(lo.z, hi.z)
         elif map_type == 'NORMAL_WORLD':
             build_color = _world_normal_builder()
+        elif map_type == 'ID':
+            build_color = _id_builder(scene.essence_bake_id)
 
         start_mode = context.active_object.mode if context.active_object else 'OBJECT'
         if start_mode != 'OBJECT':
@@ -554,10 +670,12 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             scene.render.bake.margin = scene.essence_bake_margin * int(scene.essence_bake_aa)
             for obj in todo:
                 try:
-                    last_image = self._bake_object(
-                        context, obj, map_type, size,
-                        _position_builder(context, obj) if map_type == 'POSITION'
-                        else build_color, high)
+                    with (_uv_island_attribute(obj) if uv_islands
+                          else contextlib.nullcontext()):
+                        last_image = self._bake_object(
+                            context, obj, map_type, size,
+                            _position_builder(context, obj) if map_type == 'POSITION'
+                            else build_color, high)
                     baked.append(obj.name)
                 except Exception as e:  # noqa: BLE001
                     failed.append(f"{obj.name} ({e})")
@@ -629,6 +747,9 @@ def register():
         description="Supersampling: bake larger, then average down to the final size "
                     "(Cycles samples only smooth shading, not the hard edges between "
                     "hit and miss, or between UV islands and the background)")
+    S.essence_bake_id = EnumProperty(
+        name="ID by", items=ID_MODES, default='OBJECT',
+        description="What the ID map tells apart")
     S.essence_bake_float = BoolProperty(
         name="Float", default=True,
         description="Bake into a 32-bit float image (no banding, four times the memory)")
@@ -642,7 +763,8 @@ def unregister():
     for p in ("essence_bake_map", "essence_bake_size",
               "essence_bake_samples", "essence_bake_margin",
               "essence_bake_high", "essence_bake_extrusion",
-              "essence_bake_cage", "essence_bake_float", "essence_bake_aa"):
+              "essence_bake_cage", "essence_bake_float", "essence_bake_aa",
+              "essence_bake_id"):
         delattr(S, p)
     if _previews is not None:
         bpy.utils.previews.remove(_previews)

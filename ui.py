@@ -679,7 +679,14 @@ def _bake(self, context):
     scene = context.scene
     layout.template_icon_view(scene, "essence_bake_map", show_labels=True,
                               scale=6, scale_popup=5)
-    if scene.essence_bake_map in HIGH_MAPS:
+    uv_islands = scene.essence_bake_map == 'ID' and scene.essence_bake_id == 'UV_ISLAND'
+    if scene.essence_bake_map == 'ID':
+        layout.prop(scene, "essence_bake_id")
+        if uv_islands:
+            layout.label(text="The islands of the low poly itself", icon='INFO')
+        if scene.essence_bake_aa != '1':
+            layout.label(text="Anti-aliasing blends IDs at edges", icon='ERROR')
+    if scene.essence_bake_map in HIGH_MAPS and not uv_islands:
         box = layout.box()
         box.prop(scene, "essence_bake_high", text="High Poly")
         if scene.essence_bake_high is not None:
