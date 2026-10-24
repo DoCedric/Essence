@@ -256,8 +256,8 @@ def apply_owner(mat, owner):
 def adjustment_entries(mat, owner_uid, ch_id):
     """The adjustments of an owner for one channel (all of a mask's), bottom-to-top."""
     return [a for a in mat.essence.layers if a.parent == owner_uid and (
-            (a.kind == 'ADJUSTMENT' and (ch_id == 'MASK' or a.adj_channel == ch_id))
-            or (a.kind in ('FILL', 'FILTER') and ch_id == 'MASK'))]
+            (a.kind in ('ADJUSTMENT', 'FILTER') and (ch_id == 'MASK' or a.adj_channel == ch_id))
+            or (a.kind == 'FILL' and ch_id == 'MASK'))]
 
 
 def _chain_fill(tree, a, out):
@@ -295,7 +295,7 @@ def _chain_fill(tree, a, out):
 
 
 def _chain_filter(tree, a, out):
-    """A baked filter in a mask's chain. The value so far goes into a reroute (the point that
+    """A baked filter in a mask's or a layer channel's chain. The value so far goes into a reroute (the point that
     Apply bakes); once a result image exists the chain continues from that image sampled
     with the UV map, before that the filter passes the value through."""
     have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)

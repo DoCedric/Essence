@@ -122,11 +122,11 @@ def test_refresh_again_replaces_the_image_and_removal_cleans_up(addon):
     close(_rough(ob, mat, top), 0.8, 0.02, "mask back to unfiltered")
 
 
-def test_filter_only_on_masks(addon):
+def test_filter_not_on_folders(addon):
     ob, mat, top, mask_uid, img = _setup()
-    layer = next(i for i, e in enumerate(mat.essence.layers) if e.kind == 'LAYER')
-    mat.essence.active_index = layer
-    check(not bpy.ops.essence.add_filter.poll(), "a layer cannot take a filter")
+    bpy.ops.essence.add_folder()
+    check(mat.essence.layers[mat.essence.active_index].kind == 'FOLDER', "folder not active")
+    check(not bpy.ops.essence.add_filter.poll(), "a folder cannot take a filter")
 
 
 def test_filter_panel_and_rows_draw(addon):

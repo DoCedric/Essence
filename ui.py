@@ -342,6 +342,9 @@ def _filter(layout, mat, e, owner):
     if owner is not None:
         layout.label(text=f"Filters {owner.name} (baked)", icon='FILTER')
     layout.prop(e, "filter_type", text="Filter")
+    on_layer = owner is not None and owner.kind == 'LAYER'
+    if on_layer:
+        layout.prop(e, "adj_channel", text="Channel")
     layout.prop(e, "adj_enabled", text="Enabled")
     node = filters.filter_node(e)
     if node is not None:
@@ -351,6 +354,11 @@ def _filter(layout, mat, e, owner):
             if sock.name != t.input and hasattr(sock, "default_value"):
                 col.prop(sock, "default_value", text=sock.name)
     layout.prop(e, "filter_resolution", text="Resolution")
+    if on_layer:
+        layout.label(text="Baked in UV space: tiling and projection are baked in", icon='INFO')
+        if (filters.BY_ID[e.filter_type].single_value
+                and BY_ID[e.adj_channel].socket_type == 'NodeSocketColor'):
+            layout.label(text="Dilate / Erode filters the brightness of a color", icon='ERROR')
     baked = filters.is_baked(e)
     current = baked and not filters.is_stale(mat, e)
     row = layout.row(align=True)

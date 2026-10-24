@@ -10,8 +10,9 @@ Blender UI list can show. Every entry has a `uid` and a `parent` (the uid of its
                 (a layer channel's input, or the mask value) before it is blended
     fill        owned by a mask: blends another source onto the mask value built so far
                 (the items of a mask apply in order, adjustments and fills mixed)
-    filter      owned by a mask: a baked neighbour filter (blur, Kuwahara, ...) of the value
-                built so far, kept as an image until it is applied again
+    filter      owned by a mask or a layer (acting on one channel, like an adjustment): a baked
+                neighbour filter (blur, Kuwahara, ...) of the value built so far, kept as an
+                image until it is applied again
 
 The list is the post-order of that tree: everything an entry owns sits directly below it
 (lower index), so with the list drawn reversed an owner is followed by its items (a layer's
@@ -27,6 +28,8 @@ import uuid
 
 # Entries owned by a layer or mask that transform or extend its content, in order.
 ITEM_KINDS = ('ADJUSTMENT', 'FILL', 'FILTER')
+# What kinds of owner each item kind can have.
+ITEM_OWNERS = {'ADJUSTMENT': ('LAYER', 'MASK'), 'FILTER': ('LAYER', 'MASK'), 'FILL': ('MASK',)}
 
 
 def new_uid():
@@ -56,8 +59,7 @@ class Tree:
         for e in layers:
             p = e.parent if e.parent in self.kind else ""
             if e.kind in ITEM_KINDS:
-                if p and self.kind[p] in (('LAYER', 'MASK') if e.kind == 'ADJUSTMENT'
-                                          else ('MASK',)):
+                if p and self.kind[p] in ITEM_OWNERS[e.kind]:
                     self.adjs.setdefault(p, []).append(e.uid)
                 else:
                     self.orphans.append(e.uid)

@@ -371,8 +371,9 @@ class ESSENCE_OT_add_fill(_Base, bpy.types.Operator):
 class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
     bl_idname = "essence.add_filter"
     bl_label = "Add Baked Filter"
-    bl_description = ("Add a baked filter on top of the active mask's items. It filters the "
-                      "value built so far into an image; press Apply to bake it")
+    bl_description = ("Add a baked filter on top of the active mask's or layer's items. It "
+                      "filters the value built so far (a mask value, or one layer channel's "
+                      "input) into an image; press Apply to bake it")
     bl_options = {'REGISTER', 'UNDO'}
 
     filter_type: EnumProperty(name="Filter", items=[(t.id, t.label, t.description)
@@ -381,14 +382,24 @@ class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
-        return owner is not None and owner.kind == 'MASK'
+        return mat is not None and _adjustment_owner(mat, _active(mat)) is not None
 
     def execute(self, context):
         mat = _material(context)
         s = mat.essence
-        owner_uid = _adjustment_owner(mat, _active(mat)).uid
+        active = _active(mat)
+        owner = _adjustment_owner(mat, active)
+        owner_uid = owner.uid
         t = filters.BY_ID[self.filter_type]
+        channel = 'COLOR'
+        if owner.kind == 'LAYER':
+            # The channel of the item that is selected, else Color; Dilate/Erode works on one
+            # value, so it starts on the first channel that is not a color.
+            if active.kind in stack.ITEM_KINDS and active.adj_channel in SOURCE_BY_ID:
+                channel = active.adj_channel
+            if t.single_value and SOURCE_BY_ID[channel].socket_type == 'NodeSocketColor':
+                channel = next((c.id for c in sources.active_channels(mat)
+                                if c.socket_type != 'NodeSocketColor'), channel)
         e = s.layers.add()
         e.kind = 'FILTER'
         e.uid = uid = stack.new_uid()
@@ -397,6 +408,7 @@ class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
         sources.SUSPEND = True
         try:
             e.adj_enabled = True
+            e.adj_channel = channel
             e.filter_type = self.filter_type
         finally:
             sources.SUSPEND = False
@@ -475,9 +487,10 @@ class ESSENCE_MT_add_adjustment(bpy.types.Menu):
     def draw(self, context):
         mat = _material(context)
         owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
-        if owner is not None and owner.kind == 'MASK':
-            self.layout.operator("essence.add_fill", text="Fill", icon='IMAGE_DATA')
-            self.layout.separator()
+        if owner is not None:
+            if owner.kind == 'MASK':
+                self.layout.operator("essence.add_fill", text="Fill", icon='IMAGE_DATA')
+                self.layout.separator()
             self.layout.label(text="Baked filters (press Apply)")
             for ft in filters.TYPES:
                 self.layout.operator("essence.add_filter", text=ft.label,

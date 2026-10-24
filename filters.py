@@ -1,10 +1,11 @@
 """Baked filters: neighbour-based image filters (Kuwahara, blur, sharpen, dilate/erode).
 
 A shader sees one pixel at a time, so these cannot be live nodes. A filter is an opt-in item
-(entry kind FILTER) on a mask. Apply does three things:
+(entry kind FILTER) on a mask, or on one channel of a layer (the layer's own fill of that
+channel, before it is masked and blended). Apply does three things:
 
-    1. bake the mask value built so far (everything below the filter) into a float image,
-       in UV space, with the same emission trick the export uses;
+    1. bake the value built so far (everything below the filter in the same mask or channel)
+       into a float image, in UV space, with the same emission trick the export uses;
     2. run Blender's compositor on it, in a throwaway scene, through a compositor node group
        that belongs to the item and can be edited by hand;
     3. keep the result in one image per item (".Essence Filter <uid>", the leading dot hides
@@ -26,7 +27,7 @@ from typing import Tuple
 
 import bpy
 
-from . import sources, stack
+from . import sources
 from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials
 
 from .adjustments import FILTER_GROUP_PREFIX as GROUP_PREFIX
@@ -43,6 +44,7 @@ class FilterType:
     idname: str                  # the compositor node
     input: str                   # its image input
     defaults: Tuple = ()         # (input name, value) set when the node is created
+    single_value: bool = False   # the node takes one value (a color is reduced to its brightness)
 
 
 TYPES = (
@@ -52,7 +54,7 @@ TYPES = (
                (("Size", (10.0, 10.0)),)),
     FilterType('SHARPEN', "Sharpen", "Sharpen the value", 'CompositorNodeFilter', 'Image'),
     FilterType('DILATE_ERODE', "Dilate / Erode", "Grow or shrink the bright areas",
-               'CompositorNodeDilateErode', 'Mask'),
+               'CompositorNodeDilateErode', 'Mask', single_value=True),
 )
 BY_ID = {t.id: t for t in TYPES}
 
@@ -89,6 +91,18 @@ def _set_default(sock, value):
         sock.default_value = value
     except (TypeError, ValueError):
         pass
+
+
+def channel_of(mat, entry):
+    """What a filter works on: 'MASK' for a mask's filter, else the layer channel id."""
+    owner = next((e for e in mat.essence.layers if e.uid == entry.parent), None)
+    return 'MASK' if owner is None or owner.kind == 'MASK' else entry.adj_channel
+
+
+def chain_items(mat, entry):
+    """The items of the filter's own mask or layer channel, bottom to top (the order they apply
+    in). Other channels of the same layer are a separate chain."""
+    return sources.adjustment_entries(mat, entry.parent, channel_of(mat, entry))
 
 
 def build_group(entry):
@@ -349,20 +363,21 @@ def _source_state(src):
 
 
 def signature(mat, entry):
-    """A digest of everything that decides what a filter would bake: the mask's own source,
-    every item below the filter (their nodes, order and switches; a filter below counts by the
+    """A digest of everything that decides what a filter would bake: the mask's (or the layer
+    channel's) own source, every item below the filter (their nodes, order and switches; a filter below counts by the
     signature it was baked with) and the filter's own settings. Moving nodes or renaming
     does not change it."""
     tree = mat.node_tree
     layers = mat.essence.layers
     state = []
-    mask = next((e for e in layers if e.uid == entry.parent), None)
-    if mask is not None:
-        state.append(_source_state(mask.source))
-        for n in sorted(sources.source_nodes(tree, mask.uid, 'MASK').values(),
+    owner = next((e for e in layers if e.uid == entry.parent), None)
+    ch_id = channel_of(mat, entry)
+    if owner is not None:
+        state.append(_source_state(sources.get_source(owner, ch_id)))
+        for n in sorted(sources.source_nodes(tree, owner.uid, ch_id).values(),
                         key=lambda n: n.name):
             state.append(_node_state(n))
-    for item in stack.adjustment_entries(layers, entry.parent):
+    for item in chain_items(mat, entry):
         if item.uid == entry.uid:
             break
         state.append((item.kind, item.adj_enabled, item.adj_type, item.fill_blend,
@@ -395,9 +410,10 @@ def is_stale(mat, entry):
 
 
 def lower_filters(mat, entry):
-    """The filters below `entry` in the same mask, bottom to top. They are what it bakes."""
+    """The filters below `entry` in the same mask or channel, bottom to top. They are what it
+    bakes."""
     out = []
-    for item in stack.adjustment_entries(mat.essence.layers, entry.parent):
+    for item in chain_items(mat, entry):
         if item.uid == entry.uid:
             break
         if item.kind == 'FILTER':
@@ -425,13 +441,17 @@ def apply_with_dependencies(context, ob, mat, entry):
 
 
 def apply_all(context, ob, mat):
-    """Apply every filter of the material that is not applied or out of date, mask by mask and
-    bottom to top: applying one makes the baked filters above it out of date, and they come
-    up for re-application later in the same pass. Returns the names applied."""
+    """Apply every filter of the material that is not applied or out of date, chain by chain
+    (a mask, or one channel of a layer) and bottom to top: applying one makes the baked filters
+    above it out of date, and they come up for re-application later in the same pass. Returns
+    the names applied."""
+    chains = {}
+    for e in mat.essence.layers:
+        if e.kind == 'FILTER':
+            chains.setdefault((e.parent, channel_of(mat, e)), []).append(e.uid)
     done = []
-    for mask in [e for e in mat.essence.layers if e.kind == 'MASK']:
-        for f in [e.uid for e in stack.adjustment_entries(mat.essence.layers, mask.uid)
-                  if e.kind == 'FILTER']:
+    for uids in chains.values():
+        for f in uids:
             e = next(x for x in mat.essence.layers if x.uid == f)
             if needs_apply(mat, e):
                 apply_entry(context, ob, mat, e)
@@ -447,6 +467,11 @@ def apply_entry(context, ob, mat, entry):
     """Bake, filter and store the result of one filter item. Returns the size baked at.
     Raises on failure; nothing is left behind in the scene either way."""
     tree = mat.node_tree
+    ch_id = channel_of(mat, entry)
+    if ch_id != 'MASK' and ch_id not in {c.id for c in sources.active_channels(mat)}:
+        # Checked first: the item's nodes from before the channel was switched are stale.
+        raise RuntimeError(f"the {sources.SOURCE_BY_ID[ch_id].label} channel is switched off "
+                           "in the Material panel")
     node_in = sources.source_nodes(tree, entry.uid, "ADJ").get('IN')
     if node_in is None:
         raise RuntimeError("filter nodes missing, press Rebuild Links")
