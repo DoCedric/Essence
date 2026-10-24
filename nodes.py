@@ -235,7 +235,10 @@ def new_paint_image(name, size, rgba, alpha=False):
     import array
     img = bpy.data.images.new(name, size, size, alpha=alpha, float_buffer=True)
     img.colorspace_settings.name = 'Non-Color'     # a mask value, not a color
-    img.alpha_mode = 'STRAIGHT'
+    # Blender's brush mixes the color with what was there by the stroke's alpha only, which is
+    # premultiplied maths, whatever the image is declared as; so the pixels are kept raw (no
+    # conversion by Blender in either direction) and a paint item divides by the alpha itself.
+    img.alpha_mode = 'CHANNEL_PACKED' if alpha else 'STRAIGHT'
     img[PAINT_KEY] = True       # persist.py packs it again before a save if it was painted on
     img.pixels.foreach_set(array.array('f', rgba) * (size * size))
     img.update()

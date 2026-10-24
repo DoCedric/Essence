@@ -47,13 +47,21 @@ def _paint(mat, uid, f):
 
 
 def _stripes(u, v):
+    """What the brush leaves: color times alpha (premultiplied), and alpha."""
     if u < 0.25:
         return (0.0, 0.0, 0.0, 0.0)     # unpainted
     if u < 0.5:
         return (1.0, 1.0, 1.0, 1.0)     # white
     if u < 0.75:
         return (0.0, 0.0, 0.0, 1.0)     # black
-    return (1.0, 1.0, 1.0, 0.5)         # a soft edge of white
+    return (0.5, 0.5, 0.5, 0.5)         # a soft edge of white: 1.0 * 0.5, alpha 0.5
+
+
+def _brush(dst, color, a):
+    """Blender's brush mix on a texel: the color is mixed with what was there by the stroke's
+    alpha alone (dst * (1 - a) + color * a, premultiplied maths) and the alphas add up."""
+    r = dst[0] * (1 - a) + color * a
+    return (r, r, r, a + dst[3] * (1 - a))
 
 
 A, B, C, D = (0.1, 0.5), (0.4, 0.5), (0.6, 0.5), (0.9, 0.5)
@@ -68,10 +76,11 @@ def test_add_paint_makes_a_transparent_image_and_the_nodes(addon):
     im = node.image
     check(im is not None and tuple(im.size) == (128, 128), "an image of the chosen size")
     check(im.is_float and im.packed_file is not None, "float, packed")
-    check(im.colorspace_settings.name == 'Non-Color' and im.alpha_mode == 'STRAIGHT',
-          "Non-Color, straight alpha")
+    check(im.colorspace_settings.name == 'Non-Color' and im.alpha_mode == 'CHANNEL_PACKED',
+          f"Non-Color and raw (no conversion of the premultiplied pixels): {im.alpha_mode}")
     px = list(im.pixels)
     check(max(px[3::4]) == 0.0, "nothing painted yet: the alpha starts at 0")
+    check(max(px) == 0.0, "and so does the color: transparent black, nothing to leak into an edge")
     found = addon.sources.source_nodes(mat.node_tree, uid, 'ADJ')
     check({'MAIN', 'ALPHA', 'MIX'} <= set(found), f"nodes: {sorted(found)}")
     factor = addon.adjustments.mix_socket(found['ALPHA'], "Factor_Float")
@@ -295,3 +304,40 @@ def test_the_save_handler_only_touches_what_was_painted(addon):
     addon.unregister()
     check(addon.persist._on_save_pre not in bpy.app.handlers.save_pre, "and removed again")
     addon.register()
+
+
+def test_a_soft_brush_edge_has_no_fringe(addon):
+    """The white line round a black stroke: the brush leaves color * alpha where a texel is only
+    partly covered, and a color left over from before must not show in the edge."""
+    for base in (1.0, 0.0, 0.3):
+        ob, mat, top, top_uid, mask_uid = _setup(base_value=base)
+        uid = _add_paint(mat, mask_uid)
+        for color in (0.0, 1.0, 0.5):
+            for a in (0.1, 0.3, 0.5, 0.8, 1.0):
+                texel = _brush((0.0, 0.0, 0.0, 0.0), color, a)
+                _paint(mat, uid, lambda u, v, t=texel: t)
+                want = base * (1 - a) + color * a
+                got = _value(ob, mat, mask_uid, (0.5, 0.5))
+                close(got, want, 0.02, f"stroke of {color} at alpha {a} over {base}")
+        # two strokes on top of each other: black, then a softer white
+        first = _brush((0.0, 0.0, 0.0, 0.0), 0.0, 0.6)
+        second = _brush(first, 1.0, 0.4)
+        _paint(mat, uid, lambda u, v: second)
+        after_first = base * (1 - 0.6)
+        close(_value(ob, mat, mask_uid, (0.5, 0.5)), after_first * (1 - 0.4) + 0.4, 0.02,
+              "a second stroke over the first reads as two strokes one after the other")
+
+
+def test_an_image_from_before_the_pixels_were_kept_raw_is_converted(addon):
+    ob, mat, top, top_uid, mask_uid = _setup(base_value=0.3)
+    uid = _add_paint(mat, mask_uid)
+    e = next(x for x in mat.essence.layers if x.uid == uid)
+    im = mat.node_tree.nodes[e.mask_node_name].image
+    im.alpha_mode = 'STRAIGHT'                       # what the previous version made
+    bpy.ops.essence.rebuild()
+    check(im.alpha_mode == 'CHANNEL_PACKED', "a rebuild puts our own paint images right")
+    other = bpy.data.images.new("theirs", 8, 8, alpha=True, float_buffer=True)   # picked by the user
+    other.alpha_mode = 'STRAIGHT'
+    mat.node_tree.nodes[e.mask_node_name].image = other
+    bpy.ops.essence.rebuild()
+    check(other.alpha_mode == 'STRAIGHT', "an image we did not make is left alone")

@@ -352,7 +352,8 @@ class ESSENCE_OT_add_paint(_Base, bpy.types.Operator):
         owner_uid = owner.uid
         n = sum(1 for x in s.layers if x.kind == 'FILL' and x.fill_paint and x.parent == owner_uid)
         # Float, with an alpha channel that starts at 0: nothing painted yet.
-        img = nodes.new_paint_image(f"{mat.name}_Paint", self.size, (1.0, 1.0, 1.0, 0.0),
+        # Transparent black: a color under no alpha must not leak into a stroke's soft edge.
+        img = nodes.new_paint_image(f"{mat.name}_Paint", self.size, (0.0, 0.0, 0.0, 0.0),
                                     alpha=True)
         e = s.layers.add()
         e.kind = 'FILL'

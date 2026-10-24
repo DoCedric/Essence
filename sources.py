@@ -18,6 +18,7 @@ here is hidden: the user can edit, replace or extend these nodes in the node edi
 import bpy
 
 from . import adjustments, generators, gizmo
+from .persist import PAINT_KEY
 from .channels import CHANNELS, SOURCE_BY_ID, active_channels
 
 SRC_KEY = "essence_source"
@@ -375,7 +376,7 @@ def _chain_fill(tree, a, out):
     Opacity mix. The fill's own source nodes are wired by `apply` on the fill."""
     have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)
     main, mix = have.get('MAIN'), have.get('MIX')
-    alpha = have.get('ALPHA')
+    alpha, unprem = have.get('ALPHA'), have.get('UNPREM')
     if main is None:
         main = adjustments.new_fill_main(tree)
         main[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
@@ -401,6 +402,24 @@ def _chain_fill(tree, a, out):
     # below + (blend - below) * alpha * Opacity.
     tex = source_nodes(tree, a.uid, 'MASK').get('TEXTURE') if a.fill_paint else None
     if tex is not None and tex.bl_idname == 'ShaderNodeTexImage':
+        img = tex.image
+        if img is not None and img.get(PAINT_KEY) and img.alpha_mode != 'CHANNEL_PACKED':
+            img.alpha_mode = 'CHANNEL_PACKED'      # an image from before the pixels were kept raw
+        # The brush leaves color * alpha (premultiplied) where it has only partly covered a
+        # texel, so the color of the stroke is the stored color divided by the stored alpha.
+        # (A division by zero is 0 in a shader, and a texel with no alpha has no effect.)
+        if unprem is None:
+            unprem = tree.nodes.new('ShaderNodeMath')
+            unprem.operation = 'DIVIDE'
+            unprem.use_clamp = True
+            unprem[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
+            unprem[ROLE_KEY] = 'UNPREM'
+        unprem.label = f"{a.name} Unpremultiply"
+        for sock in (unprem.inputs[0], unprem.inputs[1], main.inputs[1]):
+            _clear_links(tree, sock)
+        tree.links.new(tex.outputs['Color'], unprem.inputs[0])
+        tree.links.new(tex.outputs['Alpha'], unprem.inputs[1])
+        tree.links.new(unprem.outputs[0], main.inputs[1])
         if alpha is None:
             alpha = adjustments.new_mix(tree)
             alpha[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
@@ -415,6 +434,8 @@ def _chain_fill(tree, a, out):
     else:
         if alpha is not None:
             tree.nodes.remove(alpha)
+        if unprem is not None:
+            tree.nodes.remove(unprem)
         alpha = None
     if out is not None and a.adj_enabled:
         if not normal:
@@ -650,7 +671,8 @@ def apply(mat, entry, ch_id):
 
 _ROLE_ORDER = ('CONST', 'COORD', 'MAPPING', 'TEXTURE', 'REMAP', 'RAMP')
 _STEP = {'CONST': 200, 'COORD': 230, 'MAPPING': 330, 'TEXTURE': 330, 'REMAP': 290,
-         'RAMP': 320, 'MAIN': 330, 'ALPHA': 250, 'MIX': 250, 'IN': 60, 'OUT': 330}
+         'RAMP': 320, 'MAIN': 330, 'ALPHA': 250, 'UNPREM': 200, 'MIX': 250, 'IN': 60,
+         'OUT': 330}
 
 
 def _place_adjustments(tree, adjs, index, x, y, step):
@@ -659,7 +681,7 @@ def _place_adjustments(tree, adjs, index, x, y, step):
     for a in adjs:
         nodes = (index.get(tag(a.uid, adjustments.ADJ_KEY), {}) if index is not None
                  else source_nodes(tree, a.uid, adjustments.ADJ_KEY))
-        for role in ('MAIN', 'ALPHA', 'MIX', 'IN', 'OUT'):
+        for role in ('UNPREM', 'MAIN', 'ALPHA', 'MIX', 'IN', 'OUT'):
             n = nodes.get(role)
             if n is not None:
                 place(n, x, y)
