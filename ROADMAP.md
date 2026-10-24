@@ -121,6 +121,6 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 ## Later sprints (outline, to be detailed)
 - **Sprint 6, asset library and mesh-map leftovers:** Essence asset library (catalogs), noise/gradient/grunge assets, generators and smart masks as assets, height from mesh, baking groups, multi-object bake.
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
-- **Sprint 8, painting and viewport:** paint layers, paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), channel/mask/layer solo (including alt-click on a mask or layer thumbnail in the tree view to preview it), texture set settings.
+- **Sprint 8, painting and viewport (preview button design is decided, see "Preview (solo)" in the design doc: an Emission node wired into the Material Output, a toggle next to the eye on layer and mask rows, mask as grey and layer as its own flat color):** paint layers, paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), channel/mask/layer solo (including alt-click on a mask or layer thumbnail in the tree view to preview it), texture set settings.
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material.
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**

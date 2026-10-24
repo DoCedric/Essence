@@ -422,10 +422,20 @@ Painting is Blender's Texture Paint. Essence only chooses the target image and c
 | **Viewport channel solo**: view Color, Roughness, Metallic, Height, Normal, AO, a mask, or any layer's output alone | An "Essence View" switch node group in front of the Material Output (Emission of the chosen socket) | ⬜ | **P1** |
 | Viewport isolate layer ("show only this layer") | same switch | ⬜ | P2 |
 | **Preview a mask or layer by alt-clicking its thumbnail** in the tree view: the viewport shows that mask (or the layer's output) on its own, alt-click again to return. Another entry point to the same "Essence View" switch node group as the channel solo, so no extra shader machinery | same switch | O | ⬜ | P1 |
+| **Preview button** next to the eye on layer and mask rows: a toggle that stays on until clicked again and shows that mask as flat black and white, or that layer's own color flat, with no shading. Decided design in "Preview (solo)" below | the same switch, wired through the material | O | ⬜ | P1 |
 | Texture set / material list with resolution per set | Material slots + per-material essence settings | ⬜ | P1 |
 | Lookdev: HDRI, lights, matcap, Material Preview, Cycles | Native | native | |
 | View transform warning (Standard is accurate for texturing; AgX/Filmic shift colors) | Info label | ⬜ | P4 |
 | Display of UV overlap / texel density | Native UV overlays; Texel density through native Mesh analysis | native | |
+
+**Preview (solo)**: decided design, not built (Sprint 8). The viewport can only show what the material shows, so the preview is **an Emission node wired into the Material Output**, not Solid shading with flat lighting: the Workbench engine ignores the node graph, so procedurals, generators, adjustments and mask stacks would not show at all, and Solid's "flat lighting" only flattens the shading of a plain color.
+- **Wiring.** A tagged Emission node (`essence_preview`) takes the chosen socket and replaces the Surface input of the Material Output; the original Surface link (node and socket names) is stored on that node and put back when the preview ends. The state lives in the graph, so the button's pressed look is derived from it and survives a save, a reload and Rebuild. One preview at a time: clicking another row moves it, clicking the same row ends it. Removing the previewed entry ends it.
+- **What it shows.** A mask: the mask's output after its fills, adjustments, filters and Enable, as grey. A layer: the layer's own **Color** fill (the Color channel's input after its source and adjustments, before the mask, opacity and blend), flat. Open question for the user: whether the layer button should instead show the stack result up to that layer (what the layer node outputs, including everything below it); a modifier click could offer the other one.
+- **Viewport.** It needs Material Preview or Rendered (Solid ignores nodes). Essence does not switch the viewport shading by itself (user agency, and switching shading around bakes froze Blender before): the panel shows a hint while a preview is on and the viewport is in Solid.
+- **Color.** Emission goes through the view transform, so previews are exact with Standard and shifted with AgX or Filmic (see the view transform hint, P4).
+- **Cost and safety.** One rewire is one shader recompile, and the Principled BSDF is out of the compiled graph while previewing, so it is cheaper than the full material. Painting a mask works while it is previewed (the use case: paint with only the mask visible). Bakes already put the Surface link back as they found it, so a bake during a preview keeps the preview. Export bakes the layer outputs and is unaffected.
+- **Same mechanism.** Channel solo (Roughness, Metallic, Height, Normal, AO, final Color) and the alt-click on a thumbnail use the same preview state, with a different source socket.
+- **Tests when built.** The Emission carries the right socket value (baked pixels), the original link comes back exactly, save and reload with a preview on, a bake during a preview, removing the entry, and every row draws with a valid icon.
 
 ### B10. Export
 
