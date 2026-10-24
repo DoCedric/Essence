@@ -136,18 +136,24 @@ _NORMAL_INPUTS = (
 )
 
 
-def _build_directional(ng, gen):
-    n_in, n_out = _interface(ng, gen)
-    n = surface_normal(ng, n_in)
-    # The light points where the rotation turns the +Z axis: no rotation is straight up.
+def rotated_axis(ng, n_in, label, x=-400, y=-250):
+    """The direction or axis a generator uses: +Z turned by the `Rotation` input (no rotation
+    is straight up), normalized."""
     rotate = ng.nodes.new('ShaderNodeVectorRotate')
     rotate.rotation_type = 'EULER_XYZ'
     rotate.inputs['Vector'].default_value = (0.0, 0.0, 1.0)
-    rotate.label = "Light direction"
-    rotate.location = (-400, -250)
+    rotate.label = label
+    rotate.location = (x, y)
     ng.links.new(n_in.outputs[ROTATION_INPUT], rotate.inputs['Rotation'])
-    direction = _vector_math(ng, 'NORMALIZE', rotate.outputs['Vector'], x=-200, y=-100)
-    dot = _vector_math(ng, 'DOT_PRODUCT', n, direction.outputs['Vector'], x=0, y=0)
+    return _vector_math(ng, 'NORMALIZE', rotate.outputs['Vector'], x=x + 200,
+                        y=y + 150).outputs['Vector']
+
+
+def _build_directional(ng, gen):
+    n_in, n_out = _interface(ng, gen)
+    n = surface_normal(ng, n_in)
+    direction = rotated_axis(ng, n_in, "Light direction")
+    dot = _vector_math(ng, 'DOT_PRODUCT', n, direction, x=0, y=0)
     scaled = _math(ng, 'MULTIPLY', dot.outputs['Value'], n_in.outputs["Contrast"], x=200, y=0)
     # d in -1..1 -> 0..1 around 0.5, shifted by Balance
     half = _math(ng, 'MULTIPLY_ADD', scaled.outputs[0], 0.5, 0.5, x=400, y=0)
@@ -159,8 +165,8 @@ def _build_directional(ng, gen):
 def _build_slope(ng, gen):
     n_in, n_out = _interface(ng, gen)
     n = surface_normal(ng, n_in)
-    axis = _vector_math(ng, 'NORMALIZE', n_in.outputs["Axis"], x=-200, y=-100)
-    dot = _vector_math(ng, 'DOT_PRODUCT', n, axis.outputs['Vector'], x=0, y=0)
+    axis = rotated_axis(ng, n_in, "Slope axis")
+    dot = _vector_math(ng, 'DOT_PRODUCT', n, axis, x=0, y=0)
     clamp = ng.nodes.new('ShaderNodeClamp')
     clamp.inputs['Min'].default_value = -1.0
     clamp.inputs['Max'].default_value = 1.0
@@ -189,9 +195,8 @@ def _build_gradient(ng, gen):
     coords.location = (-900, 200)
     centered = _vector_math(ng, 'SUBTRACT', coords.outputs['Generated'], (0.5, 0.5, 0.5),
                             x=-650, y=200)
-    axis = _vector_math(ng, 'NORMALIZE', n_in.outputs["Axis"], x=-650, y=-50)
-    dot = _vector_math(ng, 'DOT_PRODUCT', centered.outputs['Vector'], axis.outputs['Vector'],
-                       x=-400, y=100)
+    axis = rotated_axis(ng, n_in, "Gradient axis", x=-900, y=-100)
+    dot = _vector_math(ng, 'DOT_PRODUCT', centered.outputs['Vector'], axis, x=-400, y=100)
     # Generated coordinates run 0..1 across the bounding box: along an axis this is that
     # coordinate, along any other direction it is the signed distance from the center.
     pos = _math(ng, 'ADD', dot.outputs['Value'], 0.5, x=-200, y=100)
@@ -209,40 +214,46 @@ _V = 'NodeSocketVector'
 _F = 'NodeSocketFloat'
 
 
-def _migrate_directional(values):
-    """Version 1 had a Direction vector; version 2 has a Rotation (Euler angles) that turns +Z
-    into that direction."""
-    d = values.pop("Direction", None)
-    if d is not None and "Rotation" not in values and Vector(d).length > 1e-6:
-        e = Vector((0.0, 0.0, 1.0)).rotation_difference(Vector(d)).to_euler('XYZ')
-        values["Rotation"] = tuple(a % (2 * math.pi) for a in e)
-    return values
+# The input every direction or axis uses: Euler angles in degrees, one turn at most.
+_ROTATION = (ROTATION_INPUT, _V, (0.0, 0.0, 0.0),
+             {"subtype": 'EULER', "min_value": 0.0, "max_value": 2 * math.pi})
+
+
+def _migrate_vector(old_name):
+    """Version 1 had a direction or axis vector (`old_name`); version 2 has a Rotation (Euler
+    angles) that turns +Z into that vector."""
+    def migrate(values):
+        d = values.pop(old_name, None)
+        if d is not None and ROTATION_INPUT not in values and Vector(d).length > 1e-6:
+            e = Vector((0.0, 0.0, 1.0)).rotation_difference(Vector(d)).to_euler('XYZ')
+            values[ROTATION_INPUT] = tuple(a % (2 * math.pi) for a in e)
+        return values
+    return migrate
+
 
 GENERATORS = {g.id: g for g in (
     Gen('DIRECTIONAL_LIGHT', "Directional Light",
         "How much each surface faces a light direction, like a light from that side",
         2,
-        (("Rotation", _V, (0.0, 0.0, 0.0),
-          {"subtype": 'EULER', "min_value": 0.0, "max_value": 2 * math.pi}),
-         ) + _NORMAL_INPUTS + (
+        (_ROTATION,) + _NORMAL_INPUTS + (
             ("Contrast", _F, 1.0, {"min_value": 0.0, "max_value": 10.0}),
             ("Balance", _F, 0.0, {"min_value": -1.0, "max_value": 1.0})),
-        _build_directional, _migrate_directional),
+        _build_directional, _migrate_vector("Direction")),
     Gen('SLOPE', "Slope",
         "Surfaces that face an axis within an angle (up for snow, down for drips)",
-        1,
-        (("Axis", _V, (0.0, 0.0, 1.0), {}),) + _NORMAL_INPUTS + (
+        2,
+        (_ROTATION,) + _NORMAL_INPUTS + (
             ("Angle", _F, 45.0, {"min_value": 0.0, "max_value": 180.0}),
             ("Softness", _F, 10.0, {"min_value": 0.0, "max_value": 90.0})),
-        _build_slope),
+        _build_slope, _migrate_vector("Axis")),
     Gen('GRADIENT', "Gradient",
         "A gradient across the object's bounding box along an axis: Z is a height gradient, "
         "X and Y a position gradient",
-        1,
-        (("Axis", _V, (0.0, 0.0, 1.0), {}),
+        2,
+        (_ROTATION,
          ("Start", _F, 0.0, {}),
          ("End", _F, 1.0, {})),
-        _build_gradient),
+        _build_gradient, _migrate_vector("Axis")),
 )}
 ITEMS = [(g.id, g.label, g.description) for g in GENERATORS.values()]
 

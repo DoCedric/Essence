@@ -3,7 +3,7 @@
 import math
 
 import bpy
-from mathutils import Vector
+from mathutils import Euler, Vector
 
 from harness import check, close, make_plane, sample_socket
 
@@ -33,6 +33,12 @@ def _aim(tex, direction):
     """Set a Directional Light's Rotation so that it points along `direction`."""
     e = Vector((0, 0, 1)).rotation_difference(Vector(direction)).to_euler('XYZ')
     tex.inputs['Rotation'].default_value = tuple(a % (2 * math.pi) for a in e)
+
+
+def _points_along(tex, direction):
+    """Does the Rotation turn +Z onto `direction`?"""
+    d = Euler(tuple(tex.inputs['Rotation'].default_value), 'XYZ').to_matrix() @ Vector((0, 0, 1))
+    return (d - Vector(direction).normalized()).length < 0.01
 
 
 def _set(tex, **values):
@@ -144,9 +150,9 @@ def test_slope(addon):
     ob, mat, e = _setup(addon, 'SLOPE')
     tex = _tex(addon, mat, e)
     close(_value(ob, mat, e), 1.0, 0.02, "flat ground faces up")
-    tex.inputs['Axis'].default_value = (0, 0, -1)
+    _aim(tex, (0, 0, -1))
     close(_value(ob, mat, e), 0.0, 0.02, "and not down")
-    tex.inputs['Axis'].default_value = (0, 0, 1)
+    _aim(tex, (0, 0, 1))
     _set(tex, World_Space=True)
     ob.rotation_euler.x = math.radians(45)
     bpy.context.view_layer.update()
@@ -162,14 +168,14 @@ def test_slope(addon):
 def test_gradient(addon):
     ob, mat, e = _setup(addon, 'GRADIENT')
     tex = _tex(addon, mat, e)
-    tex.inputs['Axis'].default_value = (1, 0, 0)
+    _aim(tex, (1, 0, 0))
     for u in (0.1, 0.5, 0.9):
         close(_value(ob, mat, e, (u, 0.5)), u, 0.03, f"x gradient at u={u}")
-    tex.inputs['Axis'].default_value = (-1, 0, 0)
+    _aim(tex, (-1, 0, 0))
     close(_value(ob, mat, e, (0.9, 0.5)), 0.1, 0.03, "reversed")
-    tex.inputs['Axis'].default_value = (0, 1, 0)
+    _aim(tex, (0, 1, 0))
     close(_value(ob, mat, e, (0.5, 0.25)), 0.25, 0.03, "y gradient")
-    tex.inputs['Axis'].default_value = (1, 0, 0)
+    _aim(tex, (1, 0, 0))
     _set(tex, Start=0.5, End=1.0)
     close(_value(ob, mat, e, (0.75, 0.5)), 0.5, 0.03, "range remap")
     close(_value(ob, mat, e, (0.25, 0.5)), 0.0, 0.03, "below the range")
@@ -180,7 +186,7 @@ def test_gradient_height_uses_the_object_bounding_box(addon):
     ob.rotation_euler.x = math.pi / 2     # the plane stands up: its local Y runs up in the world
     bpy.context.view_layer.update()
     tex = _tex(addon, mat, e)
-    tex.inputs['Axis'].default_value = (0, 1, 0)
+    _aim(tex, (0, 1, 0))
     close(_value(ob, mat, e, (0.5, 0.8)), 0.8, 0.03, "generated coordinates are object local")
 
 
@@ -198,7 +204,7 @@ def test_generator_on_a_color_channel_and_on_masks_and_fills(addon):
     mask.source.gen_type = 'GRADIENT'
     mask.source.kind = 'GENERATOR'
     tex = addon.sources.source_nodes(mat.node_tree, mask.uid, 'MASK')['TEXTURE']
-    tex.inputs['Axis'].default_value = (1, 0, 0)
+    _aim(tex, (1, 0, 0))
     out = mat.node_tree.nodes[mask.node_name].outputs[0]
     close(sample_socket(ob, mat, out, size=64, uv=(0.9, 0.5))[0], 0.9, 0.03, "generator mask")
 
@@ -209,7 +215,7 @@ def test_generator_on_a_color_channel_and_on_masks_and_fills(addon):
     fill.source.gen_type = 'GRADIENT'
     fill.source.kind = 'GENERATOR'
     ftex = addon.sources.source_nodes(mat.node_tree, fill.uid, 'MASK')['TEXTURE']
-    ftex.inputs['Axis'].default_value = (0, 1, 0)
+    _aim(ftex, (0, 1, 0))
     out = mat.node_tree.nodes[mask.node_name].outputs[0]
     close(sample_socket(ob, mat, out, size=64, uv=(0.9, 0.25))[0], 0.25, 0.03,
           "a generator fill replaces the mask value (Normal blend)")
@@ -219,14 +225,14 @@ def test_group_upgrade_keeps_values_and_links(addon):
     ob, mat, e = _setup(addon, 'SLOPE')
     tex = _tex(addon, mat, e)
     _set(tex, Angle=33.0)
-    tex.inputs['Axis'].default_value = (0, 1, 0)
+    _aim(tex, (0, 1, 0))
     ng = tex.node_tree
     ng["essence_version"] = 0                        # an older file
     bpy.ops.essence.rebuild()
     tex = _tex(addon, mat, e)
-    check(tex.node_tree is ng and ng["essence_version"] == 1, "the group should be rebuilt")
+    check(tex.node_tree is ng and ng["essence_version"] == 2, "the group should be rebuilt")
     close(tex.inputs['Angle'].default_value, 33.0, 0.001, "value kept")
-    check(tuple(tex.inputs['Axis'].default_value) == (0.0, 1.0, 0.0), "vector kept")
+    check(_points_along(tex, (0, 1, 0)), "rotation kept")
     check(tex.outputs['Fac'].is_linked, "output link kept")
     check(tex.inputs['Detail Normal'].is_linked, "detail link kept")
     close(_value(ob, mat, e), 0.0, 0.03, "and it still evaluates (flat plane, axis Y)")
@@ -445,3 +451,49 @@ def test_old_direction_values_become_a_rotation(addon):
     from mathutils import Euler
     d = Euler(r, 'XYZ').to_matrix() @ Vector((0, 0, 1))
     check((d - Vector((0, 1, 0))).length < 0.01, f"the rotation should point along +Y: {tuple(d)}")
+
+
+def _arrow(addon, ob, mat, e, channel='ROUGHNESS'):
+    check(bpy.ops.essence.light_gizmo(uid=e.uid, channel=channel) == {'FINISHED'}, "toggle")
+    return _tex(addon, mat, e, channel), _tex(addon, mat, e, channel).get("essence_gizmo")
+
+
+def test_slope_and_gradient_have_the_arrow_too(addon):
+    ob, mat, e = _setup(addon, 'GRADIENT')
+    tex, arrow = _arrow(addon, ob, mat, e)
+    check(arrow is not None and arrow.parent is ob, "a gradient has an arrow, in object space")
+    arrow.rotation_euler = (0, math.radians(90), 0)            # +Z turned onto +X
+    _evaluate()
+    close(_value(ob, mat, e, (0.9, 0.5)), 0.9, 0.03, "an arrow along X gives an X gradient")
+    arrow.rotation_euler = (math.radians(-90), 0, 0)           # +Z turned onto +Y
+    _evaluate()
+    close(_value(ob, mat, e, (0.5, 0.25)), 0.25, 0.03, "along Y")
+    bpy.ops.essence.light_gizmo(uid=e.uid, channel='ROUGHNESS')
+    check(not [o for o in bpy.data.objects if o.type == 'EMPTY'], "arrow removed")
+
+    ob, mat, e = _setup(addon, 'SLOPE')
+    tex, arrow = _arrow(addon, ob, mat, e)
+    _evaluate()
+    close(_value(ob, mat, e), 1.0, 0.02, "the arrow starts up: flat ground faces it")
+    arrow.rotation_euler = (math.radians(180), 0, 0)
+    _evaluate()
+    close(_value(ob, mat, e), 0.0, 0.02, "turned down it does not")
+
+
+def test_old_axis_values_become_a_rotation(addon):
+    """Files made with version 1 of Slope and Gradient, which had an Axis vector."""
+    for gen_id, direction in (('SLOPE', (0, 1, 0)), ('GRADIENT', (1, 0, 0))):
+        ob, mat, e = _setup(addon, gen_id)
+        tex = _tex(addon, mat, e)
+        ng = tex.node_tree
+        ng["essence_version"] = 1
+        ng.interface.clear()
+        ng.interface.new_socket("Fac", in_out='OUTPUT', socket_type='NodeSocketFloat')
+        ng.interface.new_socket("Axis", in_out='INPUT', socket_type='NodeSocketVector')
+        tex.node_tree = ng
+        tex.inputs['Axis'].default_value = direction
+        bpy.ops.essence.rebuild()
+        tex = _tex(addon, mat, e)
+        check(ng["essence_version"] == 2 and 'Axis' not in tex.inputs, f"{gen_id}: rebuilt")
+        check(_points_along(tex, direction), f"{gen_id}: the rotation should point along "
+                                             f"{direction}: {tuple(tex.inputs['Rotation'].default_value)}")
