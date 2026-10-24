@@ -500,6 +500,11 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
     elif generator:
         col.prop(src, "gen_type", text="Generator")
         arrow = gizmo.is_active(tex)
+        for map_id in generators.GENERATORS[src.gen_type].needs:
+            slot = mat.node_tree.nodes.get(nodes.map_slot_name(map_id))
+            if slot is None or slot.bl_idname != 'ShaderNodeTexImage' or slot.image is None:
+                label = dict(nodes.MAP_SLOTS)[map_id]
+                col.label(text=f"Needs the {label} map (see Mesh Maps)", icon='ERROR')
         for s in tex.inputs:
             if s.name in generators.INTERNAL_INPUTS or s.is_linked:
                 continue

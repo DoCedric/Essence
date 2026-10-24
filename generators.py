@@ -24,7 +24,9 @@ from mathutils import Vector
 VERSION_KEY = "essence_version"
 DETAIL_INPUT = "Detail Normal"      # wired by Essence, not edited in the panel
 BAKED_POSITION_INPUT = "Baked Position"   # likewise: the Position slot, or Generated coordinates
-INTERNAL_INPUTS = (DETAIL_INPUT, BAKED_POSITION_INPUT)
+CURVATURE_INPUT = "Curvature"       # likewise: the Curvature slot, or flat grey (no curvature)
+AO_INPUT = "AO"                     # likewise: the AO slot, or white (no occlusion)
+INTERNAL_INPUTS = (DETAIL_INPUT, BAKED_POSITION_INPUT, CURVATURE_INPUT, AO_INPUT)
 ROTATION_INPUT = "Rotation"         # an Euler input the temporary gizmo (gizmo.py) can drive
 
 
@@ -38,6 +40,8 @@ class Gen:
     build: Callable = field(compare=False, default=None)
     # Turns the saved input values of an older version into this version's: {name: value}
     migrate: Optional[Callable] = field(compare=False, default=None)
+    # The Mesh Maps slots it needs an image in to do anything (the panel says which are empty)
+    needs: Tuple = field(compare=False, default=())
 
     @property
     def group_name(self):
@@ -215,6 +219,90 @@ def _build_gradient(ng, gen):
 
 _V = 'NodeSocketVector'
 _F = 'NodeSocketFloat'
+_C = 'NodeSocketColor'
+
+_CURVATURE_IN = (CURVATURE_INPUT, _C, (0.5, 0.5, 0.5, 1.0), {"hide_value": True})
+_AO_IN = (AO_INPUT, _C, (1.0, 1.0, 1.0, 1.0), {"hide_value": True})
+
+
+def _red(ng, color_socket, x, y):
+    """The value (red channel) of a map read from an image."""
+    sep = ng.nodes.new('ShaderNodeSeparateColor')
+    sep.location = (x, y)
+    ng.links.new(color_socket, sep.inputs['Color'])
+    return sep.outputs['Red']
+
+
+def _noise_term(ng, n_in, x, y):
+    """Noise around zero, in units of the map it breaks up: (noise - 0.5) * Noise Strength.
+    3D noise on the object's own coordinates, so it does not need a UV map."""
+    coords = ng.nodes.new('ShaderNodeTexCoord')
+    coords.location = (x, y)
+    noise = ng.nodes.new('ShaderNodeTexNoise')
+    noise.noise_dimensions = '3D'
+    noise.inputs['Detail'].default_value = 4.0
+    noise.location = (x + 200, y)
+    ng.links.new(coords.outputs['Object'], noise.inputs['Vector'])
+    ng.links.new(n_in.outputs["Noise Scale"], noise.inputs['Scale'])
+    centered = _math(ng, 'SUBTRACT', noise.outputs['Fac'], 0.5, x=x + 450, y=y)
+    return _math(ng, 'MULTIPLY', centered.outputs[0], n_in.outputs["Noise Strength"],
+                 x=x + 650, y=y).outputs[0]
+
+
+def _soft_step(ng, value, softness, x, y):
+    """0 well below zero, 1 well above, 0.5 at zero, a ramp `softness` wide (never zero)."""
+    soft = _math(ng, 'MAXIMUM', softness, 0.001, x=x, y=y - 200)
+    div = _math(ng, 'DIVIDE', value, soft.outputs[0], x=x + 200, y=y)
+    return _math(ng, 'ADD', div.outputs[0], 0.5, x=x + 400, y=y, clamp=True)
+
+
+def _build_edge_wear(ng, gen):
+    n_in, n_out = _interface(ng, gen)
+    c = _red(ng, n_in.outputs[CURVATURE_INPUT], -900, 200)
+    convex = _math(ng, 'SUBTRACT', c, 0.5, x=-700, y=200, label="Convex part")
+    above = _math(ng, 'SUBTRACT', convex.outputs[0], n_in.outputs["Threshold"], x=-450, y=200)
+    noise = _noise_term(ng, n_in, -900, -150)
+    value = _math(ng, 'ADD', above.outputs[0], noise, x=-200, y=100)
+    out = _soft_step(ng, value.outputs[0], n_in.outputs["Softness"], 50, 100)
+    ng.links.new(out.outputs[0], n_out.inputs["Fac"])
+
+
+def _build_cavity(ng, gen):
+    n_in, n_out = _interface(ng, gen)
+    c = _red(ng, n_in.outputs[CURVATURE_INPUT], -900, 250)
+    concave = _math(ng, 'SUBTRACT', 0.5, c, x=-700, y=250, label="Concave part")
+    ao = _red(ng, n_in.outputs[AO_INPUT], -900, -50)
+    dark = _math(ng, 'SUBTRACT', 1.0, ao, x=-700, y=-50, label="Occlusion")
+    ao_part = _math(ng, 'MULTIPLY', dark.outputs[0], n_in.outputs["AO Amount"], x=-450, y=-50)
+    half = _math(ng, 'MULTIPLY', ao_part.outputs[0], 0.5, x=-250, y=-50)
+    both = _math(ng, 'ADD', concave.outputs[0], half.outputs[0], x=-50, y=100)
+    above = _math(ng, 'SUBTRACT', both.outputs[0], n_in.outputs["Threshold"], x=150, y=100)
+    out = _soft_step(ng, above.outputs[0], n_in.outputs["Softness"], 350, 100)
+    ng.links.new(out.outputs[0], n_out.inputs["Fac"])
+
+
+def _build_dirt(ng, gen):
+    n_in, n_out = _interface(ng, gen)
+    ao = _red(ng, n_in.outputs[AO_INPUT], -1000, 300)
+    dark = _math(ng, 'SUBTRACT', 1.0, ao, x=-800, y=300, label="Occlusion")
+    c = _red(ng, n_in.outputs[CURVATURE_INPUT], -1000, 0)
+    concave = _math(ng, 'SUBTRACT', 0.5, c, x=-800, y=0, label="Concave part")
+    crevice = _math(ng, 'MULTIPLY', concave.outputs[0], n_in.outputs["Curvature Amount"],
+                    x=-600, y=0)
+    crevice2 = _math(ng, 'MULTIPLY', crevice.outputs[0], 2.0, x=-400, y=0)
+    base = _math(ng, 'ADD', dark.outputs[0], crevice2.outputs[0], x=-200, y=150)
+    noise = _noise_term(ng, n_in, -1000, -300)
+    dirty = _math(ng, 'ADD', base.outputs[0], noise, x=0, y=100)
+    # The bar runs from just above the darkest dirt (Amount 0: nothing) to just below zero
+    # (Amount 1: everything), each end clear of the ramp: lerp(1 + S/2, -S/2, Amount).
+    half = _math(ng, 'MULTIPLY', n_in.outputs["Softness"], 0.5, x=-200, y=-250)
+    top = _math(ng, 'ADD', half.outputs[0], 1.0, x=0, y=-250)
+    span = _math(ng, 'ADD', n_in.outputs["Softness"], 1.0, x=-200, y=-400)
+    taken = _math(ng, 'MULTIPLY', n_in.outputs["Amount"], span.outputs[0], x=0, y=-400)
+    bar = _math(ng, 'SUBTRACT', top.outputs[0], taken.outputs[0], x=200, y=-300)
+    over = _math(ng, 'SUBTRACT', dirty.outputs[0], bar.outputs[0], x=400, y=100)
+    out = _soft_step(ng, over.outputs[0], n_in.outputs["Softness"], 600, 100)
+    ng.links.new(out.outputs[0], n_out.inputs["Fac"])
 
 
 # The input every direction or axis uses: Euler angles in degrees, one turn at most.
@@ -259,6 +347,33 @@ GENERATORS = {g.id: g for g in (
          ("Use Baked Position", 'NodeSocketBool', False, {}),
          (BAKED_POSITION_INPUT, 'NodeSocketVector', (0.5, 0.5, 0.5), {"hide_value": True})),
         _build_gradient, _migrate_vector("Axis")),
+    Gen('EDGE_WEAR', "Edge Wear",
+        "Worn paint on convex edges, from the Curvature map, with noise to break the edge up",
+        1,
+        (("Threshold", _F, 0.05, {"min_value": 0.0, "max_value": 0.5}),
+         ("Softness", _F, 0.05, {"min_value": 0.0, "max_value": 0.5}),
+         ("Noise Scale", _F, 6.0, {"min_value": 0.0}),
+         ("Noise Strength", _F, 0.05, {"min_value": 0.0, "max_value": 0.5}),
+         _CURVATURE_IN),
+        _build_edge_wear, None, ("CURVATURE",)),
+    Gen('CAVITY', "Cavity",
+        "Dark crevices, from the concave part of the Curvature map and optionally the AO map",
+        1,
+        (("Threshold", _F, 0.04, {"min_value": 0.0, "max_value": 0.5}),
+         ("Softness", _F, 0.05, {"min_value": 0.0, "max_value": 0.5}),
+         ("AO Amount", _F, 0.0, {"min_value": 0.0, "max_value": 1.0}),
+         _CURVATURE_IN, _AO_IN),
+        _build_cavity, None, ("CURVATURE", "AO")),
+    Gen('DIRT', "Dirt",
+        "Dirt that collects where the AO map is dark and in crevices, broken up by noise",
+        1,
+        (("Amount", _F, 0.4, {"min_value": 0.0, "max_value": 1.0}),
+         ("Softness", _F, 0.3, {"min_value": 0.0, "max_value": 1.0}),
+         ("Curvature Amount", _F, 0.5, {"min_value": 0.0, "max_value": 2.0}),
+         ("Noise Scale", _F, 4.0, {"min_value": 0.0}),
+         ("Noise Strength", _F, 0.3, {"min_value": 0.0, "max_value": 1.0}),
+         _CURVATURE_IN, _AO_IN),
+        _build_dirt, None, ("AO", "CURVATURE")),
 )}
 ITEMS = [(g.id, g.label, g.description) for g in GENERATORS.values()]
 

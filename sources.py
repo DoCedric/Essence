@@ -156,9 +156,12 @@ def _set_gen_group(node, gen_id):
 
 DETAIL_FALLBACK = "Essence Geometry Normal"
 POSITION_FALLBACK = "Essence Generated Coordinates"
+CURVATURE_FALLBACK = "Essence Flat Curvature"      # no curvature map: flat grey, no edges
+AO_FALLBACK = "Essence Open Occlusion"             # no AO map: white, nothing occluded
 
 
-def _feed(tree, input_name, source, fallback_name, fallback_idname, fallback_output):
+def _feed(tree, input_name, source, fallback_name, fallback_idname, fallback_output,
+          fallback_color=None):
     """Link `source` (a socket, or None) into the `input_name` input of every generator group
     node, always linked so the generator's own switch decides whether it is used. With no
     source a stand-in node (`fallback_name`) gives the live value, so the input is never left
@@ -177,6 +180,8 @@ def _feed(tree, input_name, source, fallback_name, fallback_idname, fallback_out
         if fallback is None:
             fallback = tree.nodes.new(fallback_idname)
             fallback.name = fallback.label = fallback_name
+            if fallback_color is not None:
+                fallback.outputs[fallback_output].default_value = fallback_color
             x, y = users[0].node.location
             fallback.location = (x - 300, y - 200)
         out = fallback.outputs[fallback_output]
@@ -201,6 +206,13 @@ def wire_baked_inputs(tree):
              and slot.image is not None else None)
     _feed(tree, generators.BAKED_POSITION_INPUT, baked,
           POSITION_FALLBACK, 'ShaderNodeTexCoord', 'Generated')
+    for input_name, map_id, name, color in (
+            (generators.CURVATURE_INPUT, 'CURVATURE', CURVATURE_FALLBACK, (0.5, 0.5, 0.5, 1.0)),
+            (generators.AO_INPUT, 'AO', AO_FALLBACK, (1.0, 1.0, 1.0, 1.0))):
+        slot = tree.nodes.get(nodes.map_slot_name(map_id))
+        src = (slot.outputs['Color'] if slot is not None and slot.bl_idname == 'ShaderNodeTexImage'
+               and slot.image is not None else None)
+        _feed(tree, input_name, src, name, 'ShaderNodeRGB', 'Color', color)
 
 
 def tag(uid, ch_id):
