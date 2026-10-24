@@ -112,6 +112,11 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 
 - [ ] **Milestone checklist** [G]: generator picker usability, how a Directional Light looks on a real mesh (object versus world space, with and without detail normal), the new bake maps.
 
+## Bundled masks (`sprint-5-generators` branch, interim)
+- [x] 31 ambientCG masks in `assets/masks` load into the file once (checked by an `essence_bundled` key), Non-Color, fake user, at addon enable, after file loads and at Blender start. [H] `tests/test_bundled.py`, and a real start of Blender with the addon checked by hand.
+- [ ] [G] Check in the GUI: start Blender with the addon, the masks are in the mask picker grid and in the image pickers; the file's save prompt and size are acceptable.
+- [ ] Open: a preference to turn the loading off, and whether to pack the images instead of referencing them (see the note at the top of `bundled.py`).
+
 ## Later sprints (outline, to be detailed)
 - **Sprint 6, asset library and mesh-map leftovers:** Essence asset library (catalogs), noise/gradient/grunge assets, generators and smart masks as assets, height from mesh, baking groups, multi-object bake.
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.

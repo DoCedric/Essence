@@ -48,6 +48,7 @@ def fresh_scene():
     """Empty file with the addon registered. Returns the addon module."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
     addon = load_addon()
+    addon.bundled.AUTOLOAD = False   # tests that want the bundled masks load them themselves
     addon.register()
     # Tests must not write into the log a real session leaves behind after a hang.
     addon.filters.LOG_PATH = os.path.join(tempfile.gettempdir(), "essence_filter_tests.log")
