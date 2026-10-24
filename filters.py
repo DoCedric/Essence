@@ -159,7 +159,9 @@ class _BakeState:
         c = self.context
         self.mode = self.obj.mode
         if self.mode != 'OBJECT':
+            log(f"bake state: leaving {self.mode} for Object Mode")
             bpy.ops.object.mode_set(mode='OBJECT')
+            log("bake state: now in Object Mode")
         self.selection = list(c.selected_objects)
         self.active = c.view_layer.objects.active
         self.engine = c.scene.render.engine
@@ -167,10 +169,13 @@ class _BakeState:
         self.device = c.scene.cycles.device
         self.bake = c.scene.render.bake
         self.saved = {a: getattr(self.bake, a) for a in _BAKE_ATTRS}
+        log("bake state: selecting the object")
         bpy.ops.object.select_all(action='DESELECT')
         self.obj.select_set(True)
         c.view_layer.objects.active = self.obj
+        log(f"bake state: switching the scene engine from {self.engine} to Cycles")
         c.scene.render.engine = 'CYCLES'
+        log("bake state: engine switched")
         c.scene.cycles.samples = 1
         # CPU: one sample of an emission bake is quick, and it keeps the GPU (and whatever the
         # viewport is doing with it) out of this.
@@ -182,6 +187,7 @@ class _BakeState:
 
     def __exit__(self, *exc):
         c = self.context
+        log(f"bake state: restoring the scene engine to {self.engine}")
         c.scene.render.engine = self.engine
         c.scene.cycles.samples = self.samples
         c.scene.cycles.device = self.device
@@ -196,7 +202,9 @@ class _BakeState:
         if self.active is not None:
             c.view_layer.objects.active = self.active
         if self.mode != 'OBJECT':
+            log(f"bake state: returning to {self.mode}")
             bpy.ops.object.mode_set(mode=self.mode)
+            log(f"bake state: back in {self.mode}")
         return False
 
 
