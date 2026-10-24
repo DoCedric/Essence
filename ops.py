@@ -24,9 +24,12 @@ def _active(mat):
 
 
 def _active_mask(context):
+    """The active entry when it has an image to paint: a mask, or a paint item."""
     mat = _material(context)
     e = _active(mat) if mat is not None else None
-    return e if e is not None and e.kind == 'MASK' else None
+    if e is None:
+        return None
+    return e if e.kind == 'MASK' or (e.kind == 'FILL' and e.fill_paint) else None
 
 
 def _owner(mat, e):
@@ -226,11 +229,8 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
         img = None
         if self.source == 'PAINT':
             v = 0.0 if self.fill == 'BLACK' else 1.0
-            img = bpy.data.images.new(f"{mat.name}_{owner.name}_{name}", self.size,
-                                      self.size, alpha=False, float_buffer=True)
-            img.generated_color = (v, v, v, 1.0)
-            img.colorspace_settings.name = 'Non-Color'
-            img.pack()
+            img = nodes.new_paint_image(f"{mat.name}_{owner.name}_{name}", self.size,
+                                        (v, v, v, 1.0))
         node, img_node = nodes.add_mask_node(mat, name, img)
         owner_uid = owner.uid
         e = s.layers.add()
@@ -324,6 +324,56 @@ class ESSENCE_OT_add_adjustment(_Base, bpy.types.Operator):
             sources.SUSPEND = False
         tree = stack.Tree(s.layers)
         tree.apply()
+        _reapply(mat, owner_uid)
+        s.active_index = tree.index(uid)
+        return {'FINISHED'}
+
+
+class ESSENCE_OT_add_paint(_Base, bpy.types.Operator):
+    bl_idname = "essence.add_paint"
+    bl_label = "Add Paint"
+    bl_description = ("Add a paint item on top of the active mask's items: a transparent image "
+                      "you paint, blended onto the mask value built so far. Paint white to "
+                      "reveal and black to hide; unpainted areas change nothing")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    size: IntProperty(name="Size", default=1024, min=64, max=8192)
+
+    @classmethod
+    def poll(cls, context):
+        mat = _material(context)
+        owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
+        return owner is not None and owner.kind == 'MASK'
+
+    def execute(self, context):
+        mat = _material(context)
+        s = mat.essence
+        owner = _adjustment_owner(mat, _active(mat))
+        owner_uid = owner.uid
+        n = sum(1 for x in s.layers if x.kind == 'FILL' and x.fill_paint and x.parent == owner_uid)
+        # Float, with an alpha channel that starts at 0: nothing painted yet.
+        img = nodes.new_paint_image(f"{mat.name}_Paint", self.size, (1.0, 1.0, 1.0, 0.0),
+                                    alpha=True)
+        e = s.layers.add()
+        e.kind = 'FILL'
+        e.uid = uid = stack.new_uid()
+        e.parent = owner_uid
+        e.name = "Paint" if n == 0 else f"Paint {n + 1}"
+        sources.SUSPEND = True
+        try:
+            e.adj_enabled = True
+            e.fill_blend = 'NORMAL'
+            e.fill_paint = True
+            e.source.channel = 'MASK'
+            e.source.uid = uid
+            e.source.kind = 'IMAGE'
+            e.source.image_memory = img     # the image node made for the source takes it
+        finally:
+            sources.SUSPEND = False
+        tree = stack.Tree(s.layers)
+        tree.apply()
+        _reapply(mat, owner_uid)
+        # A fill gets its own node on the first pass and its image node on the second.
         _reapply(mat, owner_uid)
         s.active_index = tree.index(uid)
         return {'FINISHED'}
@@ -548,6 +598,7 @@ class ESSENCE_MT_add_adjustment(bpy.types.Menu):
         owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
         if owner is not None:
             if owner.kind == 'MASK':
+                self.layout.operator("essence.add_paint", text="Paint", icon='BRUSH_DATA')
                 self.layout.operator("essence.add_fill", text="Fill", icon='IMAGE_DATA')
                 self.layout.separator()
             self.layout.label(text="Baked filters (press Apply)")
@@ -623,8 +674,8 @@ class ESSENCE_OT_map_non_color(_Base, bpy.types.Operator):
 
 class ESSENCE_OT_paint_mask(_Base, bpy.types.Operator):
     bl_idname = "essence.paint_mask"
-    bl_label = "Paint Mask"
-    bl_description = "Enter Texture Paint mode targeting the active mask"
+    bl_label = "Paint"
+    bl_description = "Enter Texture Paint mode targeting the active mask or paint item"
 
     @classmethod
     def poll(cls, context):
@@ -711,7 +762,8 @@ classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
-    ESSENCE_OT_light_gizmo, ESSENCE_OT_derive_curvature, ESSENCE_OT_filter_apply,
+    ESSENCE_OT_add_paint, ESSENCE_OT_light_gizmo, ESSENCE_OT_derive_curvature,
+    ESSENCE_OT_filter_apply,
     ESSENCE_OT_filter_apply_all,
     ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,

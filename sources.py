@@ -375,6 +375,7 @@ def _chain_fill(tree, a, out):
     Opacity mix. The fill's own source nodes are wired by `apply` on the fill."""
     have = source_nodes(tree, a.uid, adjustments.ADJ_KEY)
     main, mix = have.get('MAIN'), have.get('MIX')
+    alpha = have.get('ALPHA')
     if main is None:
         main = adjustments.new_fill_main(tree)
         main[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
@@ -395,11 +396,37 @@ def _chain_fill(tree, a, out):
     for sock in (a_in, b_in, main.inputs[0]):
         _clear_links(tree, sock)
     main.inputs[0].default_value = 0.0
+    # A paint item: how much of the blend shows is the painted image's alpha, so unpainted
+    # texels change nothing. lerp(below, lerp(below, blend, alpha), Opacity) is
+    # below + (blend - below) * alpha * Opacity.
+    tex = source_nodes(tree, a.uid, 'MASK').get('TEXTURE') if a.fill_paint else None
+    if tex is not None and tex.bl_idname == 'ShaderNodeTexImage':
+        if alpha is None:
+            alpha = adjustments.new_mix(tree)
+            alpha[SRC_KEY] = tag(a.uid, adjustments.ADJ_KEY)
+            alpha[ROLE_KEY] = 'ALPHA'
+            alpha.width = 240
+        alpha.label = f"{a.name} Paint Alpha"
+        alpha_a = adjustments.mix_socket(alpha, "A_Color")
+        alpha_b = adjustments.mix_socket(alpha, "B_Color")
+        alpha_f = adjustments.mix_socket(alpha, "Factor_Float")
+        for sock in (alpha_a, alpha_b, alpha_f):
+            _clear_links(tree, sock)
+    else:
+        if alpha is not None:
+            tree.nodes.remove(alpha)
+        alpha = None
     if out is not None and a.adj_enabled:
         if not normal:
             tree.links.new(out, main.inputs[0])
         tree.links.new(out, a_in)
-        tree.links.new(main.outputs[0], b_in)
+        if alpha is not None:
+            tree.links.new(out, alpha_a)
+            tree.links.new(main.outputs[0], alpha_b)
+            tree.links.new(tex.outputs['Alpha'], alpha_f)
+            tree.links.new(adjustments.mix_output(alpha), b_in)
+        else:
+            tree.links.new(main.outputs[0], b_in)
         out = adjustments.mix_output(mix)
     return out
 
@@ -623,7 +650,7 @@ def apply(mat, entry, ch_id):
 
 _ROLE_ORDER = ('CONST', 'COORD', 'MAPPING', 'TEXTURE', 'REMAP', 'RAMP')
 _STEP = {'CONST': 200, 'COORD': 230, 'MAPPING': 330, 'TEXTURE': 330, 'REMAP': 290,
-         'RAMP': 320, 'MAIN': 330, 'MIX': 250, 'IN': 60, 'OUT': 330}
+         'RAMP': 320, 'MAIN': 330, 'ALPHA': 250, 'MIX': 250, 'IN': 60, 'OUT': 330}
 
 
 def _place_adjustments(tree, adjs, index, x, y, step):
@@ -632,7 +659,7 @@ def _place_adjustments(tree, adjs, index, x, y, step):
     for a in adjs:
         nodes = (index.get(tag(a.uid, adjustments.ADJ_KEY), {}) if index is not None
                  else source_nodes(tree, a.uid, adjustments.ADJ_KEY))
-        for role in ('MAIN', 'MIX', 'IN', 'OUT'):
+        for role in ('MAIN', 'ALPHA', 'MIX', 'IN', 'OUT'):
             n = nodes.get(role)
             if n is not None:
                 place(n, x, y)

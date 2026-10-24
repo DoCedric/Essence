@@ -62,6 +62,10 @@ def _source_update(self, context):
     entry = next((e for e in mat.essence.layers if e.uid == self.uid), None)
     if entry is not None:
         sources.apply(mat, entry, self.channel)
+        if entry.kind == 'FILL':        # the chain of its mask follows what the source became
+            owner = next((e for e in mat.essence.layers if e.uid == entry.parent), None)
+            if owner is not None:
+                sources.apply_owner(mat, owner)
         if self.channel == 'MASK':
             nodes.rebuild_stack(mat)  # re-places the mask's source nodes
             _refresh_paint_slots(context, mat, entry)
@@ -173,6 +177,9 @@ class EssenceLayer(bpy.types.PropertyGroup):
                                     description="Size of the image the filter is baked at")
     fill_blend: EnumProperty(name="Blend", items=adjustments.FILL_BLENDS, update=_adj_update,
                              description="How this fill combines with the mask value below it")
+    # A paint item is a fill whose image you paint: its alpha is how much of it shows.
+    fill_paint: BoolProperty(name="Paint", default=False, update=_adj_update,
+                             description="Paint onto the mask at this point of its stack")
 
 
 def _active_update(self, context):

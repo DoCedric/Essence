@@ -24,7 +24,9 @@ def _mask(mat, value, invert=False):
     bpy.ops.essence.add_mask(source='PAINT', fill='WHITE')
     e = mat.essence.layers[mat.essence.active_index]
     img = mat.node_tree.nodes[e.mask_node_name].image
-    img.generated_color = (value, value, value, 1.0)
+    # the image is real pixels (packed), so a color is written, not generated
+    img.pixels.foreach_set([value, value, value, 1.0] * (img.size[0] * img.size[1]))
+    img.update()
     node = mat.node_tree.nodes[e.node_name]
     if invert:
         bpy.ops.essence.add_adjustment(adj_type='INVERT')

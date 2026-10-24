@@ -5,6 +5,7 @@ import json
 import bpy
 
 from . import blends, sources, stack
+from .persist import PAINT_KEY
 from .channels import BY_ID, CHANNELS, MASK_SOCKET, active_channels
 
 
@@ -224,6 +225,22 @@ def ensure_channel_states(mat):
 # sources.wire_baked_inputs); more maps come with the mesh-map sprint.
 MAP_SLOTS = (('NORMAL', "Normal"), ('AO', "Ambient Occlusion"), ('POSITION', "Position"),
              ('CURVATURE', "Curvature"), ('ID', "ID"))
+
+
+def new_paint_image(name, size, rgba, alpha=False):
+    """A float image to paint on, filled with `rgba` and really packed. Image.pack() does
+    nothing on a generated image that has no pixels of its own, so the pixels are written first:
+    otherwise the image would be a generated blank again after a save and a reload, and what
+    was painted on it would be gone."""
+    import array
+    img = bpy.data.images.new(name, size, size, alpha=alpha, float_buffer=True)
+    img.colorspace_settings.name = 'Non-Color'     # a mask value, not a color
+    img.alpha_mode = 'STRAIGHT'
+    img[PAINT_KEY] = True       # persist.py packs it again before a save if it was painted on
+    img.pixels.foreach_set(array.array('f', rgba) * (size * size))
+    img.update()
+    img.pack()
+    return img
 
 
 def map_slot_name(map_id):

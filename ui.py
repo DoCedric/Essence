@@ -166,7 +166,8 @@ def _entry_row(layout, mat, item, active, add_mask=False, foldable=False):
         if icon_id:
             row.label(text="", icon_value=icon_id)
         else:
-            row.label(text="", icon='MOD_MASK' if item.kind == 'MASK' else 'IMAGE_DATA')
+            row.label(text="", icon='MOD_MASK' if item.kind == 'MASK'
+                      else 'BRUSH_DATA' if item.fill_paint else 'IMAGE_DATA')
         if item.kind == 'MASK':
             toggle = node.inputs.get(nodes.MASK_ENABLE) if node is not None else None
     elif item.kind == 'FILTER':
@@ -370,6 +371,23 @@ def _filter(layout, mat, e, owner):
         layout.label(text="Not applied yet: passes the value through", icon='INFO')
 
 
+def _paint_item(layout, mat, e, src):
+    """A paint item: its image (the mask value you paint, with alpha) and the Paint button."""
+    layout.label(text="Paints onto the mask at this point of its stack", icon='BRUSH_DATA')
+    tex = sources.source_nodes(mat.node_tree, e.uid, 'MASK').get('TEXTURE')
+    if tex is None or tex.bl_idname != 'ShaderNodeTexImage':
+        layout.operator("essence.rebuild", text="Paint image missing, rebuild", icon='FILE_REFRESH')
+        return
+    layout.template_ID(tex, "image", open="image.open")
+    if bpy.context.active_object is not None and bpy.context.active_object.mode == 'TEXTURE_PAINT':
+        layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
+    else:
+        row = layout.row()
+        row.enabled = tex.image is not None and src.projection == 'UV'
+        row.operator("essence.paint_mask", text="Paint", icon='BRUSH_DATA')
+    layout.label(text="White reveals, black hides, unpainted does nothing", icon='INFO')
+
+
 def _fill(layout, mat, e, owner):
     """A mask's fill: a source of its own, blended onto the mask value below it."""
     tree = mat.node_tree
@@ -386,6 +404,9 @@ def _fill(layout, mat, e, owner):
                 text="Opacity", slider=True)
     src = sources.get_source(e, 'MASK')
     if src is None:
+        return
+    if e.fill_paint:
+        _paint_item(layout, mat, e, src)
         return
     layout.prop(src, "kind", text="Source")
     col = layout.column()
