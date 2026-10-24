@@ -1,7 +1,7 @@
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import adjustments, filters, nodes, sources, stack
+from . import adjustments, filters, gizmo, nodes, sources, stack
 from .channels import SOURCE_BY_ID
 
 
@@ -420,6 +420,40 @@ class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_light_gizmo(_Base, bpy.types.Operator):
+    bl_idname = "essence.light_gizmo"
+    bl_label = "Light Gizmo"
+    bl_description = ("Show a temporary arrow (an Empty) in the 3D view that sets this "
+                      "generator's rotation: rotate it with Blender's own tools. Press again to "
+                      "remove it; the rotation stays")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    uid: StringProperty()
+    channel: StringProperty()
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.type == 'MESH' and ob.active_material is not None
+
+    def execute(self, context):
+        ob = context.active_object
+        mat = ob.active_material
+        entry = next((e for e in mat.essence.layers if e.uid == self.uid), None)
+        tex = (sources.source_nodes(mat.node_tree, self.uid, self.channel).get('TEXTURE')
+               if entry is not None else None)
+        if not gizmo.supports(tex):
+            return {'CANCELLED'}
+        if gizmo.is_active(tex):
+            gizmo.remove(tex)
+            self.report({'INFO'}, "Gizmo removed, the rotation stays as it was")
+            return {'FINISHED'}
+        gizmo.add(tex, ob, entry.name)
+        self.report({'INFO'}, "Select the arrow in the 3D view and rotate it (R): it points "
+                              "where the light comes from")
+        return {'FINISHED'}
+
+
 class ESSENCE_OT_filter_apply(_Base, bpy.types.Operator):
     bl_idname = "essence.filter_apply"
     bl_label = "Apply"
@@ -652,7 +686,7 @@ classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
-    ESSENCE_OT_filter_apply, ESSENCE_OT_filter_apply_all,
+    ESSENCE_OT_light_gizmo, ESSENCE_OT_filter_apply, ESSENCE_OT_filter_apply_all,
     ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,

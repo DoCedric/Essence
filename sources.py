@@ -17,7 +17,7 @@ here is hidden: the user can edit, replace or extend these nodes in the node edi
 
 import bpy
 
-from . import adjustments, generators
+from . import adjustments, generators, gizmo
 from .channels import CHANNELS, SOURCE_BY_ID, active_channels
 
 SRC_KEY = "essence_source"
@@ -256,6 +256,7 @@ def remove_nodes(tree, uid, ch_id=None):
     for n in list(tree.nodes):
         key = str(n.get(SRC_KEY, ""))
         if key.split(":")[0] == uid and (ch_id is None or key == tag(uid, ch_id)):
+            gizmo.drop(n)
             tree.nodes.remove(n)
 
 
@@ -263,6 +264,7 @@ def cleanup(tree, live_uids):
     """Delete source nodes whose layer no longer exists."""
     for n in [n for n in tree.nodes if SRC_KEY in n
               and str(n[SRC_KEY]).split(":")[0] not in live_uids]:
+        gizmo.drop(n)
         tree.nodes.remove(n)
 
 
@@ -431,6 +433,7 @@ def _discard(tree, node, src):
     if node.bl_idname == 'ShaderNodeTexImage' and node.image is not None:
         node.image.use_fake_user = True
         src.image_memory = node.image
+    gizmo.drop(node)
     tree.nodes.remove(node)
 
 

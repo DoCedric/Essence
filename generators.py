@@ -14,14 +14,17 @@ space normal that includes the baked high-poly detail) into `Detail Normal`, and
 switch chooses between it and the plain surface normal.
 """
 
+import math
 from dataclasses import dataclass, field
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 
 import bpy
+from mathutils import Vector
 
 VERSION_KEY = "essence_version"
 DETAIL_INPUT = "Detail Normal"      # wired by Essence, not edited in the panel
 INTERNAL_INPUTS = (DETAIL_INPUT,)
+ROTATION_INPUT = "Rotation"         # an Euler input the temporary gizmo (gizmo.py) can drive
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,8 @@ class Gen:
     version: int
     inputs: Tuple                       # (name, socket type, default, options)
     build: Callable = field(compare=False, default=None)
+    # Turns the saved input values of an older version into this version's: {name: value}
+    migrate: Optional[Callable] = field(compare=False, default=None)
 
     @property
     def group_name(self):
@@ -49,9 +54,9 @@ def _interface(ng, gen):
     iface.new_socket("Fac", in_out='OUTPUT', socket_type='NodeSocketFloat')
     for name, socket_type, default, opts in gen.inputs:
         s = iface.new_socket(name, in_out='INPUT', socket_type=socket_type)
-        s.default_value = default
-        for k, v in opts.items():
+        for k, v in opts.items():       # subtype and range first: they decide what a value is
             setattr(s, k, v)
+        s.default_value = default
     n_in = ng.nodes.new('NodeGroupInput')
     n_in.location = (-1100, 0)
     n_out = ng.nodes.new('NodeGroupOutput')
@@ -134,7 +139,14 @@ _NORMAL_INPUTS = (
 def _build_directional(ng, gen):
     n_in, n_out = _interface(ng, gen)
     n = surface_normal(ng, n_in)
-    direction = _vector_math(ng, 'NORMALIZE', n_in.outputs["Direction"], x=-200, y=-100)
+    # The light points where the rotation turns the +Z axis: no rotation is straight up.
+    rotate = ng.nodes.new('ShaderNodeVectorRotate')
+    rotate.rotation_type = 'EULER_XYZ'
+    rotate.inputs['Vector'].default_value = (0.0, 0.0, 1.0)
+    rotate.label = "Light direction"
+    rotate.location = (-400, -250)
+    ng.links.new(n_in.outputs[ROTATION_INPUT], rotate.inputs['Rotation'])
+    direction = _vector_math(ng, 'NORMALIZE', rotate.outputs['Vector'], x=-200, y=-100)
     dot = _vector_math(ng, 'DOT_PRODUCT', n, direction.outputs['Vector'], x=0, y=0)
     scaled = _math(ng, 'MULTIPLY', dot.outputs['Value'], n_in.outputs["Contrast"], x=200, y=0)
     # d in -1..1 -> 0..1 around 0.5, shifted by Balance
@@ -196,14 +208,26 @@ def _build_gradient(ng, gen):
 _V = 'NodeSocketVector'
 _F = 'NodeSocketFloat'
 
+
+def _migrate_directional(values):
+    """Version 1 had a Direction vector; version 2 has a Rotation (Euler angles) that turns +Z
+    into that direction."""
+    d = values.pop("Direction", None)
+    if d is not None and "Rotation" not in values and Vector(d).length > 1e-6:
+        e = Vector((0.0, 0.0, 1.0)).rotation_difference(Vector(d)).to_euler('XYZ')
+        values["Rotation"] = tuple(a % (2 * math.pi) for a in e)
+    return values
+
 GENERATORS = {g.id: g for g in (
     Gen('DIRECTIONAL_LIGHT', "Directional Light",
         "How much each surface faces a light direction, like a light from that side",
-        1,
-        (("Direction", _V, (0.0, 0.0, 1.0), {}),) + _NORMAL_INPUTS + (
+        2,
+        (("Rotation", _V, (0.0, 0.0, 0.0),
+          {"subtype": 'EULER', "min_value": 0.0, "max_value": 2 * math.pi}),
+         ) + _NORMAL_INPUTS + (
             ("Contrast", _F, 1.0, {"min_value": 0.0, "max_value": 10.0}),
             ("Balance", _F, 0.0, {"min_value": -1.0, "max_value": 1.0})),
-        _build_directional),
+        _build_directional, _migrate_directional),
     Gen('SLOPE', "Slope",
         "Surfaces that face an axis within an angle (up for snow, down for drips)",
         1,
@@ -275,5 +299,7 @@ def ensure_group(gen_id):
     gen.build(ng, gen)
     ng[VERSION_KEY] = gen.version
     for tree, n, saved in users:
+        if gen.migrate is not None:
+            saved = (gen.migrate(dict(saved[0])), saved[1], saved[2])
         _restore(tree, n, saved)
     return ng

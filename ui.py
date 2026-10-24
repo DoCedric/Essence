@@ -1,7 +1,7 @@
 import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
-from . import adjustments, filters, generators, nodes, sources
+from . import adjustments, filters, generators, gizmo, nodes, sources
 from .bake import HIGH_MAPS
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
@@ -499,8 +499,21 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
                          text=f"Set {ch.colorspace}").channel = ch.id
     elif generator:
         col.prop(src, "gen_type", text="Generator")
+        arrow = gizmo.is_active(tex)
         for s in tex.inputs:
-            if s.name not in generators.INTERNAL_INPUTS and not s.is_linked:
+            if s.name in generators.INTERNAL_INPUTS or s.is_linked:
+                continue
+            if s.name == generators.ROTATION_INPUT:
+                col.prop(s, "default_value", text="Rotation", slider=True)
+                op = col.operator("essence.light_gizmo",
+                                  text="Remove Gizmo" if arrow else "Show Gizmo",
+                                  icon='EMPTY_ARROWS', depress=arrow)
+                op.uid, op.channel = e.uid, ch.id
+            elif s.name == "World Space" and arrow:
+                sub = col.row()
+                sub.enabled = False     # the arrow is parented for one space: remove it to switch
+                sub.prop(s, "default_value", text=s.name)
+            else:
                 col.prop(s, "default_value", text=s.name)
     else:
         col.prop(src, "proc_type", text="Type")

@@ -102,6 +102,7 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **Slope / Up mask**: how much a surface faces a chosen axis, with a threshold and softness. [H]
 - [x] **Height Gradient and Position Gradient** (one generator, "Gradient": Z is a height gradient, X and Y a position gradient), live from Generated coordinates: axis, range, remap. Replaces the baked World Gradient for masks (the bake stays for export-style uses). [H]
 - [x] Panel: generator picker and controls in the Source rows of layers, masks and fills. [H] draws; [G] look and usability pending
+- [x] Directional Light aimed by a Rotation in degrees (0 to 360 per axis, Direction migrates) and a temporary light gizmo: an Empty arrow that drives it through drivers, parented in object space, removed with the source. [H] `tests/test_generators.py`; [G] pending: the arrow in the 3D view, rotating it with R and the gizmo, the Rotation fields and the Show/Remove Gizmo button.
 
 **Part 2, more baked maps (Mesh Maps slots)**
 - [ ] **Curvature** (convex and concave). Open: method, either the baked normal run through the compositor, or Pointiness/Bevel through an emission override (Cycles-only, noisier). Decide with a quick test of both on a real mesh. [H]
