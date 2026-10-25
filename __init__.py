@@ -12,7 +12,8 @@ import importlib
 
 # Dependency order: each module may import the ones before it.
 _names = ("channels", "adjustments", "generators", "gizmo", "stack", "sources", "nodes", "bake",
-          "filters", "curvature", "props", "ops", "export", "bundled", "persist", "ui")
+          "filters", "curvature", "props", "ops", "export", "bundled", "persist", "preview",
+          "ui")
 
 # Blender's "Reload Scripts" only re-imports this file, not the submodules, so reload
 # them here (this file is re-executed on reload, while `_loaded` still exists).
@@ -23,12 +24,12 @@ if "_loaded" in locals():
             importlib.reload(_loaded[_n])
 
 from . import (channels, adjustments, generators, gizmo, stack, sources, nodes,  # noqa: E402
-               bake, filters, curvature, props, ops, export, bundled, persist, ui)
+               bake, filters, curvature, props, ops, export, bundled, persist, preview, ui)
 
 _loaded = {"channels": channels, "adjustments": adjustments, "generators": generators,
            "gizmo": gizmo, "stack": stack,
            "sources": sources, "nodes": nodes, "bake": bake, "filters": filters,
-           "curvature": curvature, "persist": persist,
+           "curvature": curvature, "persist": persist, "preview": preview,
            "props": props, "ops": ops, "export": export, "bundled": bundled, "ui": ui}
 
 # Registration order. channels, adjustments, stack, sources and nodes only define data and

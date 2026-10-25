@@ -1,7 +1,7 @@
 import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
-from . import adjustments, curvature, filters, generators, gizmo, nodes, sources
+from . import adjustments, curvature, filters, generators, gizmo, nodes, preview, sources
 from .bake import HIGH_MAPS, resolve_device
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
@@ -85,6 +85,7 @@ class ESSENCE_UL_layers(bpy.types.UIList):
             if enable is not None:
                 row.prop(enable, "default_value", text="", emboss=False,
                          icon='HIDE_OFF' if enable.default_value else 'HIDE_ON')
+            _preview_button(row, item.id_data, 'MASK', item.uid)
             return
 
         vis = node.inputs.get(nodes.VISIBLE) if node is not None else None
@@ -109,6 +110,7 @@ class ESSENCE_UL_layers(bpy.types.UIList):
             row.label(text="", icon='NODETREE')
         row.prop(item, "name", text="", emboss=False)
         eye()
+        _preview_button(row, item.id_data, 'LAYER', item.uid)
 
 
 def _thumb(tree, item):
@@ -133,6 +135,34 @@ def _filter_icon(mat, item):
     if filters.is_baked(item) and not filters.is_stale(mat, item):
         return 'STRIP_COLOR_04'
     return 'STRIP_COLOR_01'
+
+
+def _preview_button(row, mat, kind, ident):
+    """The toggle next to the eye that shows this layer's color or this mask on its own."""
+    on = preview.active(mat) == (kind, ident)
+    op = row.operator("essence.preview", text="", icon='SHADING_TEXTURE', depress=on)
+    op.kind, op.ident = kind, ident
+
+
+def _preview_notice(layout, mat, context):
+    """While a preview runs: what it shows, a way out, and a hint when the viewport is in Solid
+    (which ignores the node graph)."""
+    state = preview.active(mat)
+    if state is None:
+        return
+    kind, ident = state
+    if kind == 'CHANNEL':
+        name = f"{BY_ID[ident].label} of the stack" if ident in BY_ID else ident
+    else:
+        e = next((x for x in mat.essence.layers if x.uid == ident), None)
+        name = e.name if e is not None else "?"
+    box = layout.box()
+    row = box.row(align=True)
+    row.label(text=f"Previewing: {name}", icon='SHADING_TEXTURE')
+    row.operator("essence.preview_stop", text="", icon='X')
+    shading = getattr(getattr(context, "space_data", None), "shading", None)
+    if shading is not None and shading.type == 'SOLID':
+        box.label(text="Solid ignores the nodes: use Material Preview or Rendered", icon='ERROR')
 
 
 def _entry_row(layout, mat, item, active, add_mask=False, foldable=False):
@@ -177,6 +207,8 @@ def _entry_row(layout, mat, item, active, add_mask=False, foldable=False):
     elif toggle is not None:
         row.prop(toggle, "default_value", text="", emboss=False,
                  icon='HIDE_OFF' if toggle.default_value else 'HIDE_ON')
+    if item.kind in ('LAYER', 'MASK'):
+        _preview_button(row, mat, item.kind, item.uid)
     if add_mask:  # a layer or folder without a mask: a button for a white or black one
         row.operator("essence.add_mask_menu", text="", icon='MOD_MASK').uid = item.uid
 
@@ -275,6 +307,7 @@ def _stack(self, context):
         col.operator("essence.add_folder", icon='NEWFOLDER')
         return
     s = mat.essence
+    _preview_notice(layout, mat, context)
     if s.use_tree:
         bar = layout.row(align=True)
         bar.operator("essence.add_layer", icon='ADD', text="")
@@ -620,6 +653,14 @@ def _material(self, context):
     if mat is None or mat.node_tree is None:
         return
     tree = mat.node_tree
+    if mat.essence.layers:
+        box = layout.box()
+        box.label(text="Preview the whole stack")
+        grid = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+        for c in active_channels(mat):
+            op = grid.operator("essence.preview", text=c.label,
+                               depress=preview.active(mat) == ('CHANNEL', c.id))
+            op.kind, op.ident = 'CHANNEL', c.id
     if mat.essence.channels:
         box = layout.box()
         box.label(text="Channels")

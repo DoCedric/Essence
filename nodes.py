@@ -666,7 +666,14 @@ def _clear_links(tree, sock):
 
 
 def rebuild_stack(mat):
-    """Wire the layer nodes of `mat` into a chain and into the shader."""
+    """Wire the layer nodes of `mat` into a chain and into the shader. A running preview is
+    pointed at the new nodes afterwards (or ended, if what it showed is gone)."""
+    _rebuild_stack(mat)
+    from . import preview
+    preview.refresh(mat)
+
+
+def _rebuild_stack(mat):
     _end_links()  # in case an earlier rebuild stopped on an error
     tree = mat.node_tree
     layers = mat.essence.layers

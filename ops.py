@@ -1,7 +1,8 @@
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import adjustments, curvature, filters, generators, gizmo, nodes, sources, stack
+from . import (adjustments, curvature, filters, generators, gizmo, nodes, preview, sources,
+               stack)
 from .channels import SOURCE_BY_ID
 
 
@@ -471,6 +472,47 @@ class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_preview(_Base, bpy.types.Operator):
+    bl_idname = "essence.preview"
+    bl_label = "Preview"
+    bl_description = ("Show this on its own in the viewport, flat and unshaded (needs Material "
+                      "Preview or Rendered shading). A mask shows as grey, a layer as its own "
+                      "color, a channel as the result of the whole stack. Press again to end")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    kind: StringProperty()      # 'LAYER', 'MASK' or 'CHANNEL'
+    ident: StringProperty()     # the entry's uid, or the channel's id
+
+    @classmethod
+    def poll(cls, context):
+        mat = _material(context)
+        return mat is not None and mat.node_tree is not None
+
+    def execute(self, context):
+        mat = _material(context)
+        ending = preview.active(mat) == (self.kind, self.ident)
+        if not preview.toggle(mat, self.kind, self.ident) and not ending:
+            self.report({'WARNING'}, "Nothing to preview here: the channel or the layer's "
+                                     "Color channel is switched off, or nothing feeds it")
+        return {'FINISHED'}
+
+
+class ESSENCE_OT_preview_stop(_Base, bpy.types.Operator):
+    bl_idname = "essence.preview_stop"
+    bl_label = "Stop Preview"
+    bl_description = "End the preview and show the material again"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        mat = _material(context)
+        return mat is not None and preview.find(mat) is not None
+
+    def execute(self, context):
+        preview.stop(_material(context))
+        return {'FINISHED'}
+
+
 class ESSENCE_OT_pick_id(_Base, bpy.types.Operator):
     bl_idname = "essence.pick_id"
     bl_label = "Pick from Selected Face"
@@ -837,7 +879,8 @@ classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
-    ESSENCE_OT_add_paint, ESSENCE_OT_pick_id, ESSENCE_OT_show_map, ESSENCE_OT_light_gizmo,
+    ESSENCE_OT_add_paint, ESSENCE_OT_preview, ESSENCE_OT_preview_stop, ESSENCE_OT_pick_id,
+    ESSENCE_OT_show_map, ESSENCE_OT_light_gizmo,
     ESSENCE_OT_derive_curvature,
     ESSENCE_OT_filter_apply,
     ESSENCE_OT_filter_apply_all,
