@@ -165,7 +165,7 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **Baking groups**: High Poly, Floaters and Cage per low-poly object (the material's High Poly as the default), Pair by Name, the panel lists each object's group. Floaters in every map but AO and Thickness. [H] `tests/test_baking_groups.py`
 - [x] **One merged high poly per group** (modifiers at render settings, curves included, ID hues kept as an attribute): identical to Blender's separate bake, 10 to 25 times faster. On the user's file a set's AO went from 198 s to 6.8 s. [H]
 - [x] **Only the bake's geometry renders** (other low polys and props switched off for rendering and put back). [H]
-- [ ] **AO across groups** [ask]: every group's high poly occludes (built) turned 34.5% of the user's islands black, own group only 4.5%. Decide: own group only, or a switch.
+- [x] **AO across groups** [ask]: every group's high poly occludes. On the user's file that turns 34.5% of the islands black against 4.5% with each group alone; the user chose to keep every part occluding.
 - [ ] **Milestone checklist** [G]: see Pending GUI checks.
 - [ ] Essence asset library (catalogs), noise/gradient/grunge assets (the bundled masks move there), generators and smart masks as assets.
 - [ ] Height from mesh.
