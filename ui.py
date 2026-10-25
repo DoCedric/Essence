@@ -2,7 +2,7 @@ import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
 from . import adjustments, curvature, filters, generators, gizmo, nodes, preview, sources
-from .bake import HIGH_MAPS, resolve_device, texture_set
+from .bake import HIGH_MAPS, bake_group, resolve_device, texture_set
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
 
@@ -808,12 +808,23 @@ def _bake(self, context):
         box.label(text=f"Texture set: {mat.name}", icon='MATERIAL')
         box.prop(es, "bake_size", text="Size")
         if scene.essence_bake_map in HIGH_MAPS and not uv_islands:
+            # The material's High Poly is the default for objects without a group of their own.
             box.prop(es, "bake_high", text="High Poly")
-            if es.bake_high is not None:
-                if ob in objects:
-                    box.prop(ob, "essence_bake_cage", text=f"Cage of {ob.name}")
-                # Used by every object of the set that has no cage
-                box.prop(es, "bake_extrusion", text="Extrusion")
+            box.prop(es, "bake_extrusion", text="Extrusion")
+            if ob in objects:
+                sub = box.box()
+                sub.label(text=f"Baking group of {ob.name}", icon='OBJECT_DATA')
+                sub.prop(ob, "essence_bake_high", text="High Poly")
+                sub.prop(ob, "essence_bake_floaters", text="Floaters")
+                sub.prop(ob, "essence_bake_cage", text="Cage")
+            box.operator("essence.pair_by_name", icon='LINKED')
+            if len(objects) > 1:
+                col = box.column(align=True)
+                for o in objects:
+                    high, floaters = bake_group(o, mat)
+                    group = (f"{high.name if high else 'no high poly'}"
+                             f"{' + ' + floaters.name if floaters else ''}")
+                    col.label(text=f"{o.name}: {group}")
         if len(objects) > 1:
             box.label(text=f"{len(objects)} objects bake into one image", icon='INFO')
             box.label(text="Their UVs must not overlap")
