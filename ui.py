@@ -150,7 +150,7 @@ def _palette(col, tex, e, ch, mat):
     one key away: E, with the mouse over a swatch.)"""
     count = int(tex.inputs[generators.COUNT_INPUT].default_value)
     box = col.box()
-    box.label(text="Colors of the parts to select")
+    box.label(text="Selected ID Colors (Hover - E for quick pick)")
     for i in range(1, count + 1):
         row = box.row(align=True)
         row.scale_y = 1.2
