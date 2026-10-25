@@ -176,7 +176,7 @@ def test_map_preview_buttons_and_notices_draw(addon):
     check("Show ID on Mesh" in texts, f"the toggle: {texts}")
     _run('MAP', 'ID')
     labels = [c[2].get("text", "") for c in _draw(ui._props, ob2) if c[0] == "label"]
-    check(any("eyedropper" in t for t in labels), f"the hint to use the eyedropper: {labels}")
+    check(any("press E" in t for t in labels), f"the hint to use the eyedropper: {labels}")
     bpy.ops.essence.preview_stop()
 
 

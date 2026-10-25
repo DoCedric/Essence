@@ -27,7 +27,13 @@ BAKED_POSITION_INPUT = "Baked Position"   # likewise: the Position slot, or Gene
 CURVATURE_INPUT = "Curvature"       # likewise: the Curvature slot, or flat grey (no curvature)
 AO_INPUT = "AO"                     # likewise: the AO slot, or white (no occlusion)
 ID_INPUT = "ID"                     # likewise: the ID slot, or black (no part)
-PICK_INPUT = "ID Color"             # the color of the part ID Select chooses
+COLOR_PREFIX = "ID Color "          # ID Select's palette: "ID Color 1" to "ID Color 16"
+COUNT_INPUT = "Colors"              # how many of them are in use
+MAX_ID_COLORS = 16
+
+
+def id_color_name(i):
+    return f"{COLOR_PREFIX}{i}"
 INTERNAL_INPUTS = (DETAIL_INPUT, BAKED_POSITION_INPUT, CURVATURE_INPUT, AO_INPUT, ID_INPUT)
 ROTATION_INPUT = "Rotation"         # an Euler input the temporary gizmo (gizmo.py) can drive
 
@@ -285,17 +291,37 @@ def _build_cavity(ng, gen):
 
 
 def _build_id_select(ng, gen):
+    """The union of the palette: for each of the 16 colors, how close the ID map is to it (a soft
+    step on the distance in color space), counted only while it is among the first `Colors`; the
+    mask is the largest of them."""
     n_in, n_out = _interface(ng, gen)
-    # how far the ID map's color is from the chosen one, in color space
-    dist = _vector_math(ng, 'DISTANCE', n_in.outputs[ID_INPUT], n_in.outputs[PICK_INPUT],
-                        x=-700, y=100)
-    margin = _math(ng, 'SUBTRACT', n_in.outputs["Tolerance"], dist.outputs['Value'],
-                   x=-450, y=100, label="Inside the tolerance")
-    mask = _soft_step(ng, margin.outputs[0], n_in.outputs["Softness"], -200, 100)
+    soft = _math(ng, 'MAXIMUM', n_in.outputs["Softness"], 0.001, x=-450, y=-200,
+                 label="Softness, never zero")
+    best = None
+    for i in range(1, MAX_ID_COLORS + 1):
+        y = 250 - i * 160
+        dist = _vector_math(ng, 'DISTANCE', n_in.outputs[ID_INPUT],
+                            n_in.outputs[id_color_name(i)], x=-700, y=y)
+        margin = _math(ng, 'SUBTRACT', n_in.outputs["Tolerance"], dist.outputs['Value'],
+                       x=-500, y=y, label=f"Inside the tolerance of color {i}")
+        ratio = _math(ng, 'DIVIDE', margin.outputs[0], soft.outputs[0], x=-300, y=y)
+        step = _math(ng, 'ADD', ratio.outputs[0], 0.5, x=-150, y=y, clamp=True)
+        used = _math(ng, 'GREATER_THAN', n_in.outputs[COUNT_INPUT], i - 0.5, x=-150, y=y - 70,
+                     label=f"Color {i} is in use")
+        mine = _math(ng, 'MULTIPLY', step.outputs[0], used.outputs[0], x=50, y=y)
+        best = mine if best is None else _math(ng, 'MAXIMUM', best.outputs[0], mine.outputs[0],
+                                               x=250, y=y)
     # Invert is 0 or 1: |Invert - mask| is the mask, or 1 - the mask
-    flip = _math(ng, 'SUBTRACT', n_in.outputs["Invert"], mask.outputs[0], x=250, y=100)
-    out = _math(ng, 'ABSOLUTE', flip.outputs[0], x=450, y=100, label="Invert")
+    flip = _math(ng, 'SUBTRACT', n_in.outputs["Invert"], best.outputs[0], x=500, y=100)
+    out = _math(ng, 'ABSOLUTE', flip.outputs[0], x=700, y=100, label="Invert")
     ng.links.new(out.outputs[0], n_out.inputs["Fac"])
+
+
+def _migrate_id_select(values):
+    """Version 1 had one color, "ID Color": it is the first color of the palette."""
+    if "ID Color" in values and id_color_name(1) not in values:
+        values[id_color_name(1)] = values.pop("ID Color")
+    return values
 
 
 def _build_dirt(ng, gen):
@@ -392,15 +418,18 @@ GENERATORS = {g.id: g for g in (
          _CURVATURE_IN, _AO_IN),
         _build_dirt, None, ("AO", "CURVATURE")),
     Gen('ID_SELECT', "ID Select",
-        "One part of the ID map: everything whose color is within a tolerance of the chosen "
-        "one. Pick the color from a selected face, with the eyedropper, or by hand",
-        1,
-        ((PICK_INPUT, _C, (1.0, 0.0, 0.0, 1.0), {}),
-         ("Tolerance", _F, 0.05, {"min_value": 0.0, "max_value": 2.0}),
-         ("Softness", _F, 0.03, {"min_value": 0.0, "max_value": 1.0}),
-         ("Invert", 'NodeSocketBool', False, {}),
-         _ID_IN),
-        _build_id_select, None, ("ID",)),
+        "Parts of the ID map: everything whose color is within a tolerance of one of the "
+        "colors of a palette you add to and remove from. Pick the colors with the eyedropper "
+        "on the mesh",
+        2,
+        tuple((id_color_name(i), _C, (1.0, 0.0, 0.0, 1.0) if i == 1 else (0.5, 0.5, 0.5, 1.0), {})
+              for i in range(1, MAX_ID_COLORS + 1))
+        + ((COUNT_INPUT, 'NodeSocketInt', 1, {"min_value": 1, "max_value": MAX_ID_COLORS}),
+           ("Tolerance", _F, 0.01, {"min_value": 0.0, "max_value": 2.0}),
+           ("Softness", _F, 0.03, {"min_value": 0.0, "max_value": 1.0}),
+           ("Invert", 'NodeSocketBool', False, {}),
+           _ID_IN),
+        _build_id_select, _migrate_id_select, ("ID",)),
 )}
 ITEMS = [(g.id, g.label, g.description) for g in GENERATORS.values()]
 
@@ -428,6 +457,13 @@ def _snapshot(node):
 
 def _restore(tree, node, saved):
     values, ins, outs = saved
+    # An input the old version did not have starts at the interface's default (a rebuilt group
+    # gives its node's new sockets 0, which for a count of colors would select nothing).
+    for item in node.node_tree.interface.items_tree:
+        if item.in_out == 'INPUT' and item.name not in values and hasattr(item, "default_value"):
+            sock = node.inputs.get(item.name)
+            if sock is not None and not sock.is_linked and hasattr(sock, "default_value"):
+                sock.default_value = item.default_value
     for name, v in values.items():
         sock = node.inputs.get(name)
         if sock is not None:

@@ -144,6 +144,33 @@ def _preview_button(row, mat, kind, ident):
     op.kind, op.ident = kind, ident
 
 
+def _palette(col, tex, e, ch, mat):
+    """ID Select's palette: a swatch per color with a remove button, an Add button, and the
+    ways to choose a color. (Blender's own eyedropper only starts over a color field, so it is
+    one key away: E, with the mouse over a swatch.)"""
+    count = int(tex.inputs[generators.COUNT_INPUT].default_value)
+    box = col.box()
+    box.label(text="Colors of the parts to select")
+    for i in range(1, count + 1):
+        row = box.row(align=True)
+        row.scale_y = 1.2
+        row.prop(tex.inputs[generators.id_color_name(i)], "default_value", text="")
+        sub = row.row(align=True)
+        sub.enabled = count > 1
+        op = sub.operator("essence.id_color_remove", text="", icon='REMOVE')
+        op.uid, op.channel, op.index = e.uid, ch.id, i
+    row = box.row()
+    row.enabled = count < generators.MAX_ID_COLORS
+    op = row.operator("essence.id_color_add", text="Add Color", icon='ADD')
+    op.uid, op.channel = e.uid, ch.id
+    shown = _previewing(mat, 'MAP', 'ID')
+    op = col.operator("essence.preview", text="Show ID on Mesh", icon='SHADING_TEXTURE',
+                      depress=shown)
+    op.kind, op.ident = 'MAP', 'ID'
+    col.label(text="Hover a color and press E, then click the mesh", icon='EYEDROPPER')
+    col.operator("essence.show_map", icon='IMAGE_DATA').map_id = 'ID'
+
+
 def _preview_notice(layout, mat, context):
     """While a preview runs: what it shows, a way out, and a hint when the viewport is in Solid
     (which ignores the node graph)."""
@@ -568,24 +595,18 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
         for s in tex.inputs:
             if s.name in generators.INTERNAL_INPUTS or s.is_linked:
                 continue
+            if s.name == generators.COUNT_INPUT or (
+                    s.name.startswith(generators.COLOR_PREFIX)
+                    and s.name != generators.id_color_name(1)):
+                continue                  # drawn with the palette
             if s.name == generators.ROTATION_INPUT:
                 col.prop(s, "default_value", text="Rotation", slider=True)
                 op = col.operator("essence.light_gizmo",
                                   text="Remove Gizmo" if arrow else "Show Gizmo",
                                   icon='EMPTY_ARROWS', depress=arrow)
                 op.uid, op.channel = e.uid, ch.id
-            elif s.name == generators.PICK_INPUT:
-                col.prop(s, "default_value", text="ID Color")
-                op = col.operator("essence.pick_id", icon='EYEDROPPER')
-                op.uid, op.channel = e.uid, ch.id
-                shown = _previewing(mat, 'MAP', 'ID')
-                op = col.operator("essence.preview", text="Show ID on Mesh",
-                                  icon='SHADING_TEXTURE', depress=shown)
-                op.kind, op.ident = 'MAP', 'ID'
-                if shown:
-                    col.label(text="Use the eyedropper of the color above on the mesh",
-                              icon='INFO')
-                col.operator("essence.show_map", icon='IMAGE_DATA').map_id = 'ID'
+            elif s.name == generators.id_color_name(1):
+                _palette(col, tex, e, ch, mat)
             elif s.name == "World Space" and arrow:
                 sub = col.row()
                 sub.enabled = False     # the arrow is parented for one space: remove it to switch
