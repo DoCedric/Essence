@@ -287,7 +287,13 @@ class ESSENCE_OT_rename_entry(_Base, bpy.types.Operator):
         if e is None:
             return {'CANCELLED'}
         self.name = e.name
-        return context.window_manager.invoke_props_dialog(self, width=320)
+        return context.window_manager.invoke_props_dialog(self, width=320, title="Rename",
+                                                          confirm_text="Rename")
+
+    def draw(self, context):
+        row = self.layout.row()
+        row.activate_init = True    # the field is ready to type into, with the name selected
+        row.prop(self, "name", text="")
 
     def execute(self, context):
         mat = _material(context)

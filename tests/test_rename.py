@@ -108,3 +108,31 @@ def test_rename_survives_save_and_reload(addon):
         check(_entry(mat, folder).name == "Chrome", "the name is in the file")
     finally:
         shutil.rmtree(path_dir, ignore_errors=True)
+
+
+def test_the_rename_popup_is_ready_to_type_into(addon):
+    """Blender's properties dialog does not put the cursor in the field by itself: the field is
+    drawn with activate_init, which activates it when the popup opens."""
+    from essence import ops
+
+    class Layout:
+        def __init__(self):
+            self.drawn = []
+            self.activate_init = False
+
+        def row(self, **kw):
+            sub = Layout()
+            self.drawn.append(("row", sub))
+            return sub
+
+        def prop(self, data, name, **kw):
+            self.drawn.append(("prop", name, kw))
+
+    layout = Layout()
+    ops.ESSENCE_OT_rename_entry.draw(SimpleNamespace(layout=layout, name="x"), bpy.context)
+    kind, row = layout.drawn[0]
+    check(kind == "row" and row.activate_init is True, "the row has activate_init set")
+    check(row.drawn and row.drawn[0][0] == "prop" and row.drawn[0][1] == "name"
+          and row.drawn[0][2].get("text") == "", "and holds the name field with no label")
+    check('activate_init' in bpy.types.UILayout.bl_rna.properties,
+          "this Blender has the flag (a misspelled attribute would not fail in the stub)")
