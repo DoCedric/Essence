@@ -101,6 +101,38 @@ def set_if_changed(obj, name, value):
     return False
 
 
+_DEVICES = (
+    ('AUTO', "Auto (GPU when available)",
+     "The GPU when Cycles has one switched on in Preferences > System, else the CPU"),
+    ('CPU', "CPU", "Always the CPU"),
+)
+
+
+def gpu_device_name():
+    """The name of the GPU Cycles would use, or None when it has none: no compute device type
+    chosen in Preferences > System, or no device of that type switched on. This is Cycles' own
+    test (the same one that enables "GPU Compute" in the render settings)."""
+    try:
+        prefs = bpy.context.preferences.addons['cycles'].preferences
+        if not prefs.has_active_device():
+            return None
+        names = sorted({d.name for d in prefs.get_devices_for_type(prefs.compute_device_type)
+                        if d.use and d.type != 'CPU'})
+    except (KeyError, AttributeError, RuntimeError):
+        return None
+    return ", ".join(names) or None
+
+
+def resolve_device(scene):
+    """('GPU' or 'CPU', what to tell the user) for the Device setting of the Bake panel."""
+    if scene.essence_bake_device == 'CPU':
+        return 'CPU', "the CPU, as chosen"
+    gpu = gpu_device_name()
+    if gpu is not None:
+        return 'GPU', f"the GPU: {gpu}"
+    return 'CPU', "the CPU: no GPU is enabled in Preferences > System"
+
+
 def world_bounds(context, objects):
     """World-space (min, max) corners of the combined bounding box of `objects`."""
     dg = context.evaluated_depsgraph_get()
@@ -666,6 +698,9 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         orig_active = context.view_layer.objects.active
         orig_engine = scene.render.engine
         orig_samples = scene.cycles.samples
+        orig_device = scene.cycles.device
+        device, _device_note = resolve_device(scene)
+        fell_back = False
         bake_settings = scene.render.bake
         saved_bake = {a: getattr(bake_settings, a) for a in _BAKE_ATTRS}
 
@@ -680,16 +715,30 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             set_if_changed(bake_settings, 'normal_g', 'POS_Y')  # OpenGL (+Y), Blender's convention
             set_if_changed(bake_settings, 'normal_b', 'POS_Z')
             set_if_changed(scene.cycles, 'samples', scene.essence_bake_samples)
+            set_if_changed(scene.cycles, 'device', device)
             set_if_changed(bake_settings, 'margin',
                            scene.essence_bake_margin * int(scene.essence_bake_aa))
+
+            def bake_it(obj):
+                return self._bake_object(
+                    context, obj, map_type, size,
+                    _position_builder(context, obj) if map_type == 'POSITION'
+                    else build_color, high)
+
             for obj in todo:
                 try:
                     with (_uv_island_attribute(obj) if uv_islands
                           else contextlib.nullcontext()):
-                        last_image = self._bake_object(
-                            context, obj, map_type, size,
-                            _position_builder(context, obj) if map_type == 'POSITION'
-                            else build_color, high)
+                        try:
+                            last_image = bake_it(obj)
+                        except Exception:  # noqa: BLE001
+                            if device != 'GPU' or scene.essence_bake_device == 'CPU':
+                                raise
+                            # The GPU failed (out of memory, a driver): this and the rest
+                            # of the objects go on the CPU.
+                            device, fell_back = 'CPU', True
+                            set_if_changed(scene.cycles, 'device', 'CPU')
+                            last_image = bake_it(obj)
                     baked.append(obj.name)
                 except Exception as e:  # noqa: BLE001
                     failed.append(f"{obj.name} ({e})")
@@ -699,6 +748,7 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             forced.__exit__()
             set_if_changed(scene.render, 'engine', orig_engine)
             set_if_changed(scene.cycles, 'samples', orig_samples)
+            set_if_changed(scene.cycles, 'device', orig_device)
             for a, v in saved_bake.items():
                 set_if_changed(bake_settings, a, v)
             bpy.ops.object.select_all(action='DESELECT')
@@ -721,7 +771,11 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             self.report({level}, f"Failed: {', '.join(failed)}")
         elif baked:
             src = f" from '{collection.name}'" if high else ""
-            self.report({'INFO'}, f"Baked {len(baked)} object(s){src}")
+            if fell_back:
+                self.report({'WARNING'}, f"Baked {len(baked)} object(s){src}; the GPU failed, "
+                                         "so the CPU was used")
+            else:
+                self.report({'INFO'}, f"Baked {len(baked)} object(s){src} on the {device}")
         return {'FINISHED'} if baked else {'CANCELLED'}
 
 
@@ -764,6 +818,10 @@ def register():
     S.essence_bake_id = EnumProperty(
         name="ID by", items=ID_MODES, default='OBJECT',
         description="What the ID map tells apart")
+    S.essence_bake_device = EnumProperty(
+        name="Device", items=_DEVICES, default='AUTO',
+        description="What the bake runs on. The small baked filters and the curvature always "
+                    "use the CPU, which is quick for them and keeps the GPU out of the viewport")
     S.essence_bake_float = BoolProperty(
         name="Float", default=True,
         description="Bake into a 32-bit float image (no banding, four times the memory)")
@@ -778,7 +836,7 @@ def unregister():
               "essence_bake_samples", "essence_bake_margin",
               "essence_bake_high", "essence_bake_extrusion",
               "essence_bake_cage", "essence_bake_float", "essence_bake_aa",
-              "essence_bake_id"):
+              "essence_bake_id", "essence_bake_device"):
         delattr(S, p)
     if _previews is not None:
         bpy.utils.previews.remove(_previews)

@@ -228,3 +228,118 @@ def test_bakes_leave_the_scene_engine_alone_when_it_is_already_cycles(addon):
           f"the filter bake should leave an engine that is already Cycles alone: {log[:12]}")
     check(not any("switching the scene engine" in m for m in log), "no engine switch was made")
     check(sc.render.engine == 'CYCLES', "and it is still Cycles")
+
+
+def _with_gpu_prefs(fn):
+    """Run `fn` with Cycles' Preferences set to a GPU type if this machine has one, and put the
+    Preferences back. Returns False when there is no GPU to test with."""
+    prefs = bpy.context.preferences.addons['cycles'].preferences
+    old = prefs.compute_device_type
+    for kind in ('OPTIX', 'CUDA', 'HIP', 'METAL', 'ONEAPI'):
+        try:
+            prefs.compute_device_type = kind
+        except TypeError:
+            continue
+        prefs.refresh_devices()
+        if prefs.has_active_device():
+            try:
+                fn()
+            finally:
+                prefs.compute_device_type = old
+            return True
+    prefs.compute_device_type = old
+    return False
+
+
+def test_bakes_run_on_the_gpu_when_there_is_one(addon):
+    from essence import bake
+    sc = bpy.context.scene
+    ob = make_plane("Gpu", size=2.0)
+    check(sc.essence_bake_device == 'AUTO', "the default is Auto")
+    # no GPU switched on (factory preferences): the CPU, and the panel says why
+    device, note = bake.resolve_device(sc)
+    check(device == 'CPU' and "no GPU" in note, f"{device}: {note}")
+    seen = []
+    original = bake.ESSENCE_OT_bake._bake_object
+
+    def spy(self, context, obj, *args, **kwargs):
+        seen.append(context.scene.cycles.device)
+        return original(self, context, obj, *args, **kwargs)
+
+    bake.ESSENCE_OT_bake._bake_object = spy
+    try:
+        sc.cycles.device = 'CPU'
+        check(_bake('AO') == {'FINISHED'}, "bake failed")
+        check(seen == ['CPU'], f"no GPU enabled: baked on {seen}")
+        check(sc.cycles.device == 'CPU', "the scene's device is as it was")
+
+        def on_gpu():
+            check(bake.gpu_device_name() is not None, "the GPU should be found")
+            d, n = bake.resolve_device(sc)
+            check(d == 'GPU' and n.startswith("the GPU"), f"{d}: {n}")
+            seen.clear()
+            sc.cycles.device = 'CPU'
+            _select(ob)
+            check(_bake('AO') == {'FINISHED'}, "bake on the GPU failed")
+            check(seen == ['GPU'], f"Auto should use the GPU: {seen}")
+            check(sc.cycles.device == 'CPU', "and put the scene's device back")
+            sc.essence_bake_device = 'CPU'
+            seen.clear()
+            _select(ob)
+            check(_bake('AO') == {'FINISHED'}, "bake on the CPU failed")
+            check(seen == ['CPU'], f"CPU means CPU: {seen}")
+            sc.essence_bake_device = 'AUTO'
+        if not _with_gpu_prefs(on_gpu):
+            print("note: no GPU on this machine, the GPU path was not run")
+    finally:
+        bake.ESSENCE_OT_bake._bake_object = original
+
+
+def test_a_failed_gpu_bake_is_retried_on_the_cpu(addon):
+    from essence import bake
+    sc = bpy.context.scene
+    ob = make_plane("Retry", size=2.0)
+    original_name = bake.gpu_device_name
+    original = bake.ESSENCE_OT_bake._bake_object
+    devices = []
+
+    def flaky(self, context, obj, *args, **kwargs):
+        devices.append(context.scene.cycles.device)
+        if devices[-1] == 'GPU':                 # the GPU always fails, the CPU works
+            raise RuntimeError("out of memory")
+        return original(self, context, obj, *args, **kwargs)
+
+    bake.gpu_device_name = lambda: "Pretend GPU"
+    bake.ESSENCE_OT_bake._bake_object = flaky
+    try:
+        sc.cycles.device = 'CPU'
+        check(_bake('AO') == {'FINISHED'}, "the bake should succeed on the CPU")
+        check(devices[:2] == ['GPU', 'CPU'], f"GPU first, then the CPU: {devices}")
+        check(sc.cycles.device == 'CPU', "the scene's device is back")
+        check(bpy.data.images.get("Retry_AO") is not None, "the image was made")
+        # choosing the CPU never tries the GPU
+        devices.clear()
+        sc.essence_bake_device = 'CPU'
+        _select(ob)
+        _bake('AO')
+        check(devices[0] == 'CPU', f"CPU chosen: {devices}")
+    finally:
+        bake.gpu_device_name = original_name
+        bake.ESSENCE_OT_bake._bake_object = original
+
+
+def test_the_bake_panel_shows_the_device(addon):
+    from essence import bake, ui
+    from test_ui import _draw
+    ob = make_plane("Panel", size=2.0)
+    log = _draw(ui._bake, ob)
+    check(any(c[0] == "prop" and c[1][1] == "essence_bake_device" for c in log), "no Device option")
+    said = [c[2].get("text", "") for c in log if c[0] == "label"]
+    check(any(t.startswith("Bakes on the CPU: no GPU") for t in said), f"no device line: {said}")
+    original = bake.gpu_device_name
+    bake.gpu_device_name = lambda: "Some GPU"
+    try:
+        said = [c[2].get("text", "") for c in _draw(ui._bake, ob) if c[0] == "label"]
+        check(any(t == "Bakes on the GPU: Some GPU" for t in said), f"{said}")
+    finally:
+        bake.gpu_device_name = original

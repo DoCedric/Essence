@@ -2,7 +2,7 @@ import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
 from . import adjustments, curvature, filters, generators, gizmo, nodes, sources
-from .bake import HIGH_MAPS
+from .bake import HIGH_MAPS, resolve_device
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
 
@@ -722,6 +722,9 @@ def _bake(self, context):
     col.prop(scene, "essence_bake_margin", text="Margin")
     col.prop(scene, "essence_bake_aa", text="Anti-aliasing")
     col.prop(scene, "essence_bake_float")
+    col.prop(scene, "essence_bake_device")
+    device, note = resolve_device(scene)
+    layout.label(text=f"Bakes on {note}", icon='MEMORY' if device == 'GPU' else 'INFO')
     layout.operator("essence.bake", icon='RENDER_STILL')
 
 
