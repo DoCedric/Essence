@@ -49,19 +49,11 @@ class ESSENCE_UL_layers(bpy.types.UIList):
             return
 
         if item.kind == 'FILL':
-            img_node = tree.nodes.get(item.mask_node_name) if tree is not None else None
-            img = getattr(img_node, "image", None)
-            icon_id = 0
-            if img is not None:
-                try:
-                    img.preview_ensure()
-                    icon_id = img.preview.icon_id
-                except Exception:  # noqa: BLE001
-                    pass
+            icon_id = _thumb(tree, item)
             if icon_id:
                 row.label(text="", icon_value=icon_id)
             else:
-                row.label(text="", icon='IMAGE_DATA')
+                row.label(text="", icon='BRUSH_DATA' if item.fill_paint else 'IMAGE_DATA')
             row.prop(item, "name", text="", emboss=False)
             row.prop(item, "adj_enabled", text="", emboss=False,
                      icon='HIDE_OFF' if item.adj_enabled else 'HIDE_ON')
@@ -120,7 +112,11 @@ class ESSENCE_UL_layers(bpy.types.UIList):
 
 
 def _thumb(tree, item):
-    """Icon id of the preview of a mask's or fill's image, 0 if it has none."""
+    """Icon id of the preview of a mask's or fill's image, 0 if it has none. A paint item has
+    none on purpose: its image is mostly transparent, so its preview is an empty speck, and the
+    brush icon says more."""
+    if item.kind == 'FILL' and item.fill_paint:
+        return 0
     node = tree.nodes.get(item.mask_node_name) if tree is not None and item.mask_node_name else None
     img = getattr(node, "image", None)
     if img is None:

@@ -14,7 +14,7 @@ import bpy
 import numpy as np
 from bpy.props import EnumProperty, StringProperty
 
-from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials
+from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials, set_if_changed
 from . import nodes
 from .channels import BY_ID, active_channels
 
@@ -163,13 +163,14 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             obj.select_set(True)
             context.view_layer.objects.active = obj
 
-            scene.render.engine = 'CYCLES'
-            scene.cycles.samples = 4
-            bake.target = 'IMAGE_TEXTURES'
-            bake.use_selected_to_active = False
-            bake.margin = scene.essence_bake_margin
-            bake.normal_space = 'TANGENT'
-            bake.normal_r, bake.normal_g, bake.normal_b = 'POS_X', 'POS_Y', 'POS_Z'
+            set_if_changed(scene.render, 'engine', 'CYCLES')    # see set_if_changed
+            set_if_changed(scene.cycles, 'samples', 4)
+            set_if_changed(bake, 'target', 'IMAGE_TEXTURES')
+            set_if_changed(bake, 'use_selected_to_active', False)
+            set_if_changed(bake, 'margin', scene.essence_bake_margin)
+            set_if_changed(bake, 'normal_space', 'TANGENT')
+            for name, value in (('normal_r', 'POS_X'), ('normal_g', 'POS_Y'), ('normal_b', 'POS_Z')):
+                set_if_changed(bake, name, value)
 
             active = {c.id for c in active_channels(mat)}
             base = new_image("base", color=True, alpha='ALPHA' in active)
@@ -238,10 +239,10 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
                     bpy.data.images.remove(img)
                 except (ReferenceError, RuntimeError):
                     pass
-            scene.render.engine = orig_engine
-            scene.cycles.samples = orig_samples
+            set_if_changed(scene.render, 'engine', orig_engine)
+            set_if_changed(scene.cycles, 'samples', orig_samples)
             for a, v in saved.items():
-                setattr(bake, a, v)
+                set_if_changed(bake, a, v)
             bpy.ops.object.select_all(action='DESELECT')
             for o in orig_selection:
                 try:

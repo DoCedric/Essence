@@ -341,3 +341,15 @@ def test_an_image_from_before_the_pixels_were_kept_raw_is_converted(addon):
     mat.node_tree.nodes[e.mask_node_name].image = other
     bpy.ops.essence.rebuild()
     check(other.alpha_mode == 'STRAIGHT', "an image we did not make is left alone")
+
+
+def test_a_paint_item_row_shows_a_brush_not_an_empty_preview(addon):
+    from essence import ui
+    ob, mat, top, top_uid, mask_uid = _setup(base_value=0.3)
+    uid = _add_paint(mat, mask_uid)
+    e = next(x for x in mat.essence.layers if x.uid == uid)
+    check(ui._thumb(mat.node_tree, e) == 0, "no preview icon for a mostly transparent image")
+    plain = _mask(None, mat, mask_uid)
+    bpy.ops.essence.add_fill()
+    fill = mat.essence.layers[mat.essence.active_index]
+    check(fill.kind == 'FILL' and not fill.fill_paint, "an ordinary fill for comparison")

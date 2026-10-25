@@ -185,3 +185,46 @@ def test_rebake_at_a_new_size_replaces_the_image(addon):
     check(node.image is bpy.data.images["P_AO"], "reference to the baked image was lost")
     check(len([i for i in bpy.data.images if i.name.startswith("P_AO")]) == 1,
           "old bake images were left behind")
+
+
+def test_bakes_leave_the_scene_engine_alone_when_it_is_already_cycles(addon):
+    """Assigning the render engine, even to the value it has, resets every viewport (it
+    deadlocked Blender with a heavy material in Material Preview), so a bake must not."""
+    from essence.bake import set_if_changed
+
+    class Probe:
+        def __init__(self):
+            self.value, self.sets = 'CYCLES', 0
+
+        def __setattr__(self, name, v):
+            if name == 'engine':
+                object.__setattr__(self, 'sets', self.sets + 1)
+            object.__setattr__(self, name, v)
+
+    p = Probe()
+    p.engine = 'CYCLES'
+    p.sets = 0
+    check(set_if_changed(p, 'engine', 'CYCLES') is False and p.sets == 0,
+          "the same value must not be assigned")
+    check(set_if_changed(p, 'engine', 'BLENDER_EEVEE') is True and p.sets == 1, "a change is")
+    sc = bpy.context.scene
+    sc.render.engine = 'CYCLES'
+    ob = make_plane("Probe", size=2.0)
+    bpy.ops.essence.add_layer()
+    mat = ob.active_material
+    from essence import filters
+    log = []
+    original = filters.log
+    filters.log = lambda m: (log.append(m), original(m))[0]
+    try:
+        bpy.ops.essence.add_layer()
+        bpy.ops.essence.add_mask(source='PAINT', fill='WHITE', size=64)
+        bpy.ops.essence.add_filter(filter_type='BLUR')
+        f = mat.essence.layers[mat.essence.active_index]
+        bpy.ops.essence.filter_apply(uid=f.uid)
+    finally:
+        filters.log = original
+    check(any("Cycles already, left alone" in m for m in log),
+          f"the filter bake should leave an engine that is already Cycles alone: {log[:12]}")
+    check(not any("switching the scene engine" in m for m in log), "no engine switch was made")
+    check(sc.render.engine == 'CYCLES', "and it is still Cycles")

@@ -88,6 +88,19 @@ def _bake_node_name(map_type):
 # Helpers
 # --------------------------------------------------------------------------
 
+def set_if_changed(obj, name, value):
+    """Assign a property only when it differs. Assigning an RNA property runs its update even
+    for the same value, and for the scene's render engine that update resets the engine and the
+    GPU data of every viewport: with a Material Preview viewport and a heavy material that
+    deadlocked Blender (the log stopped at that very assignment, with the scene already on
+    Cycles). So settings a bake needs are only touched when they are not already right, and
+    only put back when they were changed."""
+    if getattr(obj, name) != value:
+        setattr(obj, name, value)
+        return True
+    return False
+
+
 def world_bounds(context, objects):
     """World-space (min, max) corners of the combined bounding box of `objects`."""
     dg = context.evaluated_depsgraph_get()
@@ -660,14 +673,15 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         forced = _ForceSelectable(context, high)
         try:
             forced.__enter__()
-            scene.render.engine = 'CYCLES'
-            bake_settings.target = 'IMAGE_TEXTURES'
-            scene.render.bake.normal_space = 'TANGENT'
-            scene.render.bake.normal_r = 'POS_X'
-            scene.render.bake.normal_g = 'POS_Y'  # OpenGL (+Y), Blender's convention
-            scene.render.bake.normal_b = 'POS_Z'
-            scene.cycles.samples = scene.essence_bake_samples
-            scene.render.bake.margin = scene.essence_bake_margin * int(scene.essence_bake_aa)
+            set_if_changed(scene.render, 'engine', 'CYCLES')
+            set_if_changed(bake_settings, 'target', 'IMAGE_TEXTURES')
+            set_if_changed(bake_settings, 'normal_space', 'TANGENT')
+            set_if_changed(bake_settings, 'normal_r', 'POS_X')
+            set_if_changed(bake_settings, 'normal_g', 'POS_Y')  # OpenGL (+Y), Blender's convention
+            set_if_changed(bake_settings, 'normal_b', 'POS_Z')
+            set_if_changed(scene.cycles, 'samples', scene.essence_bake_samples)
+            set_if_changed(bake_settings, 'margin',
+                           scene.essence_bake_margin * int(scene.essence_bake_aa))
             for obj in todo:
                 try:
                     with (_uv_island_attribute(obj) if uv_islands
@@ -683,10 +697,10 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             failed.append(str(e))
         finally:
             forced.__exit__()
-            scene.render.engine = orig_engine
-            scene.cycles.samples = orig_samples
+            set_if_changed(scene.render, 'engine', orig_engine)
+            set_if_changed(scene.cycles, 'samples', orig_samples)
             for a, v in saved_bake.items():
-                setattr(bake_settings, a, v)
+                set_if_changed(bake_settings, a, v)
             bpy.ops.object.select_all(action='DESELECT')
             for o in orig_selection:
                 try:

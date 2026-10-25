@@ -28,7 +28,7 @@ from typing import Tuple
 import bpy
 
 from . import sources
-from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials
+from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials, set_if_changed
 
 from .adjustments import FILTER_GROUP_PREFIX as GROUP_PREFIX
 from .adjustments import FILTER_IMAGE_PREFIX as IMAGE_PREFIX
@@ -173,27 +173,33 @@ class _BakeState:
         bpy.ops.object.select_all(action='DESELECT')
         self.obj.select_set(True)
         c.view_layer.objects.active = self.obj
-        log(f"bake state: switching the scene engine from {self.engine} to Cycles")
-        c.scene.render.engine = 'CYCLES'
-        log("bake state: engine switched")
-        c.scene.cycles.samples = 1
+        # Only what differs is assigned (see set_if_changed): assigning the engine again resets the
+        # viewports, which deadlocked Blender with a Material Preview viewport.
+        if self.engine == 'CYCLES':
+            log("bake state: the scene engine is Cycles already, left alone")
+        else:
+            log(f"bake state: switching the scene engine from {self.engine} to Cycles")
+        set_if_changed(c.scene.render, 'engine', 'CYCLES')
+        log("bake state: engine is Cycles")
+        set_if_changed(c.scene.cycles, 'samples', 1)
         # CPU: one sample of an emission bake is quick, and it keeps the GPU (and whatever the
         # viewport is doing with it) out of this.
-        c.scene.cycles.device = 'CPU'
-        self.bake.target = 'IMAGE_TEXTURES'
-        self.bake.use_selected_to_active = False
-        self.bake.margin = (c.scene.essence_bake_margin if self.margin is None
-                            else self.margin)
+        set_if_changed(c.scene.cycles, 'device', 'CPU')
+        set_if_changed(self.bake, 'target', 'IMAGE_TEXTURES')
+        set_if_changed(self.bake, 'use_selected_to_active', False)
+        set_if_changed(self.bake, 'margin', c.scene.essence_bake_margin if self.margin is None
+                       else self.margin)
         return self
 
     def __exit__(self, *exc):
         c = self.context
-        log(f"bake state: restoring the scene engine to {self.engine}")
-        c.scene.render.engine = self.engine
-        c.scene.cycles.samples = self.samples
-        c.scene.cycles.device = self.device
+        if c.scene.render.engine != self.engine:
+            log(f"bake state: restoring the scene engine to {self.engine}")
+        set_if_changed(c.scene.render, 'engine', self.engine)
+        set_if_changed(c.scene.cycles, 'samples', self.samples)
+        set_if_changed(c.scene.cycles, 'device', self.device)
         for a, v in self.saved.items():
-            setattr(self.bake, a, v)
+            set_if_changed(self.bake, a, v)
         bpy.ops.object.select_all(action='DESELECT')
         for o in self.selection:
             try:
