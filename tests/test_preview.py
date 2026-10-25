@@ -230,6 +230,7 @@ def test_preview_buttons_and_notice_draw(addon):
     check(len(channels) >= 4, f"a preview button per channel: {len(channels)}")
     _run('MASK', mask)
     ctx = SimpleNamespace(active_object=ob, scene=bpy.context.scene,
+                          view_layer=bpy.context.view_layer,
                           space_data=SimpleNamespace(shading=SimpleNamespace(type='SOLID')))
     panel = SimpleNamespace(layout=Rec())
     ui._stack(panel, ctx)

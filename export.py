@@ -14,8 +14,9 @@ import bpy
 import numpy as np
 from bpy.props import EnumProperty, StringProperty
 
-from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials, set_if_changed
-from . import nodes
+from .bake import (_BAKE_ATTRS, _ForceSelectable, _emission_override, other_targets,
+                   set_if_changed, temp_target, texture_set)
+from . import filters, nodes
 from .channels import BY_ID, active_channels
 
 FORMATS = (
@@ -30,27 +31,6 @@ def _ext(fmt):
     return next(f[3] for f in FORMATS if f[0] == fmt)
 
 
-def _temp_target(mat, image):
-    """Temporary active Image Texture node as the bake target; removed on teardown."""
-    nt = mat.node_tree
-    prev_active = nt.nodes.active
-    prev_selected = [n.name for n in nt.nodes if n.select]
-    node = nt.nodes.new('ShaderNodeTexImage')
-    node.image = image
-    for n in nt.nodes:
-        n.select = False
-    node.select = True
-    nt.nodes.active = node
-
-    def restore():
-        nt.nodes.remove(node)
-        for n in nt.nodes:
-            n.select = n.name in prev_selected
-        if prev_active is not None and nt.nodes.get(prev_active.name) is not None:
-            nt.nodes.active = prev_active
-    return restore
-
-
 def _pixels(img):
     a = np.empty(len(img.pixels), dtype=np.float32)
     img.pixels.foreach_get(a)
@@ -61,7 +41,8 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
     bl_idname = "essence.export_unity"
     bl_label = "Export for Unity"
     bl_description = ("Bake and save BaseMap, MaskMap (R metallic, G AO, B detail, "
-                      "A smoothness) and Normal for the active material")
+                      "A smoothness) and Normal for the active material, from every object "
+                      "that uses it")
 
     @classmethod
     def poll(cls, context):
@@ -70,28 +51,36 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             return False
         return len(ob.active_material.essence.layers) > 0
 
-    def _bake(self, obj, chain_mat, image, pass_type, build=None):
+    def _bake(self, context, objects, mat, image, pass_type, build=None):
+        """Bake the texture set (every object of the material, all selected) into `image`.
+        Several objects bake without Cycles' margin and get it from the compositor."""
+        margin = context.scene.essence_bake_margin
+        several = len(objects) > 1
+        set_if_changed(context.scene.render.bake, 'margin', 0 if several else margin)
         teardowns = []
         try:
-            for m in _ensure_materials(obj):
-                if not m.use_nodes:
-                    m.use_nodes = True
-                teardowns.append(_temp_target(m, image))
+            teardowns.append(temp_target(mat, image))
+            teardowns.append(other_targets(objects, mat))
             if build is not None:
-                teardowns.append(_emission_override(chain_mat, build))
+                teardowns.append(_emission_override(mat, build))
             if 'FINISHED' not in bpy.ops.object.bake(type=pass_type, use_clear=True):
                 raise RuntimeError("bake did not finish (see console)")
         finally:
             for t in reversed(teardowns):
                 t()
+        if several and margin:
+            filters.add_margin(context, objects[0], mat, image, margin)
 
     def execute(self, context):
         scene = context.scene
         obj = context.active_object
         mat = obj.active_material
-        if not obj.data.uv_layers:
+        objects = [o for o in texture_set(context, mat) if o.data.uv_layers]
+        if obj not in objects:
             self.report({'ERROR'}, "Object has no UV map")
             return {'CANCELLED'}
+        objects.remove(obj)
+        objects.insert(0, obj)
         nt = mat.node_tree
         tail = nt.nodes.get(mat.essence.layers[-1].node_name)
         if tail is None:
@@ -158,16 +147,18 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
         saved = {a: getattr(bake, a) for a in _BAKE_ATTRS}
 
         temps, written, notes = [], [], []
+        forced = _ForceSelectable(context, objects)
         try:
+            forced.__enter__()
             bpy.ops.object.select_all(action='DESELECT')
-            obj.select_set(True)
+            for o in objects:
+                o.select_set(True)
             context.view_layer.objects.active = obj
 
             set_if_changed(scene.render, 'engine', 'CYCLES')    # see set_if_changed
             set_if_changed(scene.cycles, 'samples', 4)
             set_if_changed(bake, 'target', 'IMAGE_TEXTURES')
             set_if_changed(bake, 'use_selected_to_active', False)
-            set_if_changed(bake, 'margin', scene.essence_bake_margin)
             set_if_changed(bake, 'normal_space', 'TANGENT')
             for name, value in (('normal_r', 'POS_X'), ('normal_g', 'POS_Y'), ('normal_b', 'POS_Z')):
                 set_if_changed(bake, name, value)
@@ -179,11 +170,11 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             normal = new_image("normal")
             temps += [base, metal, smooth, normal]
 
-            self._bake(obj, mat, base, 'EMIT', channel('COLOR'))
+            self._bake(context, objects, mat, base, 'EMIT', channel('COLOR'))
             if 'ALPHA' in active:
                 alpha = new_image("alpha")
                 temps.append(alpha)
-                self._bake(obj, mat, alpha, 'EMIT', channel('ALPHA'))
+                self._bake(context, objects, mat, alpha, 'EMIT', channel('ALPHA'))
                 base.alpha_mode = 'CHANNEL_PACKED'
                 px = _pixels(base)
                 px[3::4] = _pixels(alpha)[0::4]
@@ -194,15 +185,15 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
             if 'EMISSION' in active:
                 emission = new_image("emission", color=True)
                 temps.append(emission)
-                self._bake(obj, mat, emission, 'EMIT', channel('EMISSION'))
+                self._bake(context, objects, mat, emission, 'EMIT', channel('EMISSION'))
                 extra.append((emission, "Emission"))
-            self._bake(obj, mat, metal, 'EMIT', channel('METALLIC'))
-            self._bake(obj, mat, smooth, 'EMIT', smoothness)
-            self._bake(obj, mat, normal, 'NORMAL')
+            self._bake(context, objects, mat, metal, 'EMIT', channel('METALLIC'))
+            self._bake(context, objects, mat, smooth, 'EMIT', smoothness)
+            self._bake(context, objects, mat, normal, 'NORMAL')
 
             # Mask map: R metallic, G AO, B detail mask, A smoothness.
             ao_node = mat.node_tree.nodes.get(nodes.map_slot_name('AO'))
-            ao_src = getattr(ao_node, "image", None) or bpy.data.images.get(f"{obj.name}_AO")
+            ao_src = getattr(ao_node, "image", None) or bpy.data.images.get(f"{mat.name}_AO")
             if ao_src is not None:
                 ao = ao_src.copy()
                 temps.append(ao)
@@ -239,6 +230,7 @@ class ESSENCE_OT_export_unity(bpy.types.Operator):
                     bpy.data.images.remove(img)
                 except (ReferenceError, RuntimeError):
                     pass
+            forced.__exit__()
             set_if_changed(scene.render, 'engine', orig_engine)
             set_if_changed(scene.cycles, 'samples', orig_samples)
             for a, v in saved.items():

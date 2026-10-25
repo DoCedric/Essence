@@ -5,7 +5,7 @@ import tempfile
 
 import bpy
 
-from harness import check, close, make_plane, setup_cycles
+from harness import baked, check, close, make_plane, setup_cycles, texset
 
 
 def _pixels(img):
@@ -21,7 +21,8 @@ def _center(img):
 def _bake(map_type, size="128"):
     sc = bpy.context.scene
     sc.essence_bake_map = map_type
-    sc.essence_bake_size = size
+    for o in bpy.context.selected_objects:
+        texset(o).bake_size = size
     sc.essence_bake_samples = 4
     sc.essence_bake_margin = 0
     return bpy.ops.essence.bake()
@@ -30,7 +31,7 @@ def _bake(map_type, size="128"):
 def test_bake_ao_flat_plane(addon):
     ob = make_plane()
     check(_bake('AO') == {'FINISHED'}, "AO bake did not finish")
-    img = bpy.data.images.get("Plane_AO")
+    img = baked("Plane", "AO")
     check(img is not None, "AO image not created")
     close(_center(img)[0], 1.0, 0.05, "open plane AO")
 
@@ -54,7 +55,7 @@ def test_bake_world_gradient_cube(addon):
     ob = bpy.context.active_object
     ob.name = "Cube"
     check(_bake('WORLD_GRADIENT') == {'FINISHED'}, "gradient bake failed")
-    img = bpy.data.images["Cube_WorldGradient"]
+    img = baked("Cube", "WorldGradient")
     r = _pixels(img)[0::4]
     check(min(r) < 0.1 and max(r) > 0.9, f"gradient range {min(r):.2f}..{max(r):.2f}")
 
@@ -63,14 +64,14 @@ def test_bake_world_gradient_flat_plane(addon):
     """Zero-height bounds must not crash or produce NaN."""
     make_plane()
     check(_bake('WORLD_GRADIENT') == {'FINISHED'}, "flat gradient bake failed")
-    r = _pixels(bpy.data.images["Plane_WorldGradient"])[0::4]
+    r = _pixels(baked("Plane", "WorldGradient"))[0::4]
     check(all(math.isfinite(v) for v in r), "NaN in flat gradient")
 
 
 def test_bake_normal_world(addon):
     make_plane()
     check(_bake('NORMAL_WORLD') == {'FINISHED'}, "world normal bake failed")
-    px = _center(bpy.data.images["Plane_NormalWorld"])
+    px = _center(baked("Plane", "NormalWorld"))
     close(px[0], 0.5, 0.05, "world normal x")
     close(px[1], 0.5, 0.05, "world normal y")
     close(px[2], 1.0, 0.05, "world normal z")
@@ -80,7 +81,7 @@ def test_bake_normal_flat_and_wiring(addon):
     ob = make_plane()
     bpy.ops.essence.add_layer()
     check(_bake('NORMAL') == {'FINISHED'}, "normal bake failed")
-    px = _center(bpy.data.images["Plane_Normal"])
+    px = _center(baked("Plane", "Normal"))
     close(px[0], 0.5, 0.05, "tangent x")
     close(px[1], 0.5, 0.05, "tangent y")
     close(px[2], 1.0, 0.05, "tangent z")
@@ -106,12 +107,11 @@ def test_bake_high_to_low(addon):
     for o in bpy.context.view_layer.objects:
         o.select_set(o is low)
     bpy.context.view_layer.objects.active = low
-    sc = bpy.context.scene
-    sc.essence_bake_high = coll
-    sc.essence_bake_extrusion = 0.5
+    texset(low).bake_high = coll
+    texset(low).bake_extrusion = 0.5
     check(_bake('NORMAL') == {'FINISHED'}, "high to low bake failed")
-    check(bpy.data.images.get("High_Normal") is None, "high-poly was baked as a target")
-    px = _center(bpy.data.images["Low_Normal"])
+    check(baked("High", "Normal") is None, "high-poly was baked as a target")
+    px = _center(baked("Low", "Normal"))
     check(abs(px[1] - 0.5) > 0.1, f"tilted high-poly left no mark in tangent normal: {px}")
     check(px[2] < 0.99, f"normal z should drop below 1: {px}")
 
@@ -176,10 +176,10 @@ def test_export_normal_keeps_baked_normal(addon):
     bpy.context.view_layer.objects.active = low
     bpy.ops.essence.add_layer()
     sc = bpy.context.scene
-    sc.essence_bake_high = coll
-    sc.essence_bake_extrusion = 0.5
+    texset(low).bake_high = coll
+    texset(low).bake_extrusion = 0.5
     _bake('NORMAL')
-    baked = _center(bpy.data.images["Low_Normal"])
+    baked_px = _center(baked("Low", "Normal"))
     folder = tempfile.mkdtemp(prefix="essence_export_")
     try:
         sc.essence_export_format = 'OPEN_EXR'
@@ -196,6 +196,6 @@ def test_export_normal_keeps_baked_normal(addon):
         img.colorspace_settings.name = 'Non-Color'
         exported = _center(img)
         for i, n in enumerate("xyz"):
-            close(exported[i], baked[i], 0.05, f"exported normal {n} differs from baked")
+            close(exported[i], baked_px[i], 0.05, f"exported normal {n} differs from the baked one")
     finally:
         shutil.rmtree(folder, ignore_errors=True)

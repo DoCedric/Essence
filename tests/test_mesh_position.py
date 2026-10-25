@@ -4,7 +4,7 @@ import math
 
 import bpy
 
-from harness import check, close, make_plane, sample_socket
+from harness import baked, check, close, make_plane, sample_socket, texset
 from test_bake_quality import _bake, _select
 from test_generators import _set, _setup, _tex, _value
 
@@ -33,9 +33,8 @@ def _with_high(low, z=0.2):
     bpy.context.scene.collection.children.link(coll)
     coll.objects.link(high)
     bpy.context.scene.collection.objects.unlink(high)
-    sc = bpy.context.scene
-    sc.essence_bake_high = coll
-    sc.essence_bake_extrusion = 0.5
+    texset(low).bake_high = coll
+    texset(low).bake_extrusion = 0.5
     _select(low)
     return high
 
@@ -49,7 +48,7 @@ def test_baked_position_is_the_generated_coordinates_of_a_moved_object(addon):
     ob.location = (1.0, -2.0, 0.5)
     bpy.context.view_layer.update()
     check(_bake('POSITION') == {'FINISHED'}, "bake failed")
-    img = bpy.data.images["Low_Position"]
+    img = baked("Low", "Position")
     check(img.is_float and img.colorspace_settings.name == 'Non-Color', "float, Non-Color")
     slot = mat.node_tree.nodes[addon.nodes.map_slot_name('POSITION')]
     check(slot.image is img, "the bake fills the Position slot")
@@ -66,7 +65,7 @@ def test_baked_position_from_a_high_poly_is_the_high_polys_surface(addon):
     bpy.ops.essence.add_layer()
     _with_high(low, z=0.2)
     check(_bake('POSITION') == {'FINISHED'}, "bake failed")
-    r, g, b = _at(bpy.data.images["Low_Position"], 0.5, 0.5)
+    r, g, b = _at(baked("Low", "Position"), 0.5, 0.5)
     close(r, 0.5, 0.03, "x at the center")
     close(g, 0.5, 0.03, "y at the center")
     # The low plane has no height, so one unit of z is the whole range: 0.2 above it reads 0.7.

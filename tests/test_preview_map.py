@@ -158,7 +158,8 @@ def test_map_preview_buttons_and_notices_draw(addon):
     check(len(shows) == 1, f"a Show on Mesh button for the slot that has an image: {len(shows)}")
     _make_agx()
     _run('MAP', 'ID')
-    ctx = SimpleNamespace(active_object=ob, scene=bpy.context.scene)
+    ctx = SimpleNamespace(active_object=ob, scene=bpy.context.scene,
+                          view_layer=bpy.context.view_layer)
     panel = SimpleNamespace(layout=Rec())
     ui._stack(panel, ctx)
     labels = [c[2].get("text", "") for c in panel.layout.log if c[0] == "label"]

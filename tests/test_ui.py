@@ -44,7 +44,8 @@ class Rec:
 
 
 def _ctx(ob):
-    return SimpleNamespace(active_object=ob, scene=bpy.context.scene)
+    return SimpleNamespace(active_object=ob, scene=bpy.context.scene,
+                           view_layer=bpy.context.view_layer)
 
 
 def _draw(fn, ob):

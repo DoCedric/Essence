@@ -1,6 +1,6 @@
 import bpy
 
-from harness import check, close, make_plane, sample_socket
+from harness import baked, check, close, make_plane, sample_socket, texset
 
 
 def _slot(addon, mat, map_id):
@@ -44,14 +44,14 @@ def test_bake_fills_the_slot(addon):
     mat = ob.active_material
     sc = bpy.context.scene
     sc.essence_bake_map = 'AO'
-    sc.essence_bake_size = '128'
+    texset(ob).bake_size = '128'
     sc.essence_bake_samples = 4
     check(bpy.ops.essence.bake() == {'FINISHED'}, "bake failed")
     img = _slot(addon, mat, 'AO').image
-    check(img is not None and img.name == "Plane_AO", f"AO slot image: {img}")
+    check(img is not None and img.name == f"{mat.name}_AO", f"AO slot image: {img}")
     sc.essence_bake_map = 'NORMAL'
     check(bpy.ops.essence.bake() == {'FINISHED'}, "normal bake failed")
-    check(_slot(addon, mat, 'NORMAL').image.name == "Plane_Normal", "normal slot image")
+    check(_slot(addon, mat, 'NORMAL').image.name == f"{mat.name}_Normal", "normal slot image")
 
 
 def test_export_reads_the_ao_slot(addon):
@@ -171,7 +171,7 @@ def test_ao_bake_wires_the_shader(addon):
     mat = ob.active_material
     sc = bpy.context.scene
     sc.essence_bake_map = 'AO'
-    sc.essence_bake_size = '128'
+    texset(ob).bake_size = '128'
     sc.essence_bake_samples = 4
     check(bpy.ops.essence.bake() == {'FINISHED'}, "bake failed")
     bsdf = addon.nodes.find_principled(mat.node_tree)

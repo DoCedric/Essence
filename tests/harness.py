@@ -67,6 +67,24 @@ def make_plane(name="Plane", size=2.0, location=(0, 0, 0)):
     return ob
 
 
+def texset(ob):
+    """The bake settings of an object's texture set (its first material's `essence`). An
+    object without a material gets one, named the way a bake would name it."""
+    mat = next((s.material for s in ob.material_slots if s.material is not None), None)
+    if mat is None:
+        mat = bpy.data.materials.new(f"{ob.name}_Mat")
+        mat.use_nodes = True
+        ob.data.materials.append(mat)
+    return mat.essence
+
+
+def baked(obj_name, suffix):
+    """The baked map `suffix` ("AO", "Normal", ...) of an object's texture set, or None."""
+    ob = bpy.data.objects[obj_name]
+    mat = next((s.material for s in ob.material_slots if s.material is not None), None)
+    return bpy.data.images.get(f"{mat.name}_{suffix}") if mat is not None else None
+
+
 def setup_cycles(samples=1):
     sc = bpy.context.scene
     sc.render.engine = 'CYCLES'

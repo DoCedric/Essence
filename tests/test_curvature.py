@@ -7,7 +7,7 @@ import tempfile
 
 import bpy
 
-from harness import check, close, make_plane
+from harness import baked, check, close, make_plane, texset
 from test_bake_quality import _bake, _select
 
 
@@ -64,7 +64,7 @@ def test_convex_is_bright_concave_is_dark_flat_is_grey(addon):
             ob, mat = _setup(addon)
             _put_normal(addon, mat, _normal_image(f"n_{axis}_{name}", 64, _ramp(sign), axis))
             check(_derive() == {'FINISHED'}, "derive failed")
-            img = bpy.data.images[f"{ob.name}_Curvature"]
+            img = baked(ob.name, "Curvature")
             mid = 32
             at_edge = _at(img, mid, 10)[0] if axis == 'x' else _at(img, 10, mid)[0]
             flat = _at(img, 8, 10)[0] if axis == 'x' else _at(img, 10, 8)[0]
@@ -81,7 +81,7 @@ def test_the_same_shape_gives_the_same_curvature_at_any_size(addon):
         ob, mat = _setup(addon)
         _put_normal(addon, mat, _normal_image(f"n{size}", size, _ramp(1)))
         check(_derive() == {'FINISHED'}, "derive failed")
-        img = bpy.data.images[f"{ob.name}_Curvature"]
+        img = baked(ob.name, "Curvature")
         check(tuple(img.size) == (size, size), "the result has the size of the normal map")
         values.append(_at(img, size // 2, 10)[0] - 0.5)
     check(values[0] > 0.004, f"too weak to compare: {values}")
@@ -92,15 +92,15 @@ def test_width_and_strength(addon):
     ob, mat = _setup(addon)
     _put_normal(addon, mat, _normal_image("n", 64, _ramp(1)))
     _derive()
-    base = _at(bpy.data.images["Surface_Curvature"], 32, 10)[0] - 0.5
+    base = _at(baked("Surface", "Curvature"), 32, 10)[0] - 0.5
     mat.essence.curvature_strength = 3.0
     _derive()
-    doubled = _at(bpy.data.images["Surface_Curvature"], 32, 10)[0] - 0.5
+    doubled = _at(baked("Surface", "Curvature"), 32, 10)[0] - 0.5
     close(doubled, base * 2, base * 0.1, "twice the strength, twice the response")
     mat.essence.curvature_strength = 1.5
     mat.essence.curvature_width = 4.0
     _derive()
-    soft = bpy.data.images["Surface_Curvature"]
+    soft = baked("Surface", "Curvature")
     check(abs(_at(soft, 32, 10)[0] - 0.5) < base, "a wider blur lowers the peak of a sharp edge")
 
 
@@ -108,17 +108,19 @@ def test_result_image_and_slot(addon):
     ob, mat = _setup(addon)
     _put_normal(addon, mat, _normal_image("n", 64, _ramp(1)))
     check(_derive() == {'FINISHED'}, "derive failed")
-    img = bpy.data.images["Surface_Curvature"]
+    img = baked("Surface", "Curvature")
     slot = mat.node_tree.nodes[addon.nodes.map_slot_name('CURVATURE')]
     check(slot.image is not None and slot.image.name == img.name, "the Curvature slot has it")
     check(img.is_float and img.packed_file is not None, "float and packed")
     check(img.colorspace_settings.name == 'Non-Color', "Non-Color")
     check(not img.name.startswith("."), "a visible image: it is a map, not a helper")
+    name = img.name
     _derive()
-    check(len([i for i in bpy.data.images if i.name.startswith("Surface_Curvature")]) == 1,
+    check(name == f"{mat.name}_Curvature", "named after the texture set")
+    check(len([i for i in bpy.data.images if i.name.startswith(name)]) == 1,
           "deriving again replaces the image")
     check(mat.node_tree.nodes[addon.nodes.map_slot_name('CURVATURE')].image.name ==
-          "Surface_Curvature", "and the slot follows")
+          name, "and the slot follows")
     check(bpy.data.node_groups[addon.curvature.group_name(mat)].use_fake_user,
           "the compositor group needs a fake user or a save drops it")
     check(not [s for s in bpy.data.scenes if s.name.startswith("EssenceFilterTmp")],
@@ -169,7 +171,7 @@ def test_a_rebake_of_the_normal_makes_it_stale(addon):
     mat.essence.curvature_width = 0.0
     _select(low)
     check(_bake('NORMAL') == {'FINISHED'}, "bake failed")
-    check("essence_stamp" in bpy.data.images["Low_Normal"], "a bake leaves a stamp")
+    check("essence_stamp" in baked("Low", "Normal"), "a bake leaves a stamp")
     check(_derive() == {'FINISHED'}, "derive failed")
     check(not c.needs_derive(mat), "current")
     _select(low)
@@ -192,16 +194,13 @@ def test_curvature_from_a_real_high_poly_bake(addon):
     bpy.context.scene.collection.children.link(coll)
     coll.objects.link(cube)
     bpy.context.scene.collection.objects.unlink(cube)
-    sc = bpy.context.scene
-    sc.essence_bake_high = coll
-    sc.essence_bake_extrusion = 0.6
+    texset(low).bake_high = coll
+    texset(low).bake_extrusion = 0.6
     _select(low)
-    sc.essence_bake_size = '256'
-    check(_bake('NORMAL') == {'FINISHED'}, "normal bake failed")
-    sc.essence_bake_size = '256'
+    check(_bake('NORMAL', size='256') == {'FINISHED'}, "normal bake failed")
     check(_derive() == {'FINISHED'}, "derive failed")
-    img = bpy.data.images["Low_Curvature"]
-    check(tuple(img.size) == tuple(bpy.data.images["Low_Normal"].size), "same size as the normal")
+    img = baked("Low", "Curvature")
+    check(tuple(img.size) == tuple(baked("Low", "Normal").size), "same size as the normal")
     px = list(img.pixels)[0::4]
     check(max(px) > 0.52 and min(px) < 0.48,
           f"a bevelled box should leave edges: min {min(px)} max {max(px)}")
@@ -302,7 +301,7 @@ def test_a_jump_between_close_islands_leaves_no_line(addon):
     check(max(abs(row[x + 1] - row[x - 1]) for x in range(1, w - 1)) > 0.4,
           "the test normal should have a hard jump between the islands")
     check(_derive() == {'FINISHED'}, "derive failed")
-    out = bpy.data.images["Low_Curvature"]
+    out = baked("Low", "Curvature")
     c = [list(out.pixels)[(y * w + x) * 4] for y in range(w) for x in (range(w))]
     at = lambda u, v: c[int(v * (w - 1)) * w + int(u * (w - 1))]
     # across the gap and at the borders of both islands: flat grey

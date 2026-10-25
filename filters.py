@@ -26,9 +26,11 @@ from dataclasses import dataclass
 from typing import Tuple
 
 import bpy
+import numpy as np
 
 from . import sources
-from .bake import _BAKE_ATTRS, _emission_override, _ensure_materials, set_if_changed
+from .bake import (_BAKE_ATTRS, _ForceSelectable, _emission_override, other_targets,
+                   set_if_changed, temp_target, texture_set)
 
 from .adjustments import FILTER_GROUP_PREFIX as GROUP_PREFIX
 from .adjustments import FILTER_IMAGE_PREFIX as IMAGE_PREFIX
@@ -150,29 +152,32 @@ def filter_node(entry):
 
 
 class _BakeState:
-    """Cycles bake settings, selection and mode saved and restored around a bake."""
+    """Cycles bake settings, selection and mode saved and restored around a bake of `objects`
+    (all selected, the first active)."""
 
-    def __init__(self, context, obj, margin=None):
-        self.context, self.obj, self.margin = context, obj, margin
+    def __init__(self, context, objects, margin=None):
+        self.context, self.objects, self.margin = context, objects, margin
 
     def __enter__(self):
         c = self.context
-        self.mode = self.obj.mode
+        self.active = c.view_layer.objects.active
+        self.mode = self.active.mode if self.active is not None else 'OBJECT'
         if self.mode != 'OBJECT':
             log(f"bake state: leaving {self.mode} for Object Mode")
             bpy.ops.object.mode_set(mode='OBJECT')
             log("bake state: now in Object Mode")
         self.selection = list(c.selected_objects)
-        self.active = c.view_layer.objects.active
         self.engine = c.scene.render.engine
         self.samples = c.scene.cycles.samples
         self.device = c.scene.cycles.device
         self.bake = c.scene.render.bake
         self.saved = {a: getattr(self.bake, a) for a in _BAKE_ATTRS}
-        log("bake state: selecting the object")
+        self.forced = _ForceSelectable(c, self.objects).__enter__()
+        log(f"bake state: selecting {len(self.objects)} object(s)")
         bpy.ops.object.select_all(action='DESELECT')
-        self.obj.select_set(True)
-        c.view_layer.objects.active = self.obj
+        for o in self.objects:
+            o.select_set(True)
+        c.view_layer.objects.active = self.objects[0]
         # Only what differs is assigned (see set_if_changed): assigning the engine again resets the
         # viewports, which deadlocked Blender with a Material Preview viewport.
         if self.engine == 'CYCLES':
@@ -206,6 +211,7 @@ class _BakeState:
                 o.select_set(True)
             except Exception:  # noqa: BLE001
                 pass
+        self.forced.__exit__()
         if self.active is not None:
             c.view_layer.objects.active = self.active
         if self.mode != 'OBJECT':
@@ -217,10 +223,13 @@ class _BakeState:
 
 def bake_value(context, obj, mat, socket_of, size, margin=None):
     """Bake what a shader socket outputs into a new float image (UV space, Non-Color).
-    `socket_of(tree)` returns the socket; nothing is left behind in the materials. `margin`
+    `socket_of(tree)` returns the socket; nothing is left behind in the materials. Every object
+    of the material's texture set is baked (`obj` alone if it is not in one). `margin`
     overrides the scene's bake margin (0 gives the plain island coverage)."""
-    from .export import _temp_target
-
+    objects = [o for o in texture_set(context, mat) if o.data.uv_layers] or [obj]
+    if margin is None:
+        margin = context.scene.essence_bake_margin
+    several = len(objects) > 1
     image = bpy.data.images.new(".Essence Filter Input", size, size, alpha=False,
                                 float_buffer=True)
     image.colorspace_settings.name = 'Non-Color'
@@ -231,12 +240,13 @@ def bake_value(context, obj, mat, socket_of, size, margin=None):
     teardowns = []
     try:
         log("bake: entering bake state (mode, selection, Cycles settings)")
-        with _BakeState(context, obj, margin):
+        # Several objects get no margin from Cycles: it would cover the others' islands.
+        with _BakeState(context, objects, 0 if several else margin):
             log("bake: adding the temporary target and emission nodes")
-            for m in _ensure_materials(obj):
-                if not m.use_nodes:
-                    m.use_nodes = True
-                teardowns.append(_temp_target(m, image))
+            if not mat.use_nodes:
+                mat.use_nodes = True
+            teardowns.append(temp_target(mat, image))
+            teardowns.append(other_targets(objects, mat))
             teardowns.append(_emission_override(mat, build))
             log("bake: calling bpy.ops.object.bake")
             if 'FINISHED' not in bpy.ops.object.bake(type='EMIT', use_clear=True):
@@ -251,7 +261,74 @@ def bake_value(context, obj, mat, socket_of, size, margin=None):
         for t in reversed(teardowns):
             t()
         log("bake: temporary nodes removed")
+    if several and margin:
+        add_margin(context, obj, mat, image, margin)
     return image
+
+
+def bake_coverage(context, obj, mat, size):
+    """A float image, white where the UV islands of the material's texture set are and black
+    elsewhere: the same bake as any map, with a constant white emission and no margin."""
+    tree = mat.node_tree
+    white = tree.nodes.new('ShaderNodeRGB')
+    white.outputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
+    try:
+        return bake_value(context, obj, mat, lambda t: white.outputs[0], size, margin=0)
+    finally:
+        tree.nodes.remove(white)
+
+
+def _margin_group(margin):
+    """A throwaway compositor group: keep the image inside the islands (the coverage) and
+    continue the island borders outwards by `margin` pixels with the Inpaint node, black
+    beyond, like a Cycles margin."""
+    ng = bpy.data.node_groups.new(".Essence Margin", 'CompositorNodeTree')
+    ng.interface.new_socket("Image", in_out='OUTPUT', socket_type='NodeSocketColor')
+    out = ng.nodes.new('NodeGroupOutput')
+    src = ng.nodes.new('CompositorNodeImage')
+    src.name = "Source"
+    cov = ng.nodes.new('CompositorNodeImage')
+    cov.name = "Coverage"
+    keep = ng.nodes.new('CompositorNodeSetAlpha')
+    ng.links.new(src.outputs['Image'], keep.inputs['Image'])
+    ng.links.new(cov.outputs['Image'], keep.inputs['Alpha'])
+    try:
+        keep.inputs['Type'].default_value = 'Replace Alpha'
+    except (TypeError, ValueError):
+        pass
+    fill = ng.nodes.new('CompositorNodeInpaint')
+    fill.inputs['Size'].default_value = margin
+    ng.links.new(keep.outputs['Image'], fill.inputs['Image'])
+    black = ng.nodes.new('CompositorNodeRGB')
+    black.outputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
+    over = ng.nodes.new('CompositorNodeAlphaOver')
+    ng.links.new(black.outputs['Color'], over.inputs['Background'])
+    ng.links.new(fill.outputs['Image'], over.inputs['Foreground'])
+    over.inputs['Factor'].default_value = 1.0
+    ng.links.new(over.outputs['Image'], out.inputs[0])
+    return ng
+
+
+def add_margin(context, obj, mat, image, margin):
+    """Give `image`, baked from several objects without a margin, its margin afterwards: the
+    islands of the texture set (a coverage bake) are continued outwards by `margin` pixels in
+    the compositor, and the result is written back into `image` itself, so it stays the same
+    datablock with the same users."""
+    log(f"margin: {margin} px on '{image.name}'")
+    coverage = bake_coverage(context, obj, mat, image.size[0])
+    ng = _margin_group(margin)
+    try:
+        result = run_compositor_group(ng, image, {"Coverage": coverage})
+    finally:
+        bpy.data.images.remove(coverage)
+        bpy.data.node_groups.remove(ng)
+    try:
+        px = np.empty(len(result.pixels), dtype=np.float32)
+        result.pixels.foreach_get(px)
+        image.pixels.foreach_set(px)
+        image.update()
+    finally:
+        bpy.data.images.remove(result)
 
 
 def run_compositor(entry, image):

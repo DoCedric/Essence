@@ -1,10 +1,17 @@
-"""Baking: AO and World Gradient, ported from the Artistant addon's bake pipeline.
+"""Baking mesh maps, ported from the Artistant addon's bake pipeline.
 
-Each selected mesh object gets its own image ("<object>_<Map>"), created (or reused and
-overwritten) and left on an unconnected Image Texture node in the object's material(s).
-Re-baking reuses the image, so anything that references it (e.g. an Essence image mask)
-keeps working. Adding a map type means adding an entry to MAP_TYPES and a branch in
-_emission_builder (or a native bake pass).
+A map belongs to a **texture set**: a material and every mesh object in the view layer that
+uses it. The selected objects decide which texture sets are baked; all objects of a set bake
+into one image ("<material>_<Map>", so their UVs must not overlap), left on the material's
+unconnected Image Texture node `Essence_Bake_<MAP>`. Re-baking reuses the image, so anything
+that references it (e.g. an Essence image mask) keeps working. High Poly, Extrusion and Size
+are settings of the material; a cage belongs to one low-poly object.
+
+Cycles' margin fills every pixel a bake did not write, including the islands of the other
+objects of the set (tested: one call with several objects selected, and one call per object
+without clearing, both overwrite). So a set of several objects is baked with margin 0 and the
+margin is added afterwards by the compositor (`filters.add_margin`). Adding a map type means
+adding an entry to MAP_TYPES and a builder (or a native bake pass).
 """
 
 import colorsys
@@ -73,9 +80,6 @@ def _map_items(self, context):
         p = _previews.get(mid) if _previews else None
         _items_cache.append((mid, label, desc, p.icon_id if p else 0, i))
     return _items_cache
-
-
-_SIZES = tuple((str(s), f"{s} x {s}", "") for s in (128, 256, 512, 1024, 2048, 4096))
 
 
 _AA = (('1', "Off", "Bake at the final size"),
@@ -164,8 +168,71 @@ def _ensure_materials(obj):
     return [mat]
 
 
-def _bake_image(base, size, map_type, float_buffer=True):
-    name = f"{base}_{SUFFIX[map_type]}"
+def texture_set(context, mat):
+    """The mesh objects of the view layer that use `mat`, minus its own high polys: the
+    objects that bake into the material's maps."""
+    high = set(high_poly_objects(mat.essence.bake_high)) if mat.essence.bake_high else set()
+    return [o for o in context.view_layer.objects
+            if o.type == 'MESH' and o not in high
+            and any(s.material == mat for s in o.material_slots)]
+
+
+def temp_target(mat, image):
+    """Temporary active Image Texture node as the bake target; removed on teardown."""
+    nt = mat.node_tree
+    prev_active = nt.nodes.active
+    prev_selected = [n.name for n in nt.nodes if n.select]
+    node = nt.nodes.new('ShaderNodeTexImage')
+    node.image = image
+    for n in nt.nodes:
+        n.select = False
+    node.select = True
+    nt.nodes.active = node
+
+    def restore():
+        nt.nodes.remove(node)
+        for n in nt.nodes:
+            n.select = n.name in prev_selected
+        if prev_active is not None and nt.nodes.get(prev_active.name) is not None:
+            nt.nodes.active = prev_active
+    return restore
+
+
+def other_targets(objects, mat):
+    """Cycles bakes every face into the active image of the face's material. Faces of the
+    objects' other materials go to a throwaway image, so only `mat`'s image is written.
+    Returns a teardown."""
+    others = {s.material for o in objects for s in o.material_slots
+              if s.material is not None and s.material != mat}
+    if not others:
+        return lambda: None
+    junk = bpy.data.images.new(".Essence Bake Other", 8, 8)
+    teardowns = []
+    for m in others:
+        if not m.use_nodes:
+            m.use_nodes = True
+        teardowns.append(temp_target(m, junk))
+
+    def restore():
+        for t in reversed(teardowns):
+            t()
+        bpy.data.images.remove(junk)
+    return restore
+
+
+def _set_image(mat, objects, size, map_type, float_buffer):
+    """The texture set's image for a map. A file baked before texture sets has it under an
+    object's name: that image is renamed, so whatever uses it (a mask, a source) follows."""
+    name = f"{mat.name}_{SUFFIX[map_type]}"
+    if bpy.data.images.get(name) is None:
+        node = mat.node_tree.nodes.get(_bake_node_name(map_type))
+        old = getattr(node, "image", None)
+        if old is not None and old.name in {f"{o.name}_{SUFFIX[map_type]}" for o in objects}:
+            old.name = name
+    return _bake_image(name, size, map_type, float_buffer)
+
+
+def _bake_image(name, size, map_type, float_buffer=True):
     img = bpy.data.images.get(name)
     if img is not None and (img.is_float != float_buffer or tuple(img.size) != (size, size)):
         # Neither the buffer type nor (for a packed image) the size can change in place:
@@ -353,15 +420,17 @@ def uv_island_indices(mesh):
 
 
 @contextlib.contextmanager
-def _uv_island_attribute(obj):
+def _uv_island_attribute(obj, first=0):
     """Give the mesh a face attribute with one value per UV island while it is baked (a shader
-    cannot tell UV islands apart), and take it away again, whatever happens."""
+    cannot tell UV islands apart), and take it away again, whatever happens. Islands are
+    numbered from `first`, so the objects of one texture set get different colors. Yields
+    the number of islands."""
     mesh = obj.data
     if UV_ISLAND_ATTRIBUTE in mesh.attributes:
         mesh.attributes.remove(mesh.attributes[UV_ISLAND_ATTRIBUTE])
     islands = uv_island_indices(mesh)
     attr = mesh.attributes.new(UV_ISLAND_ATTRIBUTE, 'FLOAT', 'FACE')
-    attr.data.foreach_set("value", [(i * _GOLDEN) % 1.0 for i in islands])
+    attr.data.foreach_set("value", [((first + i) * _GOLDEN) % 1.0 for i in islands])
     try:
         yield len(set(islands))
     finally:
@@ -564,13 +633,13 @@ class _ForceSelectable:
             if o.name not in self.vl.objects or not o.visible_get(view_layer=self.vl):
                 self._enable_collections(o)
             if o.name not in self.vl.objects:
-                raise RuntimeError(f"high-poly '{o.name}' is not in this view layer")
+                raise RuntimeError(f"'{o.name}' is not in this view layer")
             self.saved.append((o, o.hide_get(), o.hide_viewport, o.hide_select))
             o.hide_set(False)
             o.hide_viewport = False
             o.hide_select = False
             if not o.visible_get(view_layer=self.vl):
-                raise RuntimeError(f"high-poly '{o.name}' is still hidden")
+                raise RuntimeError(f"'{o.name}' is still hidden")
         return self
 
     def __exit__(self, *exc):
@@ -599,20 +668,22 @@ class _ForceSelectable:
 class ESSENCE_OT_bake(bpy.types.Operator):
     bl_idname = "essence.bake"
     bl_label = "Bake"
-    bl_description = "Bake the selected map for each selected mesh object"
+    bl_description = ("Bake the selected map for the texture sets of the selected objects: "
+                      "every object using one of their materials bakes into that material's "
+                      "image")
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
         return any(o.type == 'MESH' for o in context.selected_objects)
 
-    def _bake_object(self, context, obj, map_type, size, build_color, high=()):
+    def _bake_object(self, context, mat, obj, map_type, build_color, high, clear):
+        """One Cycles bake of `obj` into the active image of `mat` (set up by _bake_set)."""
         bake = context.scene.render.bake
         bpy.ops.object.select_all(action='DESELECT')
         bake.use_selected_to_active = bool(high)
         if high:
-            extrusion = context.scene.essence_bake_extrusion or auto_extrusion(obj)
-            cage = context.scene.essence_bake_cage
+            cage = obj.essence_bake_cage
             if cage is not None:
                 # Rays start on the cage and travel to the low surface; the cage replaces
                 # the extrusion and the distance limit.
@@ -620,6 +691,7 @@ class ESSENCE_OT_bake(bpy.types.Operator):
                 bake.cage_object = cage
                 bake.max_ray_distance = 0.0
             else:
+                extrusion = mat.essence.bake_extrusion or auto_extrusion(obj)
                 bake.use_cage = False
                 bake.cage_extrusion = extrusion
                 # Rays start `extrusion` above the low surface; reach `extrusion` below.
@@ -629,89 +701,102 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         obj.select_set(True)
         context.view_layer.objects.active = obj
 
-        aa = int(context.scene.essence_bake_aa)
-        image = _bake_image(obj.name, size * aa, map_type,
-                            context.scene.essence_bake_float)
         teardowns = []
         try:
-            overridden = set()
-            for mat in _ensure_materials(obj):
-                if not mat.use_nodes:
-                    mat.use_nodes = True
-                teardowns.append(_activate_target(mat, image, map_type))
-                if map_type == 'NORMAL':
-                    teardowns.append(_detach_normal_input(mat))
-                if build_color is not None:
-                    teardowns.append(_emission_override(mat, build_color))
-                    overridden.add(mat.name)
             if build_color is not None:
+                teardowns.append(_emission_override(mat, build_color))
                 for h in high:
-                    teardowns.extend(_override_high_materials(h, build_color, overridden))
+                    teardowns.extend(_override_high_materials(h, build_color, {mat.name}))
             pass_type = next(t[3] for t in MAP_TYPES if t[0] == map_type)
-            if 'FINISHED' not in bpy.ops.object.bake(type=pass_type, use_clear=True):
+            if 'FINISHED' not in bpy.ops.object.bake(type=pass_type, use_clear=clear):
                 raise RuntimeError("bake did not finish (see console)")
         finally:
             for t in reversed(teardowns):
                 t()
-        if aa > 1:
-            _downscale(image, size)
-        image.pack()
-        image["essence_stamp"] = uuid.uuid4().hex[:8]   # derived maps notice a new bake
-        if map_type == 'NORMAL':
-            for mat in _ensure_materials(obj):
-                node = mat.node_tree.nodes.get(_bake_node_name(map_type))
-                if node is not None:
-                    essence_nodes.apply_normal_map(mat, node)
-        elif map_type == 'AO':
-            for mat in _ensure_materials(obj):
-                essence_nodes.apply_ao(mat)
-        elif map_type == 'POSITION':
-            for mat in _ensure_materials(obj):
-                sources.wire_baked_inputs(mat.node_tree)   # a generator may read it now
-        return image
+
+    def _bake_set(self, context, mat, objects, map_type, build_color, high, image, margin,
+                  uv_islands):
+        """Bake every object of a texture set into `image`. One object gets Cycles' own margin;
+        several are baked with none (Cycles' margin would cover the islands of the others)
+        and get the margin from the compositor afterwards."""
+        several = len(objects) > 1
+        set_if_changed(context.scene.render.bake, 'margin', 0 if several else margin)
+        teardowns = []
+        try:
+            teardowns.append(_activate_target(mat, image, map_type))
+            if map_type == 'NORMAL':
+                teardowns.append(_detach_normal_input(mat))
+            teardowns.append(other_targets(objects, mat))
+            first_island = 0
+            for i, obj in enumerate(objects):
+                build = _position_builder(context, obj) if map_type == 'POSITION' else build_color
+                if uv_islands:
+                    with _uv_island_attribute(obj, first_island) as count:
+                        self._bake_object(context, mat, obj, map_type, build, high, i == 0)
+                    first_island += count
+                else:
+                    self._bake_object(context, mat, obj, map_type, build, high, i == 0)
+        finally:
+            for t in reversed(teardowns):
+                t()
+        if several and margin:
+            from . import filters
+            filters.add_margin(context, objects[0], mat, image, margin)
 
     def execute(self, context):
         scene = context.scene
-        meshes = [o for o in context.selected_objects if o.type == 'MESH']
         map_type = scene.essence_bake_map
-        size = int(scene.essence_bake_size)
-
-        high = []
-        collection = scene.essence_bake_high
+        aa = int(scene.essence_bake_aa)
         uv_islands = map_type == 'ID' and scene.essence_bake_id == 'UV_ISLAND'
-        if collection is not None and map_type in HIGH_MAPS and not uv_islands:
-            high = high_poly_objects(collection)
-            if not high:
-                self.report({'ERROR'}, f"High-poly collection '{collection.name}' has no mesh objects")
-                return {'CANCELLED'}
-            # The high-poly objects are the source, never a bake target.
-            meshes = [o for o in meshes if o not in set(high)]
 
-        if size * int(scene.essence_bake_aa) > _MAX_BAKE_SIZE:
-            self.report({'ERROR'}, f"{size} px with {scene.essence_bake_aa}x anti-aliasing "
-                        f"bakes at {size * int(scene.essence_bake_aa)} px, above the "
-                        f"{_MAX_BAKE_SIZE} px limit. Lower the size or anti-aliasing")
-            return {'CANCELLED'}
+        def highs_of(mat):
+            c = mat.essence.bake_high
+            return high_poly_objects(c) if c is not None else []
 
-        todo = [o for o in meshes if o.data.uv_layers]
-        if not todo:
-            self.report({'ERROR'}, "No low-poly mesh with a UV map selected"
-                        if high else "Selected mesh object(s) have no UV map")
+        # The texture sets: the materials of the selected objects. A selected high poly is a
+        # source, never a target.
+        selected = [o for o in context.selected_objects if o.type == 'MESH']
+        all_high = {h for o in selected for s in o.material_slots if s.material is not None
+                    for h in highs_of(s.material)}
+        mats = []
+        for o in selected:
+            if o in all_high:
+                continue
+            for m in _ensure_materials(o):
+                if m not in mats:
+                    mats.append(m)
+
+        sets, failed, skipped = [], [], []
+        for mat in mats:
+            if not mat.use_nodes:
+                mat.use_nodes = True
+            high = [] if map_type not in HIGH_MAPS or uv_islands else highs_of(mat)
+            if mat.essence.bake_high is not None and not high and not uv_islands:
+                failed.append(f"{mat.name} (high-poly collection "
+                              f"'{mat.essence.bake_high.name}' has no mesh objects)")
+                continue
+            objects = texture_set(context, mat)
+            skipped += [o.name for o in objects if not o.data.uv_layers]
+            objects = [o for o in objects if o.data.uv_layers]
+            size = int(mat.essence.bake_size)
+            if size * aa > _MAX_BAKE_SIZE:
+                failed.append(f"{mat.name} ({size} px with {aa}x anti-aliasing bakes at "
+                              f"{size * aa} px, above the {_MAX_BAKE_SIZE} px limit)")
+            elif objects:
+                sets.append((mat, objects, high, size))
+        if not sets:
+            self.report({'ERROR'}, "; ".join(failed) if failed else
+                        "No selected mesh with a UV map to bake")
             return {'CANCELLED'}
-        skipped = [o.name for o in meshes if not o.data.uv_layers]
 
         build_color = None
         if map_type == 'WORLD_GRADIENT':
-            lo, hi = world_bounds(context, todo)
+            lo, hi = world_bounds(context, [o for _, objs, _, _ in sets for o in objs])
             build_color = _gradient_builder(lo.z, hi.z)
         elif map_type == 'NORMAL_WORLD':
             build_color = _world_normal_builder()
         elif map_type == 'ID':
             build_color = _id_builder(scene.essence_bake_id)
-        elif map_type == 'THICKNESS':
-            # 0 is automatic: a tenth of the biggest low-poly object
-            distance = scene.essence_bake_thickness or 0.1 * max(max(o.dimensions) for o in todo)
-            build_color = _thickness_builder(distance or 1.0)
 
         start_mode = context.active_object.mode if context.active_object else 'OBJECT'
         if start_mode != 'OBJECT':
@@ -726,8 +811,10 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         bake_settings = scene.render.bake
         saved_bake = {a: getattr(bake_settings, a) for a in _BAKE_ATTRS}
 
-        baked, failed, last_image = [], [], None
-        forced = _ForceSelectable(context, high)
+        baked, last_image = [], None
+        # Hidden high polys and hidden objects of a set are shown for the bake, then hidden again.
+        forced = _ForceSelectable(context, list(dict.fromkeys(
+            o for _, objs, high, _ in sets for o in high + objs)))
         try:
             forced.__enter__()
             set_if_changed(scene.render, 'engine', 'CYCLES')
@@ -738,33 +825,46 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             set_if_changed(bake_settings, 'normal_b', 'POS_Z')
             set_if_changed(scene.cycles, 'samples', scene.essence_bake_samples)
             set_if_changed(scene.cycles, 'device', device)
-            set_if_changed(bake_settings, 'margin',
-                           scene.essence_bake_margin * int(scene.essence_bake_aa))
+            margin = scene.essence_bake_margin * aa
 
-            def bake_it(obj):
-                return self._bake_object(
-                    context, obj, map_type, size,
-                    _position_builder(context, obj) if map_type == 'POSITION'
-                    else build_color, high)
-
-            for obj in todo:
+            for mat, objects, high, size in sets:
+                build = build_color
+                if map_type == 'THICKNESS':
+                    # 0 is automatic: a tenth of the biggest object of the set
+                    distance = (scene.essence_bake_thickness
+                                or 0.1 * max(max(o.dimensions) for o in objects))
+                    build = _thickness_builder(distance or 1.0)
                 try:
-                    with (_uv_island_attribute(obj) if uv_islands
-                          else contextlib.nullcontext()):
-                        try:
-                            last_image = bake_it(obj)
-                        except Exception:  # noqa: BLE001
-                            if device != 'GPU' or scene.essence_bake_device == 'CPU':
-                                raise
-                            # The GPU failed (out of memory, a driver): this and the rest
-                            # of the objects go on the CPU.
-                            device, fell_back = 'CPU', True
-                            set_if_changed(scene.cycles, 'device', 'CPU')
-                            last_image = bake_it(obj)
-                    baked.append(obj.name)
+                    image = _set_image(mat, objects, size * aa, map_type, scene.essence_bake_float)
+                    args = (context, mat, objects, map_type, build, high, image, margin, uv_islands)
+                    try:
+                        self._bake_set(*args)
+                    except Exception:  # noqa: BLE001
+                        if device != 'GPU' or scene.essence_bake_device == 'CPU':
+                            raise
+                        # The GPU failed (out of memory, a driver): this and the rest of the
+                        # sets go on the CPU.
+                        device, fell_back = 'CPU', True
+                        set_if_changed(scene.cycles, 'device', 'CPU')
+                        self._bake_set(*args)
+                    if aa > 1:
+                        _downscale(image, size)
+                    image.pack()
+                    image["essence_stamp"] = uuid.uuid4().hex[:8]   # derived maps notice it
+                    if map_type == 'NORMAL':
+                        node = mat.node_tree.nodes.get(_bake_node_name(map_type))
+                        if node is not None:
+                            essence_nodes.apply_normal_map(mat, node)
+                    elif map_type == 'AO':
+                        essence_nodes.apply_ao(mat)
+                    elif map_type == 'POSITION':
+                        sources.wire_baked_inputs(mat.node_tree)   # a generator may read it now
+                    last_image = image
+                    baked.append(f"{mat.name} ({len(objects)} object"
+                                 f"{'s' if len(objects) > 1 else ''})")
                 except Exception as e:  # noqa: BLE001
-                    failed.append(f"{obj.name} ({e})")
-        except RuntimeError as e:  # high-poly visibility problems
+                    failed.append(f"{mat.name} ({e})")
+        except RuntimeError as e:  # visibility problems
             failed.append(str(e))
         finally:
             forced.__exit__()
@@ -792,12 +892,11 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             level = 'WARNING' if baked else 'ERROR'
             self.report({level}, f"Failed: {', '.join(failed)}")
         elif baked:
-            src = f" from '{collection.name}'" if high else ""
             if fell_back:
-                self.report({'WARNING'}, f"Baked {len(baked)} object(s){src}; the GPU failed, "
+                self.report({'WARNING'}, f"Baked {', '.join(baked)}; the GPU failed, "
                                          "so the CPU was used")
             else:
-                self.report({'INFO'}, f"Baked {len(baked)} object(s){src} on the {device}")
+                self.report({'INFO'}, f"Baked {', '.join(baked)} on the {device}")
         return {'FINISHED'} if baked else {'CANCELLED'}
 
 
@@ -816,22 +915,14 @@ def register():
     S = bpy.types.Scene
     S.essence_bake_map = EnumProperty(name="Map", description="Which map to bake",
                                       items=_map_items)
-    S.essence_bake_size = EnumProperty(name="Size", items=_SIZES, default="1024")
     S.essence_bake_samples = IntProperty(name="Samples", default=32, min=1, soft_max=512)
     S.essence_bake_margin = IntProperty(name="Margin", default=16, min=0, soft_max=64,
                                         description="Padding in pixels around UV islands")
-    S.essence_bake_high = PointerProperty(
-        name="High Poly", type=bpy.types.Collection,
-        description="Collection of high-poly meshes to project onto the selected "
-                    "low-poly objects. Leave empty to bake the low-poly alone")
-    S.essence_bake_extrusion = FloatProperty(
-        name="Extrusion", default=0.0, min=0.0, subtype='DISTANCE',
-        description="How far above the low-poly surface rays start. "
-                    "0 = automatic (2% of the object's size)")
-    S.essence_bake_cage = PointerProperty(
+    bpy.types.Object.essence_bake_cage = PointerProperty(
         name="Cage", type=bpy.types.Object, poll=lambda self, o: o.type == 'MESH',
-        description="Optional cage mesh: rays start on it instead of at the extrusion "
-                    "offset. Needs the same topology as the low-poly, pushed outwards")
+        description="Optional cage mesh for baking this low-poly object from a high poly: rays "
+                    "start on it instead of at the extrusion offset. Needs the same topology "
+                    "as this object, pushed outwards")
     S.essence_bake_aa = EnumProperty(
         name="Anti-aliasing", items=_AA, default='1',
         description="Supersampling: bake larger, then average down to the final size "
@@ -857,11 +948,11 @@ def register():
 def unregister():
     global _previews
     bpy.utils.unregister_class(ESSENCE_OT_bake)
+    del bpy.types.Object.essence_bake_cage
     S = bpy.types.Scene
-    for p in ("essence_bake_map", "essence_bake_size",
+    for p in ("essence_bake_map",
               "essence_bake_samples", "essence_bake_margin",
-              "essence_bake_high", "essence_bake_extrusion",
-              "essence_bake_cage", "essence_bake_float", "essence_bake_aa",
+              "essence_bake_float", "essence_bake_aa",
               "essence_bake_id", "essence_bake_device", "essence_bake_thickness"):
         delattr(S, p)
     if _previews is not None:

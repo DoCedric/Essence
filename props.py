@@ -210,6 +210,18 @@ class EssenceMaterial(bpy.types.PropertyGroup):
     curvature_strength: FloatProperty(
         name="Strength", default=1.5, min=0.0, soft_max=20.0,
         description="How strongly curvature shows (set for a 1024 px map, scaled for others)")
+    # Bake settings of the texture set (this material and every object using it, see bake.py)
+    bake_high: PointerProperty(
+        name="High Poly", type=bpy.types.Collection,
+        description="Collection of high-poly meshes to project onto the objects of this "
+                    "texture set. Leave empty to bake the low poly alone")
+    bake_extrusion: FloatProperty(
+        name="Extrusion", default=0.0, min=0.0, subtype='DISTANCE',
+        description="How far above the low-poly surface rays start. "
+                    "0 = automatic (2% of each object's size)")
+    bake_size: EnumProperty(
+        name="Size", default="1024", description="Size of this texture set's baked maps",
+        items=tuple((str(s), f"{s} x {s}", "") for s in (128, 256, 512, 1024, 2048, 4096)))
 
 
 classes = (EssenceChannelState, EssenceSource, EssenceLayer, EssenceMaterial)

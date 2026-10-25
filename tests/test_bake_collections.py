@@ -1,6 +1,6 @@
 import bpy
 
-from harness import check, make_plane
+from harness import baked, check, make_plane, texset
 from test_bake_quality import _bake, _center, _select
 
 
@@ -20,8 +20,7 @@ def _scene(nested=False):
         bpy.context.scene.collection.children.link(coll)
     coll.objects.link(high)
     bpy.context.scene.collection.objects.unlink(high)
-    sc = bpy.context.scene
-    sc.essence_bake_high = coll
+    texset(low).bake_high = coll
     _select(low)
     return low, coll, parent
 
@@ -44,7 +43,7 @@ def test_bake_with_an_excluded_collection(addon):
     bpy.context.view_layer.update()
     check("High" not in bpy.context.view_layer.objects, "setup: high should be excluded")
     check(_bake() == {'FINISHED'}, "bake with an excluded collection failed")
-    px = _center(bpy.data.images["Low_NormalWorld"])
+    px = _center(baked("Low", "NormalWorld"))
     check(max(px[:3]) > 0.1, f"the excluded high-poly left no mark: {px}")
     check(_layer_collection("HighPoly").exclude is True,
           "the collection must be excluded again afterwards")

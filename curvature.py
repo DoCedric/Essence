@@ -30,6 +30,7 @@ import time
 import bpy
 
 from . import filters, nodes
+from .bake import texture_set
 
 GROUP_PREFIX = "Essence Curvature "
 RESULT_SUFFIX = "Curvature"
@@ -205,41 +206,31 @@ def needs_derive(mat):
             and (not is_derived(mat) or mat.essence.curvature_sig != signature(mat)))
 
 
-def bake_coverage(context, ob, mat, size):
-    """A float image, white where the object's UV islands are and black elsewhere: the same
-    bake as any map, with a constant white emission and no margin."""
-    tree = mat.node_tree
-    white = tree.nodes.new('ShaderNodeRGB')
-    white.outputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
-    try:
-        return filters.bake_value(context, ob, mat, lambda t: white.outputs[0], size, margin=0)
-    finally:
-        tree.nodes.remove(white)
-
-
 def derive(context, ob, mat):
     """Run the compositor on the Normal slot and put the result in the Curvature slot, as a
-    packed float image called `<object>_Curvature` that replaces the previous one."""
+    packed float image called `<material>_Curvature` that replaces the previous one."""
     src_img = normal_image(mat)
     if src_img is None:
         raise RuntimeError("the Normal slot is empty: bake a normal or pick one first")
     if not ob.data.uv_layers:
         raise RuntimeError("the object has no UV map")
-    name = ob.name
     nodes.ensure_map_slots(mat)     # a file from before this slot existed does not have it
     t0 = time.perf_counter()
     filters.log(f"CURVATURE '{mat.name}' from '{src_img.name}' {tuple(src_img.size)}")
     ng = build_group(mat)
     apply_settings(mat, ng, src_img.size[0])
     sig = signature(mat)
-    coverage = bake_coverage(context, ob, mat, src_img.size[0])
+    coverage = filters.bake_coverage(context, ob, mat, src_img.size[0])
     try:
         result = filters.run_compositor_group(ng, src_img, {"Coverage": coverage})
     finally:
         bpy.data.images.remove(coverage)
     node = slot(mat)
-    img_name = f"{name}_{RESULT_SUFFIX}"
+    img_name = f"{mat.name}_{RESULT_SUFFIX}"
     old = bpy.data.images.get(img_name)
+    if old is None and node.image is not None and node.image.name in {
+            f"{o.name}_{RESULT_SUFFIX}" for o in texture_set(context, mat)}:
+        old = node.image    # derived before texture sets, under an object's name
     if old is not None:
         old.user_remap(result)
         bpy.data.images.remove(old)

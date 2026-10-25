@@ -2,13 +2,15 @@ import math
 
 import bpy
 
-from harness import check, make_plane
+from harness import baked, check, make_plane, texset
 
 
-def _bake(map_type="NORMAL_WORLD"):
+def _bake(map_type="NORMAL_WORLD", size="128"):
     sc = bpy.context.scene
     sc.essence_bake_map = map_type
-    sc.essence_bake_size = "128"
+    for o in bpy.context.selected_objects:
+        if o.type == 'MESH':
+            texset(o).bake_size = size
     sc.essence_bake_samples = 4
     sc.essence_bake_margin = 0
     return bpy.ops.essence.bake()
@@ -40,21 +42,20 @@ def _select(ob):
 
 def test_cage_reaches_distant_high_poly(addon):
     low = make_plane("Low", size=2.0)
-    sc = bpy.context.scene
-    sc.essence_bake_high = _high_collection(z=0.5, tilt=20)
+    texset(low).bake_high = _high_collection(z=0.5, tilt=20)
     _select(low)
     # Auto extrusion is ~0.06, so the tilted plane 0.5 above is out of reach: no cage, no hit.
     check(_bake() == {'FINISHED'}, "bake without cage failed")
-    miss = _center(bpy.data.images["Low_NormalWorld"])
+    miss = _center(baked("Low", "NormalWorld"))
     check(max(miss[:3]) < 0.01, f"expected a miss (untouched black), got {miss}")
 
     bpy.ops.mesh.primitive_plane_add(size=2.0, location=(0, 0, 0.8))
     cage = bpy.context.active_object
     cage.name = "Cage"
     _select(low)
-    sc.essence_bake_cage = cage
+    low.essence_bake_cage = cage
     check(_bake() == {'FINISHED'}, "bake with cage failed")
-    hit = _center(bpy.data.images["Low_NormalWorld"])
+    hit = _center(baked("Low", "NormalWorld"))
     # World normal of a plane tilted 20 degrees about X: (0, -sin20, cos20) -> 0-1 remap.
     check(abs(hit[1] - (0.5 - math.sin(math.radians(20)) / 2)) < 0.05 or
           abs(hit[1] - (0.5 + math.sin(math.radians(20)) / 2)) < 0.05,
@@ -65,9 +66,9 @@ def test_cage_reaches_distant_high_poly(addon):
 def test_cage_settings_restored(addon):
     low = make_plane("Low", size=2.0)
     sc = bpy.context.scene
-    sc.essence_bake_high = _high_collection(z=0.0, tilt=20)
+    texset(low).bake_high = _high_collection(z=0.0, tilt=20)
     bpy.ops.mesh.primitive_plane_add(size=2.0, location=(0, 0, 0.3))
-    sc.essence_bake_cage = bpy.context.active_object
+    low.essence_bake_cage = bpy.context.active_object
     _select(low)
     bake = sc.render.bake
     before = (bake.use_cage, bake.cage_object, bake.max_ray_distance)
@@ -81,7 +82,7 @@ def test_bake_image_is_float_and_switchable(addon):
     sc = bpy.context.scene
     check(sc.essence_bake_float, "float should default on")
     check(_bake("AO") == {'FINISHED'}, "bake failed")
-    img = bpy.data.images["P_AO"]
+    img = baked("P", "AO")
     check(img.is_float, "baked image is not float")
     check(img.packed_file is not None, "baked image not packed")
     # Switching to 8-bit keeps the image name and its users.
@@ -91,7 +92,7 @@ def test_bake_image_is_float_and_switchable(addon):
     n.image = img
     sc.essence_bake_float = False
     check(_bake("AO") == {'FINISHED'}, "8-bit rebake failed")
-    img2 = bpy.data.images["P_AO"]
+    img2 = baked("P", "AO")
     check(not img2.is_float, "image should now be 8-bit")
     check(n.image is img2, "reference to the baked image was lost")
 
@@ -126,10 +127,10 @@ def _edge_row(aa):
         high.location.x = 0.0234
         _select(low)
         sc = bpy.context.scene
-        sc.essence_bake_high = coll
+        texset(low).bake_high = coll
         sc.essence_bake_aa = aa
         check(_bake() == {'FINISHED'}, f"bake with aa={aa} failed")
-        img = bpy.data.images["Low_NormalWorld"]
+        img = baked("Low", "NormalWorld")
         check(tuple(img.size) == (128, 128), f"final size should stay 128, got {tuple(img.size)}")
         check(img.is_float, "image should be float")
         w = img.size[0]
@@ -151,9 +152,9 @@ def test_bake_antialiasing_smooths_edges(addon):
 
 
 def test_bake_aa_size_limit(addon):
-    make_plane("P", size=2.0)
+    ob = make_plane("P", size=2.0)
     sc = bpy.context.scene
-    sc.essence_bake_size = "4096"
+    texset(ob).bake_size = "4096"
     sc.essence_bake_aa = '4'
     sc.essence_bake_map = 'AO'
     try:
@@ -161,11 +162,11 @@ def test_bake_aa_size_limit(addon):
         raise AssertionError("expected the size limit to cancel the bake")
     except RuntimeError as e:
         check("limit" in str(e), f"unexpected error: {e}")
-    check(bpy.data.images.get("P_AO") is None, "no image should be created when over the limit")
+    check(baked("P", "AO") is None, "no image should be created when over the limit")
 
 
 def test_rebake_at_a_new_size_replaces_the_image(addon):
-    make_plane("P", size=2.0)
+    ob = make_plane("P", size=2.0)
     sc = bpy.context.scene
     sc.essence_bake_map = 'AO'
     sc.essence_bake_samples = 2
@@ -175,15 +176,15 @@ def test_rebake_at_a_new_size_replaces_the_image(addon):
     node = holder.node_tree.nodes.new('ShaderNodeTexImage')
     for size, aa, expect in (("128", '1', 128), ("256", '1', 256), ("256", '2', 256),
                              ("128", '2', 128)):
-        sc.essence_bake_size = size
+        texset(ob).bake_size = size
         sc.essence_bake_aa = aa
         check(bpy.ops.essence.bake() == {'FINISHED'}, f"bake {size} aa{aa} failed")
-        img = bpy.data.images["P_AO"]
+        img = baked("P", "AO")
         check(tuple(img.size) == (expect, expect), f"{size} aa{aa}: image is {tuple(img.size)}")
         check(len(img.pixels) == expect * expect * 4, "pixel buffer size differs from image size")
         node.image = img
-    check(node.image is bpy.data.images["P_AO"], "reference to the baked image was lost")
-    check(len([i for i in bpy.data.images if i.name.startswith("P_AO")]) == 1,
+    check(node.image is baked("P", "AO"), "reference to the baked image was lost")
+    check(len([i for i in bpy.data.images if i.name.startswith(baked("P", "AO").name)]) == 1,
           "old bake images were left behind")
 
 
@@ -316,7 +317,7 @@ def test_a_failed_gpu_bake_is_retried_on_the_cpu(addon):
         check(_bake('AO') == {'FINISHED'}, "the bake should succeed on the CPU")
         check(devices[:2] == ['GPU', 'CPU'], f"GPU first, then the CPU: {devices}")
         check(sc.cycles.device == 'CPU', "the scene's device is back")
-        check(bpy.data.images.get("Retry_AO") is not None, "the image was made")
+        check(baked("Retry", "AO") is not None, "the image was made")
         # choosing the CPU never tries the GPU
         devices.clear()
         sc.essence_bake_device = 'CPU'

@@ -2,7 +2,7 @@
 
 import bpy
 
-from harness import check, close, make_plane
+from harness import baked, check, close, make_plane, texset
 from test_bake_quality import _bake, _select
 
 
@@ -55,16 +55,15 @@ def _two_islands(x, y, cx):
     return (u, (y + 1) / 2)
 
 
-def _high_collection(*objects):
+def _high_collection(low, *objects):
     coll = bpy.data.collections.new("HighPoly")
     bpy.context.scene.collection.children.link(coll)
     for o in objects:
         for c in list(o.users_collection):
             c.objects.unlink(o)
         coll.objects.link(o)
-    sc = bpy.context.scene
-    sc.essence_bake_high = coll
-    sc.essence_bake_extrusion = 0.5
+    texset(low).bake_high = coll
+    texset(low).bake_extrusion = 0.5
     return coll
 
 
@@ -85,15 +84,14 @@ def _bake_id(mode, low, size="128"):
     sc = bpy.context.scene
     sc.essence_bake_id = mode
     _select(low)
-    sc.essence_bake_size = size
-    return _bake('ID')
+    return _bake('ID', size=size)
 
 
 def test_object_ids_per_high_poly_part(addon):
     low = make_plane("Low", size=2.0)
-    _high_collection(*_half_planes())
+    _high_collection(low, *_half_planes())
     check(_bake_id('OBJECT', low) == {'FINISHED'}, "bake failed")
-    img = bpy.data.images["Low_ID"]
+    img = baked("Low", "ID")
     left, right = _at(img, 0.25, 0.5), _at(img, 0.75, 0.5)
     _differ(left, right, "two high-poly objects")
     _same(left, _at(img, 0.2, 0.2), "inside one part")
@@ -105,7 +103,7 @@ def test_object_ids_per_high_poly_part(addon):
     # The colors are stable: a second bake gives the same ones.
     first = (left, right)
     _bake_id('OBJECT', low)
-    img = bpy.data.images["Low_ID"]
+    img = baked("Low", "ID")
     _same(first[0], _at(img, 0.25, 0.5), "a rebake keeps the colors")
     _same(first[1], _at(img, 0.75, 0.5), "a rebake keeps the colors")
 
@@ -113,7 +111,7 @@ def test_object_ids_per_high_poly_part(addon):
 def test_object_ids_of_the_low_poly_itself(addon):
     low = make_plane("Low", size=2.0)
     check(_bake_id('OBJECT', low) == {'FINISHED'}, "bake failed")
-    img = bpy.data.images["Low_ID"]
+    img = baked("Low", "ID")
     _same(_at(img, 0.2, 0.2), _at(img, 0.8, 0.8), "one object is one color")
 
 
@@ -130,12 +128,16 @@ def test_material_ids(addon):
                  for li in p.loop_indices) / 4
         p.material_index = 0 if cx < 0 else 1
     check(_bake_id('MATERIAL', low) == {'FINISHED'}, "bake failed")
-    img = bpy.data.images["Low_ID"]
+    # Each material is its own texture set: its image holds its own faces only.
     for (u, v), m in (((0.25, 0.3), mats[0]), ((0.75, 0.7), mats[1])):
+        img = bpy.data.images[f"{m.name}_ID"]
         expected = addon.bake.name_color(m.name)[:3]
         check(_distance(_at(img, u, v), expected) < 0.03,
               f"{m.name}: {_at(img, u, v)} should be its name color {expected}")
-    _differ(_at(img, 0.25, 0.5), _at(img, 0.75, 0.5), "two materials")
+        other = _at(img, 1 - u, v)
+        check(max(other) < 0.01, f"{m.name}: the other material's faces are not in it: {other}")
+    _differ(addon.bake.name_color("Paint")[:3], addon.bake.name_color("Metal")[:3],
+            "two materials")
 
 
 def test_material_ids_from_a_high_poly(addon):
@@ -145,9 +147,9 @@ def test_material_ids_from_a_high_poly(addon):
         m = bpy.data.materials.new(name)
         m.use_nodes = True
         o.data.materials.append(m)
-    _high_collection(*halves)
+    _high_collection(low, *halves)
     check(_bake_id('MATERIAL', low) == {'FINISHED'}, "bake failed")
-    img = bpy.data.images["Low_ID"]
+    img = baked("Low", "ID")
     check(_distance(_at(img, 0.25, 0.5), addon.bake.name_color("PartA")[:3]) < 0.03,
           "the color of the high-poly material that was hit")
     check(_distance(_at(img, 0.75, 0.5), addon.bake.name_color("PartB")[:3]) < 0.03,
@@ -162,9 +164,9 @@ def test_mesh_island_ids_from_one_high_poly_mesh(addon):
     mesh.from_pydata(verts, [], [(0, 1, 2, 3), (4, 5, 6, 7)])      # two loose pieces
     pieces = bpy.data.objects.new("Pieces", mesh)
     bpy.context.scene.collection.objects.link(pieces)
-    _high_collection(pieces)
+    _high_collection(low, pieces)
     check(_bake_id('MESH_ISLAND', low) == {'FINISHED'}, "bake failed")
-    img = bpy.data.images["Low_ID"]
+    img = baked("Low", "ID")
     left, right = _at(img, 0.25, 0.5), _at(img, 0.75, 0.5)
     _differ(left, right, "two loose pieces of one mesh")
     _same(left, _at(img, 0.2, 0.8), "inside one piece")
@@ -189,10 +191,10 @@ def test_uv_island_ids(addon):
     bpy.ops.mesh.primitive_plane_add(size=4.0, location=(0, 0, 0.02))
     plane = bpy.context.active_object
     plane.name = "Decoy"
-    _high_collection(plane)
+    _high_collection(low, plane)
     check(_bake_id('UV_ISLAND', low) == {'FINISHED'}, "bake failed")
-    check(bpy.data.images.get("Decoy_ID") is None, "the high poly was baked as a target")
-    img = bpy.data.images["Low_ID"]
+    check(baked("Decoy", "ID") is None, "the high poly was baked as a target")
+    img = baked("Low", "ID")
     left, right = _at(img, 0.2, 0.5), _at(img, 0.8, 0.5)
     _differ(left, right, "two UV islands")
     _same(left, _at(img, 0.3, 0.8), "inside one island")
@@ -229,7 +231,7 @@ def test_id_panels_draw(addon):
                   f"{mode}: no ID by dropdown")
     sc.essence_bake_id = 'UV_ISLAND'
     log = _draw(ui._bake, low)
-    check(not any(c[0] == "prop" and c[1][1] == "essence_bake_high" for c in log),
+    check(not any(c[0] == "prop" and c[1][1] == "bake_high" for c in log),
           "UV island IDs ignore the High Poly collection, so it is not offered")
     log = _draw(ui._maps, low)
     check(any(c[0] == "template_ID" and getattr(c[1][0], "name", "") ==

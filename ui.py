@@ -2,7 +2,7 @@ import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
 from . import adjustments, curvature, filters, generators, gizmo, nodes, preview, sources
-from .bake import HIGH_MAPS, resolve_device
+from .bake import HIGH_MAPS, resolve_device, texture_set
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
 
@@ -798,16 +798,28 @@ def _bake(self, context):
             layout.label(text="The islands of the low poly itself", icon='INFO')
         if scene.essence_bake_aa != '1':
             layout.label(text="Anti-aliasing blends IDs at edges", icon='ERROR')
-    if scene.essence_bake_map in HIGH_MAPS and not uv_islands:
+    ob = context.active_object
+    mat = ob.active_material if ob is not None and ob.type == 'MESH' else None
+    if mat is not None:
+        # The active material's texture set; each selected object's sets bake with their own.
+        es = mat.essence
         box = layout.box()
-        box.prop(scene, "essence_bake_high", text="High Poly")
-        if scene.essence_bake_high is not None:
-            box.prop(scene, "essence_bake_cage", text="Cage")
-            if scene.essence_bake_cage is None:
-                box.prop(scene, "essence_bake_extrusion", text="Extrusion")
-            box.label(text="Bakes selected low-poly objects", icon='INFO')
+        objects = texture_set(context, mat)
+        box.label(text=f"Texture set: {mat.name}", icon='MATERIAL')
+        box.prop(es, "bake_size", text="Size")
+        if scene.essence_bake_map in HIGH_MAPS and not uv_islands:
+            box.prop(es, "bake_high", text="High Poly")
+            if es.bake_high is not None:
+                if ob in objects:
+                    box.prop(ob, "essence_bake_cage", text=f"Cage of {ob.name}")
+                # Used by every object of the set that has no cage
+                box.prop(es, "bake_extrusion", text="Extrusion")
+        if len(objects) > 1:
+            box.label(text=f"{len(objects)} objects bake into one image", icon='INFO')
+            box.label(text="Their UVs must not overlap")
+    elif ob is not None and ob.type == 'MESH':
+        layout.label(text="No material yet: a bake gives it one", icon='INFO')
     col = layout.column(align=True)
-    col.prop(scene, "essence_bake_size", text="Size")
     col.prop(scene, "essence_bake_samples", text="Samples")
     col.prop(scene, "essence_bake_margin", text="Margin")
     col.prop(scene, "essence_bake_aa", text="Anti-aliasing")
