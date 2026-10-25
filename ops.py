@@ -1,7 +1,7 @@
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import adjustments, curvature, filters, gizmo, nodes, sources, stack
+from . import adjustments, curvature, filters, generators, gizmo, nodes, sources, stack
 from .channels import SOURCE_BY_ID
 
 
@@ -471,6 +471,80 @@ class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ESSENCE_OT_pick_id(_Base, bpy.types.Operator):
+    bl_idname = "essence.pick_id"
+    bl_label = "Pick from Selected Face"
+    bl_description = ("Choose the part to select: select one of its faces in Edit Mode, then "
+                      "press this. It reads the color of the ID map at the face's UV center")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    uid: StringProperty()
+    channel: StringProperty()
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.type == 'MESH' and ob.active_material is not None
+
+    def execute(self, context):
+        import bmesh
+        ob = context.active_object
+        mat = ob.active_material
+        entry = next((e for e in mat.essence.layers if e.uid == self.uid), None)
+        tex = (sources.source_nodes(mat.node_tree, self.uid, self.channel).get('TEXTURE')
+               if entry is not None else None)
+        if tex is None or generators.PICK_INPUT not in tex.inputs:
+            return {'CANCELLED'}
+        slot = mat.node_tree.nodes.get(nodes.map_slot_name('ID'))
+        img = slot.image if slot is not None and slot.bl_idname == 'ShaderNodeTexImage' else None
+        if img is None:
+            self.report({'ERROR'}, "The ID slot is empty: bake an ID map first (Bake panel)")
+            return {'CANCELLED'}
+        if ob.mode != 'EDIT':
+            self.report({'ERROR'}, "Enter Edit Mode and select a face of the part first")
+            return {'CANCELLED'}
+        bm = bmesh.from_edit_mesh(ob.data)
+        face = bm.faces.active if bm.faces.active is not None and bm.faces.active.select else \
+            next((f for f in bm.faces if f.select), None)
+        uv_layer = bm.loops.layers.uv.active
+        if face is None or uv_layer is None:
+            self.report({'ERROR'}, "Select a face (and the object needs a UV map)")
+            return {'CANCELLED'}
+        u = sum(l[uv_layer].uv.x for l in face.loops) / len(face.loops)
+        v = sum(l[uv_layer].uv.y for l in face.loops) / len(face.loops)
+        w, h = img.size
+        x, y = min(w - 1, int((u % 1.0) * w)), min(h - 1, int((v % 1.0) * h))
+        i = (y * w + x) * 4
+        r, g, b, _a = img.pixels[i:i + 4]       # the one pixel this needs
+        tex.inputs[generators.PICK_INPUT].default_value = (r, g, b, 1.0)
+        self.report({'INFO'}, f"Picked ({r:.2f}, {g:.2f}, {b:.2f}) at UV ({u:.2f}, {v:.2f})")
+        return {'FINISHED'}
+
+
+class ESSENCE_OT_show_map(_Base, bpy.types.Operator):
+    bl_idname = "essence.show_map"
+    bl_label = "Show in Image Editor"
+    bl_description = "Show this mesh map in the Image Editors that are open"
+    bl_options = {'INTERNAL'}
+
+    map_id: StringProperty()
+
+    def execute(self, context):
+        mat = _material(context)
+        node = mat.node_tree.nodes.get(nodes.map_slot_name(self.map_id)) if mat else None
+        if node is None or node.image is None:
+            return {'CANCELLED'}
+        shown = False
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'IMAGE_EDITOR':
+                    area.spaces.active.image = node.image
+                    shown = True
+        if not shown:
+            self.report({'INFO'}, "Open an Image Editor to see it")
+        return {'FINISHED'}
+
+
 class ESSENCE_OT_light_gizmo(_Base, bpy.types.Operator):
     bl_idname = "essence.light_gizmo"
     bl_label = "Light Gizmo"
@@ -763,7 +837,8 @@ classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
-    ESSENCE_OT_add_paint, ESSENCE_OT_light_gizmo, ESSENCE_OT_derive_curvature,
+    ESSENCE_OT_add_paint, ESSENCE_OT_pick_id, ESSENCE_OT_show_map, ESSENCE_OT_light_gizmo,
+    ESSENCE_OT_derive_curvature,
     ESSENCE_OT_filter_apply,
     ESSENCE_OT_filter_apply_all,
     ESSENCE_MT_add_adjustment,

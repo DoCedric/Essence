@@ -531,6 +531,11 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
                                   text="Remove Gizmo" if arrow else "Show Gizmo",
                                   icon='EMPTY_ARROWS', depress=arrow)
                 op.uid, op.channel = e.uid, ch.id
+            elif s.name == generators.PICK_INPUT:
+                col.prop(s, "default_value", text="ID Color")
+                op = col.operator("essence.pick_id", icon='EYEDROPPER')
+                op.uid, op.channel = e.uid, ch.id
+                col.operator("essence.show_map", icon='IMAGE_DATA').map_id = 'ID'
             elif s.name == "World Space" and arrow:
                 sub = col.row()
                 sub.enabled = False     # the arrow is parented for one space: remove it to switch

@@ -26,7 +26,9 @@ DETAIL_INPUT = "Detail Normal"      # wired by Essence, not edited in the panel
 BAKED_POSITION_INPUT = "Baked Position"   # likewise: the Position slot, or Generated coordinates
 CURVATURE_INPUT = "Curvature"       # likewise: the Curvature slot, or flat grey (no curvature)
 AO_INPUT = "AO"                     # likewise: the AO slot, or white (no occlusion)
-INTERNAL_INPUTS = (DETAIL_INPUT, BAKED_POSITION_INPUT, CURVATURE_INPUT, AO_INPUT)
+ID_INPUT = "ID"                     # likewise: the ID slot, or black (no part)
+PICK_INPUT = "ID Color"             # the color of the part ID Select chooses
+INTERNAL_INPUTS = (DETAIL_INPUT, BAKED_POSITION_INPUT, CURVATURE_INPUT, AO_INPUT, ID_INPUT)
 ROTATION_INPUT = "Rotation"         # an Euler input the temporary gizmo (gizmo.py) can drive
 
 
@@ -223,6 +225,7 @@ _C = 'NodeSocketColor'
 
 _CURVATURE_IN = (CURVATURE_INPUT, _C, (0.5, 0.5, 0.5, 1.0), {"hide_value": True})
 _AO_IN = (AO_INPUT, _C, (1.0, 1.0, 1.0, 1.0), {"hide_value": True})
+_ID_IN = (ID_INPUT, _C, (0.0, 0.0, 0.0, 1.0), {"hide_value": True})
 
 
 def _red(ng, color_socket, x, y):
@@ -278,6 +281,20 @@ def _build_cavity(ng, gen):
     both = _math(ng, 'ADD', concave.outputs[0], half.outputs[0], x=-50, y=100)
     above = _math(ng, 'SUBTRACT', both.outputs[0], n_in.outputs["Threshold"], x=150, y=100)
     out = _soft_step(ng, above.outputs[0], n_in.outputs["Softness"], 350, 100)
+    ng.links.new(out.outputs[0], n_out.inputs["Fac"])
+
+
+def _build_id_select(ng, gen):
+    n_in, n_out = _interface(ng, gen)
+    # how far the ID map's color is from the chosen one, in color space
+    dist = _vector_math(ng, 'DISTANCE', n_in.outputs[ID_INPUT], n_in.outputs[PICK_INPUT],
+                        x=-700, y=100)
+    margin = _math(ng, 'SUBTRACT', n_in.outputs["Tolerance"], dist.outputs['Value'],
+                   x=-450, y=100, label="Inside the tolerance")
+    mask = _soft_step(ng, margin.outputs[0], n_in.outputs["Softness"], -200, 100)
+    # Invert is 0 or 1: |Invert - mask| is the mask, or 1 - the mask
+    flip = _math(ng, 'SUBTRACT', n_in.outputs["Invert"], mask.outputs[0], x=250, y=100)
+    out = _math(ng, 'ABSOLUTE', flip.outputs[0], x=450, y=100, label="Invert")
     ng.links.new(out.outputs[0], n_out.inputs["Fac"])
 
 
@@ -374,6 +391,16 @@ GENERATORS = {g.id: g for g in (
          ("Noise Strength", _F, 0.3, {"min_value": 0.0, "max_value": 1.0}),
          _CURVATURE_IN, _AO_IN),
         _build_dirt, None, ("AO", "CURVATURE")),
+    Gen('ID_SELECT', "ID Select",
+        "One part of the ID map: everything whose color is within a tolerance of the chosen "
+        "one. Pick the color from a selected face, with the eyedropper, or by hand",
+        1,
+        ((PICK_INPUT, _C, (1.0, 0.0, 0.0, 1.0), {}),
+         ("Tolerance", _F, 0.05, {"min_value": 0.0, "max_value": 2.0}),
+         ("Softness", _F, 0.03, {"min_value": 0.0, "max_value": 1.0}),
+         ("Invert", 'NodeSocketBool', False, {}),
+         _ID_IN),
+        _build_id_select, None, ("ID",)),
 )}
 ITEMS = [(g.id, g.label, g.description) for g in GENERATORS.values()]
 

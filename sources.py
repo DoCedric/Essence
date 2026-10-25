@@ -165,6 +165,7 @@ DETAIL_FALLBACK = "Essence Geometry Normal"
 POSITION_FALLBACK = "Essence Generated Coordinates"
 CURVATURE_FALLBACK = "Essence Flat Curvature"      # no curvature map: flat grey, no edges
 AO_FALLBACK = "Essence Open Occlusion"             # no AO map: white, nothing occluded
+ID_FALLBACK = "Essence No ID"                      # no ID map: black, no part
 
 
 def _feed(tree, input_name, source, fallback_name, fallback_idname, fallback_output,
@@ -204,7 +205,7 @@ def _drop_stale_feeds(tree, fed):
     switched to another type)."""
     from . import nodes
     ours = {nodes.NORMAL_NODE_NAME, DETAIL_FALLBACK, POSITION_FALLBACK, CURVATURE_FALLBACK,
-            AO_FALLBACK, *(nodes.map_slot_name(m) for m, _label in nodes.MAP_SLOTS)}
+            AO_FALLBACK, ID_FALLBACK, *(nodes.map_slot_name(m) for m, _label in nodes.MAP_SLOTS)}
     for n in tree.nodes:
         if n.bl_idname != 'ShaderNodeGroup' or n.node_tree is None:
             continue
@@ -236,7 +237,8 @@ def wire_baked_inputs(tree):
           POSITION_FALLBACK, 'ShaderNodeTexCoord', 'Generated')
     for input_name, map_id, name, color in (
             (generators.CURVATURE_INPUT, 'CURVATURE', CURVATURE_FALLBACK, (0.5, 0.5, 0.5, 1.0)),
-            (generators.AO_INPUT, 'AO', AO_FALLBACK, (1.0, 1.0, 1.0, 1.0))):
+            (generators.AO_INPUT, 'AO', AO_FALLBACK, (1.0, 1.0, 1.0, 1.0)),
+            (generators.ID_INPUT, 'ID', ID_FALLBACK, (0.0, 0.0, 0.0, 1.0))):
         slot = tree.nodes.get(nodes.map_slot_name(map_id))
         src = (slot.outputs['Color'] if slot is not None and slot.bl_idname == 'ShaderNodeTexImage'
                and slot.image is not None else None)
