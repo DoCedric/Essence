@@ -12,6 +12,16 @@ and ending the preview puts the link back exactly. One preview at a time.
     layer    the layer's own Color fill: the Color input after its source and adjustments,
              before the mask, opacity and blend
     channel  the whole stack's result for a channel: what feeds the shader for it
+    map      a Mesh Maps slot (ID, Curvature, AO, Position, Thickness, Normal) on the mesh,
+             sampled with the UV map: for reading an ID color with the eyedropper, or just
+             looking at a bake on the model
+
+A **map** preview shows raw data, and the eyedropper reads the pixel as displayed and converts
+it back to scene linear, which is exact only with the Standard view transform (AgX and Filmic
+tone-map and cannot be undone exactly, exposure and gamma shift the values). So while a map
+preview runs the scene's color management is set to Standard, no look, exposure 0 and gamma 1;
+what it was is kept on the Emission node (`essence_prev_view`, so it survives a save) and put back
+when the preview ends or changes to something that is not a map. Other previews leave it alone.
 
 Helper nodes (`essence_preview_helper`) stand in where there is no socket to show: a color
 node kept equal to a layer's plain Color value by drivers, and a remap of the signed height.
@@ -23,6 +33,7 @@ from .channels import BY_ID
 
 NODE = "Essence Preview"
 KEY = "essence_preview"
+VIEW_KEY = "essence_prev_view"      # {scene, transform, look, exposure, gamma} to put back
 HELPER_KEY = "essence_preview_helper"
 HELPER_PREFIX = "Essence Preview "
 
@@ -46,6 +57,53 @@ def active(mat):
         return None
     kind, _, ident = str(node[KEY]).partition(":")
     return kind, ident
+
+
+def view_override(mat):
+    """Is the color management set to Standard by a running map preview?"""
+    node = find(mat)
+    return node is not None and VIEW_KEY in node
+
+
+def _apply_view(node, exact):
+    """Standard color management while a map preview runs (`exact`), the old one otherwise."""
+    from .bake import set_if_changed
+    stored = node.get(VIEW_KEY)
+    if not exact:
+        if stored is not None:
+            _restore_view(node)
+        return
+    if stored is not None:
+        return                              # already set by this preview: keep what it replaced
+    scene = bpy.context.scene
+    vs = scene.view_settings
+    if (vs.view_transform == 'Standard' and vs.look == 'None'
+            and abs(vs.exposure) < 1e-6 and abs(vs.gamma - 1.0) < 1e-6):
+        return                              # nothing to change, nothing to put back
+    # a dict: a custom property list cannot mix text and numbers
+    node[VIEW_KEY] = {"scene": scene.name, "transform": vs.view_transform, "look": vs.look,
+                      "exposure": vs.exposure, "gamma": vs.gamma}
+    set_if_changed(vs, 'view_transform', 'Standard')
+    set_if_changed(vs, 'look', 'None')
+    set_if_changed(vs, 'exposure', 0.0)
+    set_if_changed(vs, 'gamma', 1.0)
+
+
+def _restore_view(node):
+    from .bake import set_if_changed
+    stored = node.get(VIEW_KEY)
+    if stored is None:
+        return
+    scene = bpy.data.scenes.get(stored["scene"]) or bpy.context.scene
+    vs = scene.view_settings
+    try:
+        set_if_changed(vs, 'view_transform', stored["transform"])   # first: it decides the looks
+        set_if_changed(vs, 'look', stored["look"])
+    except TypeError:
+        pass                                                # a look that no longer exists
+    set_if_changed(vs, 'exposure', stored["exposure"])
+    set_if_changed(vs, 'gamma', stored["gamma"])
+    del node[VIEW_KEY]
 
 
 def _clear_helpers(tree):
@@ -96,6 +154,11 @@ def _resolve(mat, kind, ident):
         if sock.is_linked:
             return sock.links[0].from_socket
         return _color_helper(tree, node, "Color B")
+    if kind == 'MAP':
+        slot = tree.nodes.get(nodes.map_slot_name(ident))
+        if slot is None or slot.bl_idname != 'ShaderNodeTexImage' or slot.image is None:
+            return None
+        return slot.outputs['Color']
     if kind == 'CHANNEL':
         ch = BY_ID.get(ident)
         if ch is None:
@@ -152,6 +215,7 @@ def start(mat, kind, ident):
             stop(mat)
         return False
     node[KEY] = f"{kind}:{ident}"
+    _apply_view(node, kind == 'MAP')
     color = node.inputs['Color']
     for l in list(color.links):
         tree.links.remove(l)
@@ -175,6 +239,7 @@ def stop(mat):
     prev_sock = (next((s for s in prev_node.outputs if s.identifier == node.get("essence_prev_socket")),
                       None) if prev_node is not None else None)
     _clear_helpers(tree)
+    _restore_view(node)
     tree.nodes.remove(node)
     if out is not None:
         surface = out.inputs['Surface']

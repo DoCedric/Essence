@@ -153,6 +153,8 @@ def _preview_notice(layout, mat, context):
     kind, ident = state
     if kind == 'CHANNEL':
         name = f"{BY_ID[ident].label} of the stack" if ident in BY_ID else ident
+    elif kind == 'MAP':
+        name = f"the {dict(nodes.MAP_SLOTS).get(ident, ident)} map"
     else:
         e = next((x for x in mat.essence.layers if x.uid == ident), None)
         name = e.name if e is not None else "?"
@@ -160,9 +162,17 @@ def _preview_notice(layout, mat, context):
     row = box.row(align=True)
     row.label(text=f"Previewing: {name}", icon='SHADING_TEXTURE')
     row.operator("essence.preview_stop", text="", icon='X')
+    if preview.view_override(mat):
+        box.label(text="Color management is Standard until you stop", icon='INFO')
     shading = getattr(getattr(context, "space_data", None), "shading", None)
     if shading is not None and shading.type == 'SOLID':
         box.label(text="Solid ignores the nodes: use Material Preview or Rendered", icon='ERROR')
+
+
+def _previewing(mat, kind, ident):
+    """Is this the preview that is running? (A function of its own: `_source_controls` has an
+    argument called `preview`, which hides the module.)"""
+    return preview.active(mat) == (kind, ident)
 
 
 def _entry_row(layout, mat, item, active, add_mask=False, foldable=False):
@@ -568,6 +578,13 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
                 col.prop(s, "default_value", text="ID Color")
                 op = col.operator("essence.pick_id", icon='EYEDROPPER')
                 op.uid, op.channel = e.uid, ch.id
+                shown = _previewing(mat, 'MAP', 'ID')
+                op = col.operator("essence.preview", text="Show ID on Mesh",
+                                  icon='SHADING_TEXTURE', depress=shown)
+                op.kind, op.ident = 'MAP', 'ID'
+                if shown:
+                    col.label(text="Use the eyedropper of the color above on the mesh",
+                              icon='INFO')
                 col.operator("essence.show_map", icon='IMAGE_DATA').map_id = 'ID'
             elif s.name == "World Space" and arrow:
                 sub = col.row()
@@ -715,6 +732,10 @@ def _maps(self, context):
                 box.prop(factor, "default_value", text="Strength", slider=True)
         elif map_id == 'CURVATURE':
             _curvature(box, mat)
+        if node.image is not None:
+            op = box.operator("essence.preview", text="Show on Mesh", icon='SHADING_TEXTURE',
+                              depress=preview.active(mat) == ('MAP', map_id))
+            op.kind, op.ident = 'MAP', map_id
     if not found:
         layout.label(text="Add a layer first")
     elif missing:    # a file from before some slots existed: a rebuild adds them
