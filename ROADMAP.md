@@ -1,8 +1,22 @@
 # Essence roadmap
 
-Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run in order, one branch each (`sprint-N-name`). Tick tasks as they finish. Rules are in `CLAUDE.md`. Sprints 0 to 2 are detailed; later ones are outlines to be detailed when reached.
+Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run in order, one branch each (`sprint-N-name`). Tick tasks as they finish. Rules are in `CLAUDE.md`. Sprints 0 to 5 are done and detailed below; later ones are outlines to be detailed when reached.
 
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
+
+## Status (2026-10-25)
+Sprints 0 to 5 are done and merged into `main`; every sprint branch is merged. `tests/run_all.py`: 282/282 pass headless. Next is **Sprint 6**.
+
+**Pending GUI checks** (everything else is confirmed):
+- **ID Select**: build a palette on a real ID map, remove a color, pick colors from the mesh (Show ID on Mesh, then E over a swatch).
+- **Map preview**: with AgX and an exposure set in the scene, Show ID on Mesh, then end the preview: the view transform and exposure come back.
+- **Rename**: the cursor is in the name field when the Ctrl+click popup opens.
+- **Sprint 1 milestone**: source picker usability, triplanar look, row toggles (never ticked, probably fine in practice).
+- From Sprint 0, never checked explicitly: Emission-baked colors match the viewport, and the MaskMap saves straight alpha in PNG/TGA (EXR verified).
+
+**Open decisions** (details in Open Questions of the design doc): baking groups and multi-object bake (first thing in Sprint 6); the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
+
+**Known limits to remember:** UVs in a second tile are not baked (mirrored islands relying on Repeat work); curvature within a few pixels of a UV border is refilled from further inside; baked filters and the curvature do not see hand-painted changes (press Apply or Derive again); Dilate / Erode on a color filters its brightness; thresholds of Edge Wear and Cavity are in curvature units and depend on the Strength used to derive it; a scene on EEVEE is still switched to Cycles and back for a bake (bake in a throwaway scene if a freeze is ever seen there).
 
 ---
 
@@ -34,7 +48,7 @@ Goal: a layer channel can be driven by an image or procedural, mapped and opacit
 - [x] Rebuild and group upgrades preserve hand-wired links and sources. [H]
 - [x] Per-row eye toggle for layers and folders; opacity shown on the active layer. [H] (blend mode display waits for Sprint 2)
 - [x] Design doc and roadmap updated.
-- [ ] **Milestone checklist** [G]: source picker usability, triplanar look, row toggles.
+- [ ] **Milestone checklist** [G]: source picker usability, triplanar look, row toggles. (Never ticked; see Pending GUI checks.)
 - [x] Disabled channels collapse automatically in Layer Properties.
 - [x] Follow-up (branch `sprint-1b-mask-sources`): masks get the same Source options as channels (Image, Procedural, Value, projection, mapping, remap). [H]
 
@@ -55,7 +69,7 @@ Added after the Sprint 2 GUI check.
 - [x] Normal is a mesh map slot (Mesh Maps panel, Normal and AO slots) instead of a layer channel. [H]
 - [x] UI polish from the check: Emission Strength, collapsible Transform, 3-column channel list.
 - [x] Panels skip channels that no longer exist instead of crashing.
-- [ ] Freeze to image: **removed again** after the first GUI test went wrong. The code is in git history (commit 8702a97, reverted in 4da21fa). The shader compile time when adding layers is still open; see the performance options (pause updates, trim per-layer cost) and revisit with a reproduction of what went wrong.
+- Freeze to image: **removed again** after the first GUI test went wrong. The code is in git history (commit 8702a97, reverted in 4da21fa). The shader compile time when adding layers is still open; see the performance options (pause updates, trim per-layer cost) and revisit with a reproduction of what went wrong.
 - [x] **Milestone checklist** [G] (confirmed by the user): Mesh Maps panel (bake a normal, pick a normal image).
 
 ## Sprint 3: Bake quality and performance baseline (`sprint-3-bake-perf`)
@@ -110,20 +124,13 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **ID maps**: one map with an "ID by" choice of object, material, mesh island or UV island; the first three also from a high poly, the UV island from the low poly (computed by Python, baked through a temporary face attribute that is always removed). [H] `tests/test_mesh_id.py`, and on the user's `BG01` parts (distinct colors per high-poly part, about 4 s at 1024 px). A Mesh Maps slot and a bake thumbnail. [G] confirmed by the user.
 - [x] **Thickness** (inside AO): a slot, a bake entry with a thumbnail and a Distance (0 = automatic, a tenth of the biggest object); from a high poly too. [H] `tests/test_mesh_thickness.py`: a thick box against a thin slab, the distance, the automatic distance at two sizes, a thin and a thick high poly. [G] confirmed by the user.
 - [x] (Position, Curvature and ID: done) A Mesh Maps slot, bake entry and thumbnail for each; they follow the existing `Essence_Bake_<MAP>` slot pattern and the float/anti-aliasing/cage options. [H]
-- [x] **Generators that read them**: **Edge Wear** (curvature), **Cavity** (curvature, AO) and **Dirt** (AO, curvature), built as dedicated generators to test against the preset route; `tests/test_generators_maps.py`, and on the user's `BG01` parts. [H] [G] pending (the user is testing them).
+- [x] **Generators that read them**: **Edge Wear** (curvature), **Cavity** (curvature, AO) and **Dirt** (AO, curvature), built as dedicated generators to test against the preset route; `tests/test_generators_maps.py`, and on the user's `BG01` parts. [H] [G] confirmed by the user (they work well on real parts).
 - [x] **Mask by ID**: the **ID Select** generator: a palette of up to 16 colors (Add Color, a remove button on each swatch, a count), Tolerance (default 0.01), Softness, Invert, reading the ID slot; the colors are chosen with Blender's eyedropper on the mesh (Show ID on Mesh, then E over a swatch) or by hand; Show ID Map. The first version's Pick from Selected Face is removed. A version 1 node migrates (its color becomes color 1). [H] `tests/test_generators_id.py`. [G] pending: build a palette on a real ID map, remove a color, pick colors from the mesh with the eyedropper.
-- [ ] Open idea: a **Mesh Map source kind** (Curvature, AO, ID, Position as a source without picking an image) and presets of ordinary items (Edge Wear, Dirt and Cavity as masks made of a map source, Levels and a noise fill, shipped with the asset library), instead of or next to the dedicated generators. Decide after the user has compared them.
+- Open idea, moved to Open Questions (11) in the design doc: a **Mesh Map source kind** and presets of ordinary items next to the dedicated generators. The user compared them; the generators work well.
 - [x] **Baked inputs for generators**: `Use Baked Position` on Gradient, wired from the Position slot like the detail normal (see "Baked inputs for live generators" in the design doc). [H] `tests/test_mesh_position.py`
-- [ ] **ID maps** with a choice of what an ID is: per object, per material, per mesh island, or per UV island (the first three are emission bakes that also transfer from a high poly; the UV island one is computed by Python as a mesh attribute and baked, since no shader node knows UV islands). [H]
-- [ ] Open decisions to settle with the user when reached: the ID picker UI, whether baking groups and multi-object bake fit in this sprint or the next.
+- [x] Decided: the ID picker is Blender's eyedropper on a map preview (see ID Select above). Baking groups and multi-object bake move to Sprint 6.
 
-- [ ] **Milestone checklist** [G]: confirmed so far: the generator picker and the gizmo, Position, Curvature (including the island borders), ID maps, paint items. Edge Wear, Cavity and Dirt on real parts work well (the user compared them; the preset route stays an open idea), and the filters on layer channels, the bundled masks at Blender's start and the GPU bake are confirmed. Anchor points are postponed by the user (not trivial: an intermediate stack result has to become selectable as a generator input without a cycle in the chain).
-
-### Where we stopped (2026-10-25) and what is next
-- **Next, in the order we talked about:** the **mask-by-ID picker** (choose one part of an ID map by color with a tolerance, the one generator that adds a capability); the **Thickness** map (inside AO); then the open question of **baking groups and multi-object bake** (this sprint or the next). After the user has compared the dedicated generators with the preset route, decide whether to add the **Mesh Map source kind** and presets (see the open idea above).
-- **Designed, not built:** the preview button next to the eye and the whole-stack channel previews (an Emission node into the Material Output, "Preview (solo)" in the design doc), and anchor points (using an intermediate stack result as a generator input, the thing Substance users work around for edge wear on their own masks).
-- **Known limits to remember:** UVs in a second tile are not baked (the user's mirrored islands rely on Repeat, which works); curvature within a few pixels of a UV border is refilled from further inside; baked filters and the curvature do not see hand-painted changes (press Apply or Derive again); Dilate / Erode on a color filters its brightness; thresholds of Edge Wear and Cavity are in curvature units and depend on the Strength used to derive it.
-- **Branch:** all of this is on `sprint-5-generators`; `assets/masks` (the bundled test masks) is deliberately untracked.
+- [x] **Milestone checklist** [G] (confirmed by the user, except ID Select, see Pending GUI checks): the generator picker and the gizmo, Position, Curvature (including the island borders), ID maps, Thickness, Edge Wear, Cavity and Dirt on real parts, paint items, the filters on layer channels, the bundled masks at Blender's start and the GPU bake. Anchor points are postponed by the user.
 
 ## Renaming (`sprint-5-generators` branch, interim)
 - [x] **Ctrl+click on a row of the tree view renames it** (a popup with the name; a plain click only selects; works on folders, layers, masks, fills, adjustments and filters; the node labels follow). [H] `tests/test_rename.py`. [G] confirmed by the user, except that the field did not take focus by itself: fixed (the field is drawn with `activate_init`), [G] pending: that the cursor is in the field when the popup opens.
@@ -147,8 +154,8 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] Decided: no preference to turn the loading off, and the masks in `assets/masks` stay untracked in git while they are only for testing. Open: whether to pack instead of reference when they ship for real (see the note at the top of `bundled.py`).
 
 ## Later sprints (outline, to be detailed)
-- **Sprint 6, asset library and mesh-map leftovers:** Essence asset library (catalogs), noise/gradient/grunge assets, generators and smart masks as assets, height from mesh, baking groups, multi-object bake.
+- **Sprint 6, asset library and mesh-map leftovers:** decide baking groups and multi-object bake first (Open Question 4); Essence asset library (catalogs), noise/gradient/grunge assets (the bundled masks move there), generators and smart masks as assets, height from mesh, baking groups, multi-object bake.
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
-- **Sprint 8, painting and viewport (the **paint item on a mask** and the **preview buttons** are already built, see below; the preview is: an Emission node wired into the Material Output, a toggle next to the eye on layer and mask rows, mask as grey and layer as its own flat color):** paint layers, paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), channel/mask/layer solo (including alt-click on a mask or layer thumbnail in the tree view to preview it), texture set settings.
+- **Sprint 8, painting and viewport:** paint layers (per-channel painting, the paint item machinery on a channel), paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), texture set settings. Already built: paint items on masks and the preview buttons (layer, mask, whole-stack channels, mesh maps).
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material.
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
