@@ -2,7 +2,7 @@
 
 A Blender addon that brings a Substance Painter-class texturing workflow into Blender, built entirely on top of Blender's own shader graph, baking, texture paint, asset and compositing systems.
 
-> Status: v0.1 in development, Sprints 0 to 5 done and merged. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (282 tests on 2026-10-25: stack operators, layer and mask sources, blend modes and channels checked against real baked pixels, bake, export, group upgrades, adjustments, fills and baked filters, live and map-reading generators, the position, curvature, ID and thickness maps, paint items and saving, previews, renaming, and the panel draw logic against a recording layout). What needs the GUI (how panels look and feel, thumbnails, Texture Paint, the viewport) is checked by the user's milestone lists in `ROADMAP.md`; each section says whether its GUI check is done. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
+> Status: v0.1 in development, Sprints 0 to 5 done and merged. Everything marked *built* has been **verified headless in Blender 5.2.2** by the test suite in `tests/` (295 tests on 2026-10-25: stack operators, layer and mask sources, blend modes and channels checked against real baked pixels, bake, export, group upgrades, adjustments, fills and baked filters, live and map-reading generators, the position, curvature, ID and thickness maps, paint items and saving, previews, renaming, and the panel draw logic against a recording layout). What needs the GUI (how panels look and feel, thumbnails, Texture Paint, the viewport) is checked by the user's milestone lists in `ROADMAP.md`; each section says whether its GUI check is done. This document describes the full "dream" scope (a complete PBR workflow in Blender), marks what exists, and ranks what is left from essential to trivial.
 
 **Target:** Blender 5.2.2 (latest). No support for older versions.
 
@@ -87,7 +87,7 @@ Corollaries:
 ## Part A. What exists today (v0.1)
 
 ### Baking
-Ported from the Artistant addon's bake pipeline (Cycles; selected objects; one image per object named `<object>_<Map>`, reused and overwritten on re-bake so references such as mask slots stay valid; images are packed; a dedicated unconnected image node `Essence_Bake_<MAP>` holds the target in the material). All bake settings Essence touches are saved and restored. Samples, margin and size are exposed in the Bake panel, and so is the **Device**: **Auto** (the default) bakes on the GPU when Cycles has one switched on in Preferences > System (Cycles' own `has_active_device()` test, the one that enables "GPU Compute" in the render settings) and on the CPU otherwise; **CPU** always uses the CPU. The panel says which it will use and why ("Bakes on the GPU: NVIDIA GeForce RTX 3060 Laptop GPU", or "the CPU: no GPU is enabled in Preferences > System"). The scene's own device setting is only changed for the bake and put back, and only when it differs (see the render engine note under Baked filters). If a bake fails on the GPU (memory, a driver) the object is baked again on the CPU, with a warning. Measured here: AO at 1024 px and 128 samples, 8.1 s on the CPU and 2.2 s on the RTX 3060. The small baked filters, the curvature and its coverage bake always use the CPU on purpose (they take under a second, and an earlier GPU variant hung Blender).
+Ported from the Artistant addon's bake pipeline (Cycles; images are packed; a dedicated unconnected image node `Essence_Bake_<MAP>` holds the target in the material). All bake settings Essence touches are saved and restored. Samples and margin are exposed in the Bake panel, and so is the **Device**: **Auto** (the default) bakes on the GPU when Cycles has one switched on in Preferences > System (Cycles' own `has_active_device()` test, the one that enables "GPU Compute" in the render settings) and on the CPU otherwise; **CPU** always uses the CPU. The panel says which it will use and why ("Bakes on the GPU: NVIDIA GeForce RTX 3060 Laptop GPU", or "the CPU: no GPU is enabled in Preferences > System"). The scene's own device setting is only changed for the bake and put back, and only when it differs (see the render engine note under Baked filters). If a bake fails on the GPU (memory, a driver) the texture set is baked again on the CPU, with a warning. Measured here: AO at 1024 px and 128 samples, 8.1 s on the CPU and 2.2 s on the RTX 3060. The small baked filters, the curvature and its coverage bake always use the CPU on purpose (they take under a second, and an earlier GPU variant hung Blender).
 
 Map types ✅ *(verified headless and in the GUI)*. The four below are the original ones; Position, Thickness and ID are baked the same way and Curvature is derived from the Normal slot (see Mesh maps and B8):
 - **Ambient Occlusion**: native Cycles AO pass.
@@ -95,9 +95,13 @@ Map types ✅ *(verified headless and in the GUI)*. The four below are the origi
 - **Normal (Tangent)**: native Cycles normal pass, tangent space, OpenGL (+Y). Flat on a single object. After a bake it is wired into the shader (see Normal map).
 - **Normal (World)**: world-space mesh normal remapped to 0-1, baked through the Emission override. Ignores the material's bump.
 
-**Bake on high** (single object, no high-poly) is the default when no High Poly collection is set.
+**Texture sets** ✅ *(verified headless, Sprint 6)*. A baked map belongs to a **material**, not to an object: the material and every mesh object of the view layer that uses it are one texture set, and all of them bake into one image per map, `<material>_<Map>`, reused and overwritten on re-bake so references such as mask slots stay valid. So their UVs must not overlap (one UV atlas), as in Substance. Bake works on the texture sets of the selected objects: selecting one object of a set bakes the whole set, and a set's hidden objects are shown for the bake and hidden again. **Size**, **High Poly** and **Extrusion** are settings of the material (shown in the Bake panel for the active material), so two materials can bake from different high polys in one go; a **Cage** is a setting of the low-poly object, since it has to match that object's topology. Faces of an object's other materials bake into a throwaway image, so only the set's image is written. An object with two materials is in two texture sets and is baked once for each. A file baked before texture sets has its maps under an object's name: the next bake renames that image to the material's name, so whatever used it follows.
 
-**Bake from high to low** ✅: set a **High Poly** collection (children included, meshes only) and bake the selected low-poly objects. Works for every map type.
+**The margin of a set of several objects.** Cycles' margin fills every pixel the current bake did not write, and that includes the islands of the other objects of the set (tested: with all objects selected in one bake call, and with one call per object without clearing, the last object's margin overwrites the others' islands). So a set of more than one object is baked with margin 0 (which writes every object's islands correctly) and gets its margin afterwards: a coverage bake of the set's islands (white emission, margin 0) and a throwaway compositor group that keeps the image inside the coverage and continues it outwards by the margin with the **Inpaint** node, black beyond (`filters.add_margin`; the pixels are copied back into the same image, so it keeps its users). This is an Extend-style margin; a set of one object keeps Cycles' own margin. The baked filters, the curvature's coverage and Export bake the whole texture set the same way.
+
+**Bake on high** (no high-poly) is the default when the material has no High Poly collection.
+
+**Bake from high to low** ✅: set the material's **High Poly** collection (children included, meshes only) and bake. Each low-poly object of the set is baked from the whole collection. Works for every map type.
 - Selected-to-active, no cage. Ray start offset (Extrusion) defaults to 2% of the low-poly's bounding-box diagonal, overridable; max ray distance is twice the extrusion.
 - High-poly objects are never bake targets, even if selected. Hidden or unselectable high-poly objects, and the collections that are excluded, hidden in the viewport or unselectable around them, are switched on for the bake and put back exactly as they were afterwards (the same temporary-and-restored approach as the bake settings), so the user never has to prepare the outliner. The scene's root collection is never touched. Verified headless for an excluded collection, an excluded parent, and hidden or unselectable flags.
 - For emission-based maps Cycles reads the shader from the high-poly, so the temporary Emission override is applied to the high-poly materials too (a temporary material if one has none).
@@ -224,14 +228,14 @@ The **Mesh Maps** panel has one slot per map (Normal, Ambient Occlusion, Positio
 
 **ID** ✅ *(verified headless and in the GUI)* is baked like the other maps (Bake panel, "ID by"; see B8) into the ID slot. It is read by the **ID Select** generator (see Generators that read mesh maps), which chooses one part of it by color. Anti-aliasing blends IDs at their edges, so the panel warns when it is on.
 
-**Curvature** ✅ *(verified headless and in the GUI)* is a derived slot (`curvature.py`): **Derive from Normal** runs a compositor group on the Normal slot's image in a throwaway scene (the same runner as the baked filters) and puts a packed float image called `<object>_Curvature` into the Curvature slot. Convex edges are bright, concave crevices dark, flat areas 0.5. The group "Essence Curvature <uid>" (fake user, hand-editable) blurs the normal by **Width** pixels, takes the divergence `nx(x+1) - nx(x-1) + ny(y+1) - ny(y-1)` from four shifted copies, multiplies it by **Strength** scaled by `size / 1024` (the derivative is per pixel, so the same shape gives the same value at any resolution) and adds 0.5. The result has the size of the normal map, so there is no size setting. It works on any normal image in the slot, baked or picked. The button is red while the result is missing or out of date, with a green dot when current; staleness is a digest of the normal image (which one, its size and the stamp every Essence bake leaves on its image as `essence_stamp`), the two settings and the group's nodes. Painting a normal by hand is not seen, like painting a mask under a filter. **Island borders.** Where two UV islands are close, their bake margins meet and the normal jumps from one island's tangent frame to the other's; the derivative reads that jump as a sharp edge, and the blur and the one pixel neighbour lookup carry it into the island's own border pixels (a margin of the right size cannot prevent it: no margin gives a rim against the flat unbaked color, a margin larger than half the gap gives a line where the margins meet). So Derive also bakes the island coverage (the same bake with margin 0, a fraction of a second), and the group keeps the curvature only inside the islands, shrunk by the reach of the filter (`Width` rounded up, plus 2 px), and refills the rest, the padding and the contaminated band, from the nearest island interior with the compositor's Inpaint node (32 px), flat grey beyond. The cost is that curvature within a few pixels of a UV border is continued from further inside; a UV border is a seam, where curvature is not meaningful anyway. Checked on the user's `BG01` layout (about 84% island coverage): the black pixels in the 3 px band inside the island borders fell from 2.2% to 0.1% and the interior stayed the same (mean difference 0.0026). Texels that were never baked inside an island (a ray that missed the high poly leaves the flat normal) still make a real step where the high poly ends, which is data and stays.
+**Curvature** ✅ *(verified headless and in the GUI)* is a derived slot (`curvature.py`): **Derive from Normal** runs a compositor group on the Normal slot's image in a throwaway scene (the same runner as the baked filters) and puts a packed float image called `<material>_Curvature` into the Curvature slot (the coverage is that of the whole texture set). Convex edges are bright, concave crevices dark, flat areas 0.5. The group "Essence Curvature <uid>" (fake user, hand-editable) blurs the normal by **Width** pixels, takes the divergence `nx(x+1) - nx(x-1) + ny(y+1) - ny(y-1)` from four shifted copies, multiplies it by **Strength** scaled by `size / 1024` (the derivative is per pixel, so the same shape gives the same value at any resolution) and adds 0.5. The result has the size of the normal map, so there is no size setting. It works on any normal image in the slot, baked or picked. The button is red while the result is missing or out of date, with a green dot when current; staleness is a digest of the normal image (which one, its size and the stamp every Essence bake leaves on its image as `essence_stamp`), the two settings and the group's nodes. Painting a normal by hand is not seen, like painting a mask under a filter. **Island borders.** Where two UV islands are close, their bake margins meet and the normal jumps from one island's tangent frame to the other's; the derivative reads that jump as a sharp edge, and the blur and the one pixel neighbour lookup carry it into the island's own border pixels (a margin of the right size cannot prevent it: no margin gives a rim against the flat unbaked color, a margin larger than half the gap gives a line where the margins meet). So Derive also bakes the island coverage (the same bake with margin 0, a fraction of a second), and the group keeps the curvature only inside the islands, shrunk by the reach of the filter (`Width` rounded up, plus 2 px), and refills the rest, the padding and the contaminated band, from the nearest island interior with the compositor's Inpaint node (32 px), flat grey beyond. The cost is that curvature within a few pixels of a UV border is continued from further inside; a UV border is a seam, where curvature is not meaningful anyway. Checked on the user's `BG01` layout (about 84% island coverage): the black pixels in the 3 px band inside the island borders fell from 2.2% to 0.1% and the interior stayed the same (mean difference 0.0026). Texels that were never baked inside an island (a ray that missed the high poly leaves the flat normal) still make a real step where the high poly ends, which is data and stays.
 
 It took 0.07 s on a 1024 px bake of a hard-surface high poly, and about a second more for the coverage. Files made before the slot existed get it from Derive or from a rebuild (the panel offers one).
 
 While a Normal (Tangent) bake runs, the BSDF's Normal input is temporarily unlinked, so the bake does not capture the material's own bump or normal map. A low-poly-only tangent bake is therefore flat.
 
 ### Export ✅
-v1 exports for **Unity HDRP** only, from the active object's active material (needs at least one layer and a UV map). Settings: Format (PNG, TGA, EXR), Resolution (512 to 4096), Folder (default `//Export/`).
+v1 exports for **Unity HDRP** only, from the active object's active material, baked from every object of its texture set (needs at least one layer and a UV map). Settings: Format (PNG, TGA, EXR), Resolution (512 to 4096), Folder (default `//Export/`).
 
 | File | Content |
 |---|---|
@@ -239,7 +243,7 @@ v1 exports for **Unity HDRP** only, from the active object's active material (ne
 | `<Material>_MaskMap` | R Metallic, G Ambient Occlusion, B Detail Mask (white), A Smoothness (`1 - roughness`). Non-Color. |
 | `<Material>_Normal` | Tangent space, OpenGL (+Y). A real bake of the whole material, so the baked normal map and the layer bump are combined. |
 
-Values are baked from the top layer node's outputs with the Emission trick, so they are exact and unlit. AO comes from the AO slot's image, else an existing `<object>_AO` bake (scaled to the export resolution), and is white if there is neither. Temporary images and nodes are removed afterwards.
+Values are baked from the top layer node's outputs with the Emission trick, so they are exact and unlit. AO comes from the AO slot's image, else an existing `<material>_AO` bake (scaled to the export resolution), and is white if there is neither. Temporary images and nodes are removed afterwards.
 
 ---
 
@@ -396,7 +400,7 @@ Neighbour-based filters are **B**: the compositor processes the value baked to a
 
 ### B8. Baking (mesh maps)
 
-Substance's bakers, mapped to Cycles and emission-override tricks. All result images are stored per object as `<object>_<Map>` and are the inputs of generators (B6).
+Substance's bakers, mapped to Cycles and emission-override tricks. All result images are stored per texture set (a material and the objects using it) as `<material>_<Map>` and are the inputs of generators (B6).
 
 | Map | Method | Status | Pri |
 |---|---|---|---|
@@ -413,17 +417,17 @@ Substance's bakers, mapped to Cycles and emission-override tricks. All result im
 | Bent normals | Cycles with custom shader | ⬜ | P3 |
 | Opacity (from alpha geometry) | Emission override | ⬜ | P3 |
 | Baked **diffuse/color** (Cycles DIFFUSE, color only) for transferring vertex colors or textures high to low | Cycles bake | ⬜ | P2 |
-| **Cage** object support | Cycles `use_cage`, `cage_object`; a Cage field next to High Poly replaces the extrusion offset and ray distance limit | ✅ verified headless | |
+| **Cage** object support | Cycles `use_cage`, `cage_object`; a Cage per low-poly object replaces the extrusion offset and ray distance limit | ✅ verified headless | |
 | Match by name (`_low` / `_high` suffix) as an alternative to a High Poly collection | Collection or name pairing | ⬜ | P2 |
-| **Baking groups** (sets of objects and bake settings) | Scene collection of bake settings | ⬜ | P1 |
-| Multi-object bake into one texture set (shared UV) | Cycles bake to one image | 🟡 one image per object today | P1 |
+| **Baking groups** (sets of objects and bake settings) | Decided (Sprint 6): the texture set is the group. Its objects are the material's users and its settings (size, high poly, extrusion) live on the material; a separate scene list of groups is not built unless one texture set per material turns out too rigid | ✅ as texture sets | |
+| Multi-object bake into one texture set (shared UV) | Cycles bake of each object with margin 0 into one image, the margin added by the compositor (see Texture sets) | ✅ verified headless | |
 | Anti-aliasing / bake supersampling | Anti-aliasing option (Off, 2x, 4x): bake at that multiple of the size (margin scaled too), then halve repeatedly with `Image.scale` so each step is an exact 2x2 average. Capped at 8192 px baked. Cycles samples cannot do this: they smooth shading, not the hard edges between hit and miss or between islands and background | ✅ verified headless | |
 | Margin / dilation | Cycles margin | ✅ | |
 | **UDIM** bake and paint | Blender UDIM image support | ⬜ | P2 |
 | Bake presets (save settings) | Asset or Scene property | ⬜ | P3 |
 | Mesh map **stale warning** (baked map older than mesh edits) | Mesh modification time check | O | ⬜ | P4 |
 
-**Limitation to document:** a mesh map is per object and per UV layout. A material shared by several objects with different UVs cannot use one baked map. The v1 rule: baked-map-driven features need one object per material (a "texture set"), or objects sharing one UV atlas.
+**Rule:** a mesh map is per texture set, so the objects that share a material share one UV layout and their islands must not overlap. Objects with overlapping or stacked UVs need their own material. Nothing checks for overlap yet.
 
 ### B9. Painting and viewport
 
@@ -446,7 +450,7 @@ Painting is Blender's Texture Paint. Essence only chooses the target image and c
 | **Preview a mask or layer by alt-clicking its thumbnail** in the tree view | same preview | O | 🚫 not needed: the toggle next to the eye does it (decided with the user) | |
 | **Preview button** next to the eye on layer and mask rows: a toggle that stays on until clicked again and shows that mask as flat black and white, or that layer's own color flat, with no shading. Decided design in "Preview (solo)" below | an Emission node wired into the Material Output | O | ✅ verified headless and in the GUI | |
 | **Map preview**: a Mesh Maps slot shown flat on the mesh, with Standard color management while it runs, so the eyedropper picks exact ID colors | same preview | O | ✅ verified headless; GUI check pending | |
-| Texture set / material list with resolution per set | Material slots + per-material essence settings | ⬜ | P1 |
+| Texture set / material list with resolution per set | Material slots + per-material essence settings | 🟡 bake size per material; a list of the sets is not built | P1 |
 | Lookdev: HDRI, lights, matcap, Material Preview, Cycles | Native | native | |
 | View transform warning (Standard is accurate for texturing; AgX/Filmic shift colors) | Info label | ⬜ | P4 |
 | Display of UV overlap / texel density | Native UV overlays; Texel density through native Mesh analysis | native | |
@@ -528,7 +532,7 @@ Blender evaluates the whole material per pixel, so very deep stacks cost shader 
 | Feature | Blender infra | Status | Pri |
 |---|---|---|---|
 | Project = `.blend`, autosave, undo | Native | native | |
-| Texture set = a material; per-set resolution, channel list, export preset | `Material.essence` | 🟡 stack only | P1 |
+| Texture set = a material; per-set resolution, channel list, export preset | `Material.essence` | 🟡 stack, channel list and bake settings (size, high poly, extrusion); export preset not built | P1 |
 | Multiple materials / objects, switching sets | Active material | ✅ | |
 | UDIM texture sets | Native | ⬜ | P2 |
 | Link/append a layer stack or material from another `.blend` | Native Append plus rebuild | ⬜ | P2 |
@@ -575,7 +579,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 19. **Export as a flattened Blender material** (stack baked into a simple image-based Principled material). ⬜
 20. **Remaining blend modes** (contrast, dodge/burn, compare). ⬜
 21. **Freeze to image** for layers, folders and the whole stack (performance step for procedural-heavy stacks; do late in P1, once real stacks show the need). ⬜ (a first version was removed again, see B12)
-22. **Baking groups; multi-object bake into one image.** ⬜
+22. **Baking groups; multi-object bake into one image.** ✅ (texture sets)
 23. **Mask stack blend modes; levels/curves on masks; layer duplicate/copy/paste; Add menu grouping.** 🟡 the first two done (fills, adjustments)
 24. **Specular, AO channels; texture set settings (resolution, channels, export preset).** ⬜ (AO is a mesh map overlay, not a channel)
 
@@ -609,12 +613,12 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 1. **Painting entry**: currently an explicit Paint Mask / Exit button. Automatic entry on selecting a mask is not built.
 2. ~~**Painting plumbing**~~ Answered: active image node plus Material paint mode, confirmed in the GUI (Sprint 0); the mask preview toggle is built.
 3. **Sidebar details**: how the panels should be refined as the feature count grows. Likely: collapsible subpanels per area (Sources, Filters, Masks), Layers panel stays on top.
-4. **Baking groups and multi-object bake** and the final shape of the bake section. To settle at the start of Sprint 6.
+4. ~~**Baking groups and multi-object bake**~~ Decided (Sprint 6): texture set = material; every object using it bakes into one image; size, high poly and extrusion on the material, the cage on the object (see Texture sets).
 5. ~~**Blend mode wiring**~~ Decided: layer group variants (see B3, "Group variants").
 6. ~~**Layer sources UI**~~ Decided (Sprint 1): a Source row per channel in Layer Properties.
 7. ~~**Channel list vs fixed layer group interface**~~ Decided: the channel set is part of the same group variant key, so a material only has the sockets of its channels.
 8. ~~**Compositor use for filters**~~ Answered (verified headless, `tests/test_compositor.py`): a filter runs in a **throwaway scene** (`bpy.data.scenes.new`) with a compositor node group (`scene.compositing_node_group`): Image node, filter nodes, Group Output. Rendered with the Workbench engine at the image's size with `write_still` to a temporary EXR, which is loaded and packed (the Render Result image has no pixels in background mode). The user's own scene and compositor are never touched, and the temp scene, group and folder are removed. Tested with the Kuwahara node: noise in flat areas drops about 20x and a hard edge stays hard. About 1 to 2 s per run, mostly engine start-up.
-9. **Texture set model** for objects sharing a material with different UVs (see the B8 limitation).
+9. ~~**Texture set model**~~ Decided with 4: objects sharing a material share its UV layout (see the B8 rule).
 10. ~~**Mesh maps vs live generators**~~ Decided (Sprint 5): live when the shader reads it for free (normal, position), baked when it needs the neighbourhood or data a shader cannot read (see "Live versus baked generators").
 11. **Mesh Map source kind and presets**: a source kind that reads a Mesh Maps slot directly (Curvature, AO, ID, Position, Thickness) plus presets of ordinary items (Edge Wear, Dirt, Cavity as a map source, Levels and a noise fill, shipped with the asset library), instead of or next to the dedicated generators. The user compared: the generators work well; decide whether presets are still wanted.
 12. **Shader recompile cost of deep stacks** (about 7 s to add a layer to a 14-layer stack): retry Freeze to image, a pause-live-updates toggle, or a lighter per-layer shader (see B12).

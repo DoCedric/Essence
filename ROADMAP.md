@@ -5,16 +5,17 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-25)
-Sprints 0 to 5 are done and merged into `main`; every sprint branch is merged. `tests/run_all.py`: 282/282 pass headless. Next is **Sprint 6**.
+Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets are built; the asset library is next. `tests/run_all.py`: 295/295 pass headless.
 
 **Pending GUI checks** (everything else is confirmed):
 - **ID Select**: build a palette on a real ID map, remove a color, pick colors from the mesh (Show ID on Mesh, then E over a swatch).
 - **Map preview**: with AgX and an exposure set in the scene, Show ID on Mesh, then end the preview: the view transform and exposure come back.
 - **Rename**: the cursor is in the name field when the Ctrl+click popup opens.
 - **Sprint 1 milestone**: source picker usability, triplanar look, row toggles (never ticked, probably fine in practice).
+- **Texture sets** (Sprint 6): two objects sharing a material bake into one image (select one, both bake); the Texture set box in the Bake panel (Size, High Poly, Cage of the active object, Extrusion, the "N objects" note); a high-poly bake of two low polys sharing a material; an older file whose maps are named after the object (the image is renamed, masks using it still work); filters and Derive Curvature on a shared material.
 - From Sprint 0, never checked explicitly: Emission-baked colors match the viewport, and the MaskMap saves straight alpha in PNG/TGA (EXR verified).
 
-**Open decisions** (details in Open Questions of the design doc): baking groups and multi-object bake (first thing in Sprint 6); the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
+**Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
 **Known limits to remember:** UVs in a second tile are not baked (mirrored islands relying on Repeat work); curvature within a few pixels of a UV border is refilled from further inside; baked filters and the curvature do not see hand-painted changes (press Apply or Derive again); Dilate / Erode on a color filters its brightness; thresholds of Edge Wear and Cavity are in curvature units and depend on the Strength used to derive it; a scene on EEVEE is still switched to Cycles and back for a bake (bake in a throwaway scene if a freeze is ever seen there).
 
@@ -153,8 +154,18 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] [G] confirmed by the user: Blender started with the addon, the masks are in the mask picker grid and the image pickers.
 - [x] Decided: no preference to turn the loading off, and the masks in `assets/masks` stay untracked in git while they are only for testing. Open: whether to pack instead of reference when they ship for real (see the note at the top of `bundled.py`).
 
+## Sprint 6: Texture sets, asset library, mesh-map leftovers (`sprint-6-texture-sets`)
+- [x] Decided with the user: **texture set = material** (option 1 of three: texture sets, a scene list of baking groups, or both). Size, High Poly and Extrusion move to the material, the Cage to the low-poly object.
+- [x] **Texture set bake**: every object using a selected object's material bakes into `<material>_<Map>`; hidden objects of the set are baked and hidden again; other materials of those objects bake into a throwaway image; an object-named image from before is renamed so its users follow. [H] `tests/test_texture_sets.py`
+- [x] **Margin of a multi-object set**: found that Cycles' margin overwrites the other objects' islands (one call or several). Several objects bake with margin 0 and the compositor adds the margin (coverage + Inpaint); one object keeps Cycles' margin. [H]
+- [x] Baked filters, the curvature's coverage and Export work on the whole texture set; the curvature result is `<material>_Curvature`. [H]
+- [x] UV island IDs are numbered across the objects of a set, so they get different colors. [H]
+- [x] Bake panel: a Texture set box for the active material (Size, High Poly, the active object's Cage, Extrusion, a note when several objects share it). [H] draws
+- [ ] **Milestone checklist** [G]: see Pending GUI checks.
+- [ ] Essence asset library (catalogs), noise/gradient/grunge assets (the bundled masks move there), generators and smart masks as assets.
+- [ ] Height from mesh.
+
 ## Later sprints (outline, to be detailed)
-- **Sprint 6, asset library and mesh-map leftovers:** decide baking groups and multi-object bake first (Open Question 4); Essence asset library (catalogs), noise/gradient/grunge assets (the bundled masks move there), generators and smart masks as assets, height from mesh, baking groups, multi-object bake.
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
 - **Sprint 8, painting and viewport:** paint layers (per-channel painting, the paint item machinery on a channel), paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), texture set settings. Already built: paint items on masks and the preview buttons (layer, mask, whole-stack channels, mesh maps).
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material.
