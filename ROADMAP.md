@@ -125,6 +125,9 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - **Known limits to remember:** UVs in a second tile are not baked (the user's mirrored islands rely on Repeat, which works); curvature within a few pixels of a UV border is refilled from further inside; baked filters and the curvature do not see hand-painted changes (press Apply or Derive again); Dilate / Erode on a color filters its brightness; thresholds of Edge Wear and Cavity are in curvature units and depend on the Strength used to derive it.
 - **Branch:** all of this is on `sprint-5-generators`; `assets/masks` (the bundled test masks) is deliberately untracked.
 
+## Renaming (`sprint-5-generators` branch, interim)
+- [x] **Ctrl+click on a row of the tree view renames it** (a popup with the name; a plain click only selects; works on folders, layers, masks, fills, adjustments and filters; the node labels follow). [H] `tests/test_rename.py`. [G] pending: Ctrl+click a folder and rename it.
+
 ## Preview buttons (`sprint-5-generators` branch, interim)
 - [x] **Preview (solo)**: a toggle next to the eye on layer and mask rows (a mask as grey, a layer as its own Color, flat), channel buttons for the whole stack's result in the Material panel, a notice with Stop and a hint for Solid shading; an Emission node wired into the Material Output, the old link remembered and put back exactly; rebuilds keep it, removing the entry ends it, a bake during it keeps it, it survives a save. [H] `tests/test_preview.py`. [G] confirmed by the user.
 - [x] Dropped by the user: the alt-click on a thumbnail (the toggle does the job).
