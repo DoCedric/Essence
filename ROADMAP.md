@@ -5,13 +5,14 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-25)
-Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets are built; the asset library is next. `tests/run_all.py`: 295/295 pass headless.
+Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets are built; the asset library is next. `tests/run_all.py`: 308/308 pass headless.
 
 **Pending GUI checks** (everything else is confirmed):
 - **ID Select**: build a palette on a real ID map, remove a color, pick colors from the mesh (Show ID on Mesh, then E over a swatch).
 - **Map preview**: with AgX and an exposure set in the scene, Show ID on Mesh, then end the preview: the view transform and exposure come back.
 - **Rename**: the cursor is in the name field when the Ctrl+click popup opens.
 - **Sprint 1 milestone**: source picker usability, triplanar look, row toggles (never ticked, probably fine in practice).
+- **Baking groups** (Sprint 6): Pair by Name on a file like MailRobo (the per-object list in the Bake panel), a Normal and an AO bake of the whole set and how long they take, a part's floaters in the normal, a cage on one part.
 - **Texture sets** (Sprint 6): two objects sharing a material bake into one image (select one, both bake); the Texture set box in the Bake panel (Size, High Poly, Cage of the active object, Extrusion, the "N objects" note); a high-poly bake of two low polys sharing a material; an older file whose maps are named after the object (the image is renamed, masks using it still work); filters and Derive Curvature on a shared material.
 - From Sprint 0, never checked explicitly: Emission-baked colors match the viewport, and the MaskMap saves straight alpha in PNG/TGA (EXR verified).
 
@@ -161,6 +162,10 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] Baked filters, the curvature's coverage and Export work on the whole texture set; the curvature result is `<material>_Curvature`. [H]
 - [x] UV island IDs are numbered across the objects of a set, so they get different colors. [H]
 - [x] Bake panel: a Texture set box for the active material (Size, High Poly, the active object's Cage, Extrusion, a note when several objects share it). [H] draws
+- [x] **Baking groups**: High Poly, Floaters and Cage per low-poly object (the material's High Poly as the default), Pair by Name, the panel lists each object's group. Floaters in every map but AO and Thickness. [H] `tests/test_baking_groups.py`
+- [x] **One merged high poly per group** (modifiers at render settings, curves included, ID hues kept as an attribute): identical to Blender's separate bake, 10 to 25 times faster. On the user's file a set's AO went from 198 s to 6.8 s. [H]
+- [x] **Only the bake's geometry renders** (other low polys and props switched off for rendering and put back). [H]
+- [ ] **AO across groups** [ask]: every group's high poly occludes (built) turned 34.5% of the user's islands black, own group only 4.5%. Decide: own group only, or a switch.
 - [ ] **Milestone checklist** [G]: see Pending GUI checks.
 - [ ] Essence asset library (catalogs), noise/gradient/grunge assets (the bundled masks move there), generators and smart masks as assets.
 - [ ] Height from mesh.
