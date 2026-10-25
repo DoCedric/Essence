@@ -702,6 +702,8 @@ def _bake(self, context):
     layout.template_icon_view(scene, "essence_bake_map", show_labels=True,
                               scale=6, scale_popup=5)
     uv_islands = scene.essence_bake_map == 'ID' and scene.essence_bake_id == 'UV_ISLAND'
+    if scene.essence_bake_map == 'THICKNESS':
+        layout.prop(scene, "essence_bake_thickness")
     if scene.essence_bake_map == 'ID':
         layout.prop(scene, "essence_bake_id")
         if uv_islands:

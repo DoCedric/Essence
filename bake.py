@@ -40,10 +40,14 @@ MAP_TYPES = (
     ('ID', "ID",
      "A flat color per part: per object, per material, per mesh island or per UV island "
      "(choose below). The color is stable, so a mask can pick one", 'EMIT'),
+    ('THICKNESS', "Thickness",
+     "How thick the mesh is under each texel: bright where thick, dark where thin (ambient "
+     "occlusion from the inside, within a distance). Baked from a high-poly it is the "
+     "thickness of the high-poly", 'EMIT'),
 )
 SUFFIX = {'AO': "AO", 'WORLD_GRADIENT': "WorldGradient",
           'NORMAL': "Normal", 'NORMAL_WORLD': "NormalWorld", 'POSITION': "Position",
-          'ID': "ID"}
+          'ID': "ID", 'THICKNESS': "Thickness"}
 
 # What an ID map tells apart. All but the UV island work from a high poly too: the color is
 # that of the part the ray hits.
@@ -404,6 +408,20 @@ def _id_builder(mode):
     return build
 
 
+def _thickness_builder(distance):
+    """Ambient occlusion from the inside: rays go into the mesh, and the fewer of them reach the
+    other side within `distance`, the thicker it is (bright), the more, the thinner (dark)."""
+    def build(nt, x, y):
+        ao = nt.nodes.new('ShaderNodeAmbientOcclusion')
+        ao.inside = True
+        ao.only_local = False
+        ao.samples = 16
+        ao.inputs['Distance'].default_value = distance
+        ao.location = (x, y)
+        return ao.outputs['AO'], [ao]
+    return build
+
+
 def _emission_override(mat, build_color):
     """Temporarily route a generated color into the surface output as flat emission.
     Returns a teardown callable restoring the material exactly as it was."""
@@ -690,6 +708,10 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             build_color = _world_normal_builder()
         elif map_type == 'ID':
             build_color = _id_builder(scene.essence_bake_id)
+        elif map_type == 'THICKNESS':
+            # 0 is automatic: a tenth of the biggest low-poly object
+            distance = scene.essence_bake_thickness or 0.1 * max(max(o.dimensions) for o in todo)
+            build_color = _thickness_builder(distance or 1.0)
 
         start_mode = context.active_object.mode if context.active_object else 'OBJECT'
         if start_mode != 'OBJECT':
@@ -822,6 +844,10 @@ def register():
         name="Device", items=_DEVICES, default='AUTO',
         description="What the bake runs on. The small baked filters and the curvature always "
                     "use the CPU, which is quick for them and keeps the GPU out of the viewport")
+    S.essence_bake_thickness = FloatProperty(
+        name="Distance", default=0.0, min=0.0, subtype='DISTANCE',
+        description="How far a ray looks for the other side of the mesh. Thicker than this "
+                    "reads as fully thick. 0 = automatic (a tenth of the biggest object)")
     S.essence_bake_float = BoolProperty(
         name="Float", default=True,
         description="Bake into a 32-bit float image (no banding, four times the memory)")
@@ -836,7 +862,7 @@ def unregister():
               "essence_bake_samples", "essence_bake_margin",
               "essence_bake_high", "essence_bake_extrusion",
               "essence_bake_cage", "essence_bake_float", "essence_bake_aa",
-              "essence_bake_id", "essence_bake_device"):
+              "essence_bake_id", "essence_bake_device", "essence_bake_thickness"):
         delattr(S, p)
     if _previews is not None:
         bpy.utils.previews.remove(_previews)

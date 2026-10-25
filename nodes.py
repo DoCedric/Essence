@@ -224,7 +224,7 @@ def ensure_channel_states(mat):
 # rebuild_stack); AO is read by export; generators read Normal and Position (see
 # sources.wire_baked_inputs); more maps come with the mesh-map sprint.
 MAP_SLOTS = (('NORMAL', "Normal"), ('AO', "Ambient Occlusion"), ('POSITION', "Position"),
-             ('CURVATURE', "Curvature"), ('ID', "ID"))
+             ('CURVATURE', "Curvature"), ('ID', "ID"), ('THICKNESS', "Thickness"))
 
 
 def new_paint_image(name, size, rgba, alpha=False):
