@@ -166,6 +166,7 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **One merged high poly per group** (modifiers at render settings, curves included, ID hues kept as an attribute): identical to Blender's separate bake, 10 to 25 times faster. On the user's file a set's AO went from 198 s to 6.8 s. [H]
 - [x] **Only the bake's geometry renders** (other low polys and props switched off for rendering and put back). [H]
 - [x] **AO across groups** [ask]: every group's high poly occludes. On the user's file that turns 34.5% of the islands black against 4.5% with each group alone; the user chose to keep every part occluding.
+- [x] **ID Select fix** (reported from the GUI: the picked part was bright grey, not white): the fade starts at the tolerance instead of being centred on it, so an exact match is 1 with the default settings. Group version 3, values kept. [H] `tests/test_generators_id.py`
 - [ ] **Milestone checklist** [G]: see Pending GUI checks.
 - [ ] Essence asset library (catalogs), noise/gradient/grunge assets (the bundled masks move there), generators and smart masks as assets.
 - [ ] Height from mesh.

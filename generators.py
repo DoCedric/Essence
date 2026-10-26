@@ -291,9 +291,10 @@ def _build_cavity(ng, gen):
 
 
 def _build_id_select(ng, gen):
-    """The union of the palette: for each of the 16 colors, how close the ID map is to it (a soft
-    step on the distance in color space), counted only while it is among the first `Colors`; the
-    mask is the largest of them."""
+    """The union of the palette: for each of the 16 colors, how close the ID map is to it (1 within
+    Tolerance in color space, fading to 0 over the next Softness), counted only while it is among
+    the first `Colors`; the mask is the largest of them. Version 2 centred the fade on the
+    tolerance, so with a Softness wider than twice the Tolerance an exact match was grey."""
     n_in, n_out = _interface(ng, gen)
     soft = _math(ng, 'MAXIMUM', n_in.outputs["Softness"], 0.001, x=-450, y=-200,
                  label="Softness, never zero")
@@ -305,7 +306,7 @@ def _build_id_select(ng, gen):
         margin = _math(ng, 'SUBTRACT', n_in.outputs["Tolerance"], dist.outputs['Value'],
                        x=-500, y=y, label=f"Inside the tolerance of color {i}")
         ratio = _math(ng, 'DIVIDE', margin.outputs[0], soft.outputs[0], x=-300, y=y)
-        step = _math(ng, 'ADD', ratio.outputs[0], 0.5, x=-150, y=y, clamp=True)
+        step = _math(ng, 'ADD', ratio.outputs[0], 1.0, x=-150, y=y, clamp=True)
         used = _math(ng, 'GREATER_THAN', n_in.outputs[COUNT_INPUT], i - 0.5, x=-150, y=y - 70,
                      label=f"Color {i} is in use")
         mine = _math(ng, 'MULTIPLY', step.outputs[0], used.outputs[0], x=50, y=y)
@@ -421,7 +422,7 @@ GENERATORS = {g.id: g for g in (
         "Parts of the ID map: everything whose color is within a tolerance of one of the "
         "colors of a palette you add to and remove from. Pick the colors with the eyedropper "
         "on the mesh",
-        2,
+        3,
         tuple((id_color_name(i), _C, (1.0, 0.0, 0.0, 1.0) if i == 1 else (0.5, 0.5, 0.5, 1.0), {})
               for i in range(1, MAX_ID_COLORS + 1))
         + ((COUNT_INPUT, 'NodeSocketInt', 1, {"min_value": 1, "max_value": MAX_ID_COLORS}),

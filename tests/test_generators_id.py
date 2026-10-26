@@ -49,7 +49,19 @@ def test_defaults(addon):
     tex = _tex(addon, mat, e)
     close(tex.inputs['Tolerance'].default_value, 0.01, 1e-6, "the default tolerance")
     check(tex.inputs['Colors'].default_value == 1, "one color to begin with")
-    check(addon.generators.GENERATORS['ID_SELECT'].version == 2, "version 2 has the palette")
+    check(addon.generators.GENERATORS['ID_SELECT'].version == 3, "version 3: white within the tolerance")
+
+
+def test_an_exact_match_is_white_with_the_default_settings(addon):
+    """Reported from the GUI: the picked part was a bright grey, not white. Version 2 centred
+    the fade on the tolerance, so Tolerance 0.01 with Softness 0.03 gave 0.83 on an exact match."""
+    ob, mat, e = _setup(addon, 'ID_SELECT')
+    _id_map(addon, mat)
+    tex = _tex(addon, mat, e)
+    close(tex.inputs['Softness'].default_value, 0.03, 1e-6, "the default softness")
+    _palette(tex, RED)
+    for g, want in zip(_got(ob, mat, e), (1, 0, 0, 0)):
+        close(g, want, 0.01, "defaults: the picked part is white, the rest black")
 
 
 def test_id_select_chooses_one_part(addon):
@@ -102,8 +114,13 @@ def test_softness_and_invert(addon):
     _id_map(addon, mat)
     tex = _tex(addon, mat, e)
     _palette(tex, RED)
-    _set(tex, Tolerance=0.08, Softness=0.16)               # the near red is 0.08 away: the middle
-    close(_value(ob, mat, e, P4), 0.5, 0.05, "on the edge of the tolerance: half")
+    _set(tex, Tolerance=0.08, Softness=0.16)               # the near red is 0.08 away
+    close(_value(ob, mat, e, P4), 1.0, 0.05, "on the edge of the tolerance: still in")
+    _set(tex, Tolerance=0.04, Softness=0.08)
+    close(_value(ob, mat, e, P4), 0.5, 0.05, "halfway through the softness: half")
+    _set(tex, Tolerance=0.0, Softness=0.08)
+    close(_value(ob, mat, e, P4), 0.0, 0.05, "past tolerance + softness: out")
+    close(_value(ob, mat, e, P1), 1.0, 0.03, "an exact match is in even with no tolerance")
     _set(tex, Softness=0.01, Tolerance=0.05)
     tex.inputs['Invert'].default_value = True
     close(_value(ob, mat, e, P1), 0.0, 0.03, "inverted: the part is out")
@@ -190,7 +207,7 @@ def test_an_older_id_select_with_one_color_becomes_a_palette(addon):
     tex.inputs['Tolerance'].default_value = 0.07
     bpy.ops.essence.rebuild()
     tex = _tex(addon, mat, e)
-    check(ng["essence_version"] == 2 and 'ID Color' not in tex.inputs, "rebuilt to version 2")
+    check(ng["essence_version"] == 3 and 'ID Color' not in tex.inputs, "rebuilt to the palette")
     check(all(abs(a - b) < 1e-5 for a, b in zip(tex.inputs['ID Color 1'].default_value[:3], BLUE)),
           "the old color is the first of the palette")
     check(tex.inputs['Colors'].default_value == 1, "and the only one")
@@ -269,3 +286,19 @@ def test_the_palette_survives_save_and_reload(addon):
         check(all(abs(a - b) < 1e-5 for a, b in zip(got, BLUE)), f"the first color: {got}")
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_a_version_2_group_is_rebuilt_with_its_values(addon):
+    ob, mat, e = _setup(addon, 'ID_SELECT')
+    _id_map(addon, mat)
+    tex = _tex(addon, mat, e)
+    _palette(tex, RED, BLUE)
+    _set(tex, Tolerance=0.01, Softness=0.03)
+    tex.node_tree["essence_version"] = 2
+    bpy.ops.essence.rebuild()
+    tex = _tex(addon, mat, e)
+    check(tex.node_tree["essence_version"] == 3, "rebuilt")
+    check(tex.inputs['Colors'].default_value == 2, "the palette is kept")
+    close(tex.inputs['Softness'].default_value, 0.03, 1e-6, "the softness is kept")
+    for g, want in zip(_got(ob, mat, e), (1, 0, 1, 0)):
+        close(g, want, 0.01, "and red and blue are white now")
