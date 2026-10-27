@@ -258,7 +258,7 @@ def draw(layout, context):
                      depress=on and context.scene.essence_fill_mode == mode).mode = mode
     brush = context.scene.tool_settings.image_paint.brush
     if not on and brush is not None and getattr(brush, "image_brush_type", None) == 'FILL':
-        box.label(text="Blender's own Fill tool fills everything: use a mode above", icon='ERROR')
+        box.label(text="Blender's Fill tool ignores these modes", icon='ERROR')
 
 
 def register():
