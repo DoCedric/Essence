@@ -1,6 +1,8 @@
 """Fill modes with Blender's real Fill brush. Needs a window, so it is not part of run_all:
 
-    blender --factory-startup --python tests/gui_fill_modes.py
+    blender --factory-startup --enable-event-simulate --python tests/gui_fill_modes.py
+
+(without --enable-event-simulate the clicks through the modal operator are skipped)
 
 Opens Blender, builds two cubes in one mesh with an Essence mask, fills through
 `fill.fill` at real screen positions in every mode, prints PASS/FAIL lines, writes them to
@@ -165,9 +167,73 @@ def cases(addon, ob, win, area, region):
         lines.append(f"INFO grey 0.5 fill reads {v[0]:.4f} in the mask image "
                      f"({img.colorspace_settings.name}, float {img.is_float})")
         check(abs(v[0] - 0.5) < 0.01, f"a grey fill stores 0.5 in the Non-Color mask ({v[0]:.4f})")
+        if bpy.app.use_event_simulate:
+            bpy.app.timers.register(lambda: modal_case(ob, win, area, region), first_interval=0.5)
+            return
+        lines.append("INFO the clicks through the modal operator need --enable-event-simulate")
     except Exception:
         lines.append("FAIL cases\n" + traceback.format_exc())
         failed.append("cases")
+    finish()
+
+
+def modal_case(ob, win, area, region):
+    """The way a user does it: press Fill, click the model with real (simulated) events."""
+    try:
+        img = mask_image(ob)
+        reset(img)
+        bpy.context.scene.essence_fill_color = (1.0, 1.0, 1.0)
+        rv3d = area.spaces.active.region_3d
+        face, center = top_of(ob, 1)
+        co = view3d_utils.location_3d_to_region_2d(region, rv3d, ob.matrix_world @ center)
+        x, y = int(region.x + co.x), int(region.y + co.y)
+        sidebar = next((r for r in area.regions if r.type == 'UI'), region)
+        fill = sys.modules["essence.fill"]
+        with bpy.context.temp_override(window=win, area=area, region=sidebar):
+            res = bpy.ops.essence.fill('INVOKE_DEFAULT', mode='MESH')
+            check(res == {'RUNNING_MODAL'}, f"modal: the Mesh button starts filling ({res})")
+            res = bpy.ops.essence.fill('INVOKE_DEFAULT', mode='FACE')
+            check(res == {'FINISHED'} and fill.running() is not None
+                  and bpy.context.scene.essence_fill_mode == 'FACE',
+                  "modal: the Face button while filling switches the mode, no second operator")
+        win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=x, y=y)
+        win.event_simulate(type='LEFTMOUSE', value='PRESS', x=x, y=y)
+        win.event_simulate(type='LEFTMOUSE', value='RELEASE', x=x, y=y)
+        bpy.app.timers.register(lambda: modal_check(ob, win, face, x, y), first_interval=0.5)
+        return
+    except Exception:
+        lines.append("FAIL modal\n" + traceback.format_exc())
+        failed.append("modal")
+    finish()
+
+
+def modal_check(ob, win, face, x, y):
+    try:
+        img = mask_image(ob)
+        img.update()
+        v = face_values(img)
+        check(v[face] > 0.99 and np.all(np.delete(v, face) < 0.01),
+              f"modal FACE click fills only that face: {np.round(v, 2).tolist()}")
+        fill = sys.modules["essence.fill"]
+        area = next(a for a in win.screen.areas if a.type == 'VIEW_3D')
+        sidebar = next((r for r in area.regions if r.type == 'UI'), None)
+        with bpy.context.temp_override(window=win, area=area, region=sidebar):
+            bpy.ops.essence.fill('INVOKE_DEFAULT', mode='FACE')
+        win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=x + 1, y=y)
+        bpy.app.timers.register(lambda: stopped_check(win, fill), first_interval=0.3)
+        return
+    except Exception:
+        lines.append("FAIL modal check\n" + traceback.format_exc())
+        failed.append("modal check")
+    finish()
+
+
+def stopped_check(win, fill):
+    try:
+        check(fill.running() is None, "modal: pressing the lit mode again stops filling")
+    except Exception:
+        lines.append("FAIL stop check\n" + traceback.format_exc())
+        failed.append("stop check")
     finish()
 
 

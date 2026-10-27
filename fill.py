@@ -143,13 +143,34 @@ def _view(context, event):
     return None, None
 
 
+# The Fill operator that is running, so a second mode button switches its mode instead of
+# starting another one, and the panel can show which mode is on.
+_running = None
+
+
+def running():
+    """The running Fill operator, or None (also when Blender dropped it, for example on a file
+    load, without calling its modal)."""
+    global _running
+    try:
+        if _running is not None and _running.bl_idname:
+            return _running
+    except ReferenceError:
+        pass
+    _running = None
+    return None
+
+
 class ESSENCE_OT_fill(bpy.types.Operator):
     bl_idname = "essence.fill"
     bl_label = "Fill"
-    bl_description = ("Click parts of the model to fill them with the fill color, by the fill "
-                      "mode (Mesh, UV Island, Face or Full). Right-click or Esc to finish")
+    bl_description = ("Click parts of the model to fill them with the fill color: the connected "
+                      "mesh, the UV island, the face or every face. Press the lit mode again, "
+                      "right-click or Esc to stop")
     # No UNDO: every click is a stroke of Blender's paint operator, which is its own undo step.
     bl_options = {'REGISTER'}
+
+    mode: EnumProperty(name="Mode", items=FILL_MODES, default='MESH')
 
     @classmethod
     def poll(cls, context):
@@ -157,18 +178,40 @@ class ESSENCE_OT_fill(bpy.types.Operator):
         return (ob is not None and ob.type == 'MESH' and ob.mode == 'TEXTURE_PAINT'
                 and bool(ob.data.uv_layers))
 
+    @classmethod
+    def description(cls, context, props):
+        return dict((m[0], m[2]) for m in FILL_MODES)[props.mode] + (
+            ". Then click parts of the model to fill them; press it again, right-click or Esc "
+            "to stop")
+
     def invoke(self, context, event):
+        global _running
+        op = running()
+        if op is not None:
+            # A mode button while filling: switch to it, or stop when it is the lit one.
+            if context.scene.essence_fill_mode == self.mode:
+                op.stop = True
+            context.scene.essence_fill_mode = self.mode
+            _redraw(context)
+            return {'FINISHED'}
+        context.scene.essence_fill_mode = self.mode
+        self.stop = False
+        _running = self
         context.window.cursor_modal_set('PAINT_BRUSH')
         context.workspace.status_text_set("Click a part to fill it   |   Right-click or Esc: done")
         context.window_manager.modal_handler_add(self)
+        _redraw(context)
         return {'RUNNING_MODAL'}
 
     def _finish(self, context):
+        global _running
+        _running = None
         context.window.cursor_modal_restore()
         context.workspace.status_text_set(None)
+        _redraw(context)
 
     def modal(self, context, event):
-        if event.type in {'RIGHTMOUSE', 'ESC'} and event.value == 'PRESS':
+        if self.stop or (event.type in {'RIGHTMOUSE', 'ESC'} and event.value == 'PRESS'):
             self._finish(context)
             return {'FINISHED'}
         if event.type != 'LEFTMOUSE' or event.value != 'PRESS':
@@ -195,20 +238,33 @@ class ESSENCE_OT_fill(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
+def _redraw(context):
+    for area in context.window.screen.areas:
+        if area.type in {'VIEW_3D', 'PROPERTIES', 'IMAGE_EDITOR'}:
+            area.tag_redraw()
+
+
 def draw(layout, context):
-    """The fill controls, drawn under Exit Paint Mode while in Texture Paint."""
+    """The fill controls, drawn under Exit Paint Mode while in Texture Paint. Each mode button
+    starts filling (the lit one is on), so there is no separate Fill button to miss."""
     box = layout.box()
-    box.label(text="Fill", icon='IMAGE')
-    box.row().prop(context.scene, "essence_fill_mode", expand=True)
+    on = running() is not None
+    box.label(text="Fill: click a mode, then the model" if not on else
+              "Filling: click parts of the model", icon='BRUSH_DATA')
+    box.prop(context.scene, "essence_fill_color", text="Color")
     row = box.row(align=True)
-    row.prop(context.scene, "essence_fill_color", text="")
-    row.operator("essence.fill", icon='BRUSH_DATA')
+    for mode, name, _desc in FILL_MODES:
+        row.operator("essence.fill", text=name,
+                     depress=on and context.scene.essence_fill_mode == mode).mode = mode
+    brush = context.scene.tool_settings.image_paint.brush
+    if not on and brush is not None and getattr(brush, "image_brush_type", None) == 'FILL':
+        box.label(text="Blender's own Fill tool fills everything: use a mode above", icon='ERROR')
 
 
 def register():
     S = bpy.types.Scene
     S.essence_fill_mode = EnumProperty(name="Fill Mode", items=FILL_MODES, default='MESH',
-                                       description="What a click of Fill covers")
+                                       description="What a click of Fill covers (the last mode used)")
     S.essence_fill_color = FloatVectorProperty(
         name="Fill Color", subtype='COLOR_GAMMA', size=3, min=0.0, max=1.0,
         default=(1.0, 1.0, 1.0),

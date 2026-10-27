@@ -153,7 +153,15 @@ def test_fill_controls_draw_while_painting(addon):
     bpy.ops.essence.paint_mask()
     log = _draw(ui._mask, ob)
     check(any(c[0] == "operator" and c[1][0] == "essence.fill" for c in log), "Fill on a mask")
-    check(any(c[0] == "prop" and c[1][1] == "essence_fill_mode" for c in log), "and the mode")
+    check(sum(1 for c in log if c[0] == "operator" and c[1][0] == "essence.fill") == 4,
+          "a button per mode, each starts filling")
+    check(not any("Fill tool fills everything" in c[2].get("text", "") for c in log),
+          "no warning with an ordinary brush")
+    bpy.ops.brush.asset_activate(asset_library_type='ESSENTIALS', asset_library_identifier="",
+                                 relative_asset_identifier=addon.fill.FILL_BRUSH[2])
+    log = _draw(ui._mask, ob)
+    check(any("Fill tool fills everything" in c[2].get("text", "") for c in log),
+          "a warning when Blender's own Fill brush is active (it ignores the modes)")
     bpy.ops.essence.exit_paint()
     bpy.data.objects.remove(ob)
     ob, mat, top, top_uid, mask_uid = _setup(base_value=0.3)
