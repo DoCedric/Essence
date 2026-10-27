@@ -5,11 +5,12 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets, baking groups and the multi-object bake are built and confirmed by the user, and the sprint is ready to merge. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 321/321 pass headless.
+Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-fill-folders`: the paint fill modes first (pulled forward from Sprint 8 by the user), then folders and materials. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 328/328 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks**: none (the ID colors, Sample and the ID map margin were confirmed by the user on 2026-10-27).
+**Pending GUI checks** (one):
+- **Fill modes**: on a multi-part object, select a mask (or a paint item), press Paint, then in the Fill box pick a mode and a color and press Fill. Click a part in each mode: Mesh fills the whole connected part (also its back), UV Island the island, Face the face, Full every face of the material. Your brush, face selection and color come back after each click; Ctrl+Z undoes one fill; right-click or Esc ends; clicks in the sidebar still work. Also try it on a paint item (white reveals, black hides).
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -169,9 +170,16 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **Milestone checklist** [G] (confirmed by the user, 2026-10-27): baking groups (Pair by Name links the collections correctly), a texture set of several objects into one image (works, with the ID map issue above, now fixed), the Texture set box, ID Select.
 - [x] Decided with the user: **Height from mesh is deferred** to Sprint 9 as a nice-to-have, to build when the export to Unity is tested there (nothing reads the map before that). The plan moved with it.
 
+## Sprint 7: Paint fill modes, then folders and materials (`sprint-7-paint-fill-folders`)
+- [x] Decided with the user: the paint fill modes come first (moved here from Sprint 8); this answers Open Question 15 for now (the fill modes; a brush pack stays open).
+- [x] Spike (windowed Blender): the native Fill brush in the 3D view fills every selected face under face selection masking, faces hidden from the view included, and leaves the others; a script can activate the Fill brush asset and run a click with `paint.image_paint`.
+- [x] **Fill modes** (`fill.py`): a Fill box under Exit Paint Mode on masks and paint items: Mesh, UV Island, Face, Full and a fill color; Fill turns the cursor into a brush, each click picks the face under it, selects the mode's faces of that material (hidden faces skipped), runs one click of Blender's Fill brush through face masking and puts back the face selection, masking, brush and unified color. [H] `tests/test_fill.py` (the faces of each mode, the ray through a Subdivision modifier and behind another object, the state put back also when the click fails, poll, panels); `tests/gui_fill_modes.py` with the real brush in a window (every mode on a two-part mesh, the hidden bottom face filled, grey 0.5 stored exactly). [G] pending: see Pending GUI checks.
+- [ ] Nested folders, Passthrough, folder opacity.
+- [ ] Smart materials (folder presets as assets, drop onto an object).
+- [ ] Duplicate / copy / paste of layers; Add menu grouping.
+
 ## Later sprints (outline, to be detailed)
-- **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
-- **Sprint 8, painting and viewport:** paint layers (per-channel painting, the paint item machinery on a channel), paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), texture set settings. Already built: paint items on masks and the preview buttons (layer, mask, whole-stack channels, mesh maps).
+- **Sprint 8, painting and viewport:** paint layers (per-channel painting, the paint item machinery on a channel), the fill modes on paint layers (built for masks and paint items in Sprint 7), texture set settings. Already built: paint items on masks and the preview buttons (layer, mask, whole-stack channels, mesh maps).
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material; tested in Unity.
   - [ ] Nice-to-have, **Height from mesh** (designed, see "Height from mesh" in the design doc; three decisions are open, Open Question 12). A new Mesh Maps slot `HEIGHT`, a bake entry with a thumbnail, a Range setting. Plan:
     - [ ] Decide with the user: method (position delta, recommended, or Ray Length), Range (automatic by default, recommended), and that the slot does not feed the Bump node (recommended). [ask]

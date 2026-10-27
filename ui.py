@@ -1,7 +1,7 @@
 import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
-from . import adjustments, curvature, filters, generators, gizmo, nodes, preview, sources
+from . import adjustments, curvature, fill, filters, generators, gizmo, nodes, preview, sources
 from .bake import HIGH_MAPS, resolve_device, texture_set
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
@@ -448,6 +448,7 @@ def _paint_item(layout, mat, e, src):
     layout.template_ID(tex, "image", open="image.open")
     if bpy.context.active_object is not None and bpy.context.active_object.mode == 'TEXTURE_PAINT':
         layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
+        fill.draw(layout, bpy.context)
     else:
         row = layout.row()
         row.enabled = tex.image is not None and src.projection == 'UV'
@@ -677,6 +678,7 @@ def _mask(self, context):
     img = getattr(tree.nodes.get(e.mask_node_name), "image", None) if tree else None
     if context.active_object.mode == 'TEXTURE_PAINT':
         layout.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
+        fill.draw(layout, context)
     else:
         row = layout.row()
         row.enabled = img is not None and src.kind == 'IMAGE' and src.projection == 'UV'

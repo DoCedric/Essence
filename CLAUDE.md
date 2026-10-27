@@ -3,7 +3,7 @@
 Blender 5.2 addon for Substance Painter-class PBR texturing, built on the shader graph. Read `ESSENCE_DESIGN.md` (what and why, priorities) and `ROADMAP.md` (the sprint queue) before starting work. Design decisions live in the design doc; tasks live in the roadmap.
 
 ## Layout
-The repo root is the addon (`blender_manifest.toml`, `__init__.py` and one module per area: `channels.py`, `blends.py`, `nodes.py`, `stack.py`, `sources.py`, `adjustments.py`, `filters.py`, `generators.py`, `gizmo.py`, `curvature.py`, `preview.py`, `persist.py`, `bundled.py`, `ops.py`, `ui.py`, `props.py`, `bake.py`, `export.py`). `assets/masks` holds the bundled test masks and stays untracked. Tests and harness scripts go in `tests/` (never in the addon modules).
+The repo root is the addon (`blender_manifest.toml`, `__init__.py` and one module per area: `channels.py`, `blends.py`, `nodes.py`, `stack.py`, `sources.py`, `adjustments.py`, `filters.py`, `generators.py`, `gizmo.py`, `curvature.py`, `fill.py`, `preview.py`, `persist.py`, `bundled.py`, `ops.py`, `ui.py`, `props.py`, `bake.py`, `export.py`). `assets/masks` holds the bundled test masks and stays untracked. Tests and harness scripts go in `tests/` (never in the addon modules).
 
 ## Autonomy
 Implement, test, debug, commit and push to the sprint branch without asking.
