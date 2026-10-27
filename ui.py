@@ -146,11 +146,11 @@ def _preview_button(row, mat, kind, ident):
 
 def _palette(col, tex, e, ch, mat):
     """ID Select's palette: a swatch per color with a remove button, an Add button, and the
-    ways to choose a color. (Blender's own eyedropper only starts over a color field, so it is
-    one key away: E, with the mouse over a swatch.)"""
+    ways to choose a color: Sample (click the mesh, the color is read from the ID map), or
+    Blender's own eyedropper, one key away: E, with the mouse over a swatch."""
     count = int(tex.inputs[generators.COUNT_INPUT].default_value)
     box = col.box()
-    box.label(text="Selected ID Colors (Hover - E for quick pick)")
+    box.label(text="Selected ID Colors")
     for i in range(1, count + 1):
         row = box.row(align=True)
         row.scale_y = 1.2
@@ -159,15 +159,16 @@ def _palette(col, tex, e, ch, mat):
         sub.enabled = count > 1
         op = sub.operator("essence.id_color_remove", text="", icon='REMOVE')
         op.uid, op.channel, op.index = e.uid, ch.id, i
-    row = box.row()
+    row = box.row(align=True)
     row.enabled = count < generators.MAX_ID_COLORS
     op = row.operator("essence.id_color_add", text="Add Color", icon='ADD')
+    op.uid, op.channel = e.uid, ch.id
+    op = row.operator("essence.id_color_sample", text="Sample", icon='EYEDROPPER')
     op.uid, op.channel = e.uid, ch.id
     shown = _previewing(mat, 'MAP', 'ID')
     op = col.operator("essence.preview", text="Show ID on Mesh", icon='SHADING_TEXTURE',
                       depress=shown)
     op.kind, op.ident = 'MAP', 'ID'
-    col.label(text="Hover a color and press E, then click the mesh", icon='EYEDROPPER')
     col.operator("essence.show_map", icon='IMAGE_DATA').map_id = 'ID'
 
 

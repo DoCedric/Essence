@@ -252,10 +252,11 @@ def test_the_palette_panel(addon):
     check(ops_drawn.count("essence.id_color_remove") == 3, "a remove button on each")
     check("essence.id_color_add" in ops_drawn and "essence.show_map" in ops_drawn,
           f"add and show buttons: {ops_drawn}")
+    check("essence.id_color_sample" in ops_drawn, f"the Sample button: {ops_drawn}")
     texts = [c[2].get("text", "") for c in log if c[0] == "operator"]
     check("Show ID on Mesh" in texts, "the toggle to see the ID on the mesh")
     labels = [c[2].get("text", "") for c in log if c[0] == "label"]
-    check(any("press E" in t for t in labels), f"the eyedropper hint: {labels}")
+    check(not any("press E" in t for t in labels), f"no eyedropper hint any more: {labels}")
     check(not any(c[0] == "prop" and getattr(c[1][0], "name", "") in ("ID", "Colors") for c in log),
           "the count and the map input are not drawn as properties")
     check("essence.pick_id" not in ops_drawn, "the pick from a face button is gone")
@@ -318,3 +319,53 @@ def test_an_exact_match_needs_no_tolerance_and_no_softness(addon):
             close(g, want, 0.01, f"exactly {color}, no tolerance, no softness")
     _palette(tex, (RED[0] - 0.02, RED[1], RED[2]))
     close(_got(ob, mat, e)[0], 0.0, 0.01, "a color 0.02 off is not the part")
+
+
+def test_a_ray_finds_the_uv_and_the_id_color_under_it(addon):
+    """What Sample does with a click: the surface point's UV on a scaled, rotated object, the
+    material of the face, and the texel of the ID map there (read as the shader reads it)."""
+    import math
+    from mathutils import Vector
+    from essence import ops
+    ob, mat, e = _setup(addon, 'ID_SELECT')
+    img = _id_map(addon, mat)
+    ob.scale = (2.0, 1.0, 1.0)
+    ob.rotation_euler = (0, 0, math.radians(30))
+    bpy.context.view_layer.update()
+    for local, want_uv, want_color in (((0.4, -0.25), (0.7, 0.375), BLUE),
+                                       ((-0.6, 0.3), (0.2, 0.65), RED),
+                                       ((-0.1, 0.0), (0.45, 0.5), GREEN),
+                                       ((0.9, 0.0), (0.95, 0.5), NEAR_RED)):
+        world = ob.matrix_world @ Vector((*local, 0.0))
+        hit = ops.surface_uv(bpy.context, world + Vector((0, 0, 5)), Vector((0, 0, -1)))
+        check(hit is not None, f"no hit at {local}")
+        check(hit[0] is ob and hit[1] is mat, f"hit {hit[0].name} / {hit[1]}")
+        close(hit[2][0], want_uv[0], 1e-4, f"u at {local}")
+        close(hit[2][1], want_uv[1], 1e-4, f"v at {local}")
+        got = ops.texel_at(img, hit[2])
+        check(all(abs(a - b) < 1e-5 for a, b in zip(got, want_color)), f"{got} at {local}")
+    miss = ops.surface_uv(bpy.context, Vector((50, 50, 5)), Vector((0, 0, -1)))
+    check(miss is None, "a ray past the object is a miss")
+
+
+def test_a_sampled_color_joins_the_palette(addon):
+    gens = addon.generators
+    ob, mat, e = _setup(addon, 'ID_SELECT')
+    tex = _tex(addon, mat, e)
+    check(gens.add_palette_color(tex, GREEN) == 'REPLACED', "the placeholder is replaced")
+    check(int(tex.inputs['Colors'].default_value) == 1, "still one color")
+    check(gens.add_palette_color(tex, BLUE) == 'ADDED', "the next one is added")
+    check(gens.add_palette_color(tex, BLUE) == 'DUPLICATE', "no color twice")
+    check(int(tex.inputs['Colors'].default_value) == 2, "two colors")
+    check(tuple(tex.inputs['ID Color 2'].default_value)[:3] == tuple(
+        float(x) for x in tex.inputs['ID Color 2'].default_value)[:3], "stored")
+    for i in range(14):
+        gens.add_palette_color(tex, (i / 20, 0.05, 0.05))
+    check(int(tex.inputs['Colors'].default_value) == gens.MAX_ID_COLORS, "a full palette")
+    check(gens.add_palette_color(tex, (0.9, 0.9, 0.1)) == 'FULL', "no 17th color")
+
+
+def test_sample_needs_an_id_map(addon):
+    ob, mat, e = _setup(addon, 'ID_SELECT')
+    result = bpy.ops.essence.id_color_sample('INVOKE_DEFAULT', uid=e.uid, channel='ROUGHNESS')
+    check('RUNNING_MODAL' not in result, f"no ID map, nothing to sample: {result}")

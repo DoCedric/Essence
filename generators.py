@@ -34,6 +34,27 @@ MAX_ID_COLORS = 16
 
 def id_color_name(i):
     return f"{COLOR_PREFIX}{i}"
+
+
+ID_PLACEHOLDER = (1.0, 0.0, 0.0)    # the first color of a new ID Select; no ID map makes it
+
+
+def add_palette_color(tex, color):
+    """Put `color` (RGB) into the palette of an ID Select node: in the first place while that
+    still holds the untouched placeholder, else after the last. Returns 'REPLACED', 'ADDED',
+    'DUPLICATE' (already in the palette) or 'FULL'."""
+    count = int(tex.inputs[COUNT_INPUT].default_value)
+    have = [tuple(tex.inputs[id_color_name(i)].default_value)[:3] for i in range(1, count + 1)]
+    if any(max(abs(a - b) for a, b in zip(c, color)) < 1e-4 for c in have):
+        return 'DUPLICATE'
+    if count == 1 and max(abs(a - b) for a, b in zip(have[0], ID_PLACEHOLDER)) < 1e-6:
+        tex.inputs[id_color_name(1)].default_value = (*color, 1.0)
+        return 'REPLACED'
+    if count >= MAX_ID_COLORS:
+        return 'FULL'
+    tex.inputs[id_color_name(count + 1)].default_value = (*color, 1.0)
+    tex.inputs[COUNT_INPUT].default_value = count + 1
+    return 'ADDED'
 INTERNAL_INPUTS = (DETAIL_INPUT, BAKED_POSITION_INPUT, CURVATURE_INPUT, AO_INPUT, ID_INPUT)
 ROTATION_INPUT = "Rotation"         # an Euler input the temporary gizmo (gizmo.py) can drive
 

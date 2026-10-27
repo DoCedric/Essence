@@ -176,8 +176,8 @@ def test_map_preview_buttons_and_notices_draw(addon):
     texts = [c[2].get("text", "") for c in log if c[0] == "operator"]
     check("Show ID on Mesh" in texts, f"the toggle: {texts}")
     _run('MAP', 'ID')
-    labels = [c[2].get("text", "") for c in _draw(ui._props, ob2) if c[0] == "label"]
-    check(any("press E" in t for t in labels), f"the hint to use the eyedropper: {labels}")
+    texts = [c[2].get("text", "") for c in _draw(ui._props, ob2) if c[0] == "operator"]
+    check("Sample" in texts, f"the Sample button next to Add Color: {texts}")
     bpy.ops.essence.preview_stop()
 
 

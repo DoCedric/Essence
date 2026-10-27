@@ -588,6 +588,131 @@ class ESSENCE_OT_id_color_add(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+def _barycentric(p, a, b, c):
+    v0, v1, v2 = b - a, c - a, p - a
+    d00, d01, d11 = v0.dot(v0), v0.dot(v1), v1.dot(v1)
+    d20, d21 = v2.dot(v0), v2.dot(v1)
+    den = d00 * d11 - d01 * d01
+    if abs(den) < 1e-20:
+        return (1.0, 0.0, 0.0)
+    v = (d11 * d20 - d01 * d21) / den
+    w = (d00 * d21 - d01 * d20) / den
+    return (1.0 - v - w, v, w)
+
+
+def surface_uv(context, origin, direction):
+    """What a ray from `origin` along `direction` (world space) hits first: (object, material,
+    uv) of the surface point, or None for a miss or a mesh without a UV map."""
+    dg = context.evaluated_depsgraph_get()
+    hit, loc, _normal, index, obj, matrix = context.scene.ray_cast(dg, origin, direction)
+    if not hit or obj is None or obj.type != 'MESH':
+        return None
+    ev = obj.evaluated_get(dg)
+    me = ev.data
+    layer = me.uv_layers.active
+    if layer is None or not 0 <= index < len(me.polygons):
+        return None
+    p = matrix.inverted() @ loc
+    best, best_score = None, None
+    for t in me.loop_triangles:
+        if t.polygon_index != index:
+            continue
+        a, b, c = (me.vertices[i].co for i in t.vertices)
+        w = _barycentric(p, a, b, c)
+        score = min(w)                  # the triangle that contains the point scores highest
+        if best_score is None or score > best_score:
+            best, best_score = (t, w), score
+    if best is None:
+        return None
+    t, w = best
+    uvs = [layer.uv[li].vector for li in t.loops]
+    uv = (sum(wi * u.x for wi, u in zip(w, uvs)), sum(wi * u.y for wi, u in zip(w, uvs)))
+    slot = me.polygons[index].material_index
+    mat = ev.material_slots[slot].material if slot < len(ev.material_slots) else None
+    return obj, (mat.original if mat is not None else None), uv
+
+
+def texel_at(image, uv):
+    """The RGB of the texel under `uv` as the shader reads it with Closest interpolation and
+    Repeat extension."""
+    w, h = image.size
+    x, y = int(uv[0] * w // 1) % w, int(uv[1] * h // 1) % h
+    i = (y * w + x) * image.channels
+    return tuple(image.pixels[i:i + 3])
+
+
+class ESSENCE_OT_id_color_sample(_Base, bpy.types.Operator):
+    bl_idname = "essence.id_color_sample"
+    bl_label = "Sample"
+    bl_description = ("Click parts of the model to add their ID colors to the palette (the color "
+                      "is read from the ID map itself). Right-click or Esc to finish")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    uid: StringProperty()
+    channel: StringProperty()
+
+    def _view(self, context, event):
+        """(region, region_3d) of the 3D view under the mouse, or (None, None)."""
+        for area in context.window.screen.areas:
+            if area.type != 'VIEW_3D':
+                continue
+            for region in area.regions:
+                if (region.type == 'WINDOW' and region.x <= event.mouse_x < region.x + region.width
+                        and region.y <= event.mouse_y < region.y + region.height):
+                    return region, area.spaces.active.region_3d
+        return None, None
+
+    def invoke(self, context, event):
+        mat = _material(context)
+        node = mat.node_tree.nodes.get(nodes.map_slot_name('ID')) if mat is not None else None
+        if node is None or node.image is None:
+            self.report({'WARNING'}, "Bake or pick an ID map first (Mesh Maps)")
+            return {'CANCELLED'}
+        if _id_select_node(context, self.uid, self.channel) is None:
+            return {'CANCELLED'}
+        context.window.cursor_modal_set('EYEDROPPER')
+        context.workspace.status_text_set("Click a part to add its color   |   "
+                                          "Right-click or Esc: done")
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def _finish(self, context):
+        context.window.cursor_modal_restore()
+        context.workspace.status_text_set(None)
+
+    def modal(self, context, event):
+        if event.type in {'RIGHTMOUSE', 'ESC'} and event.value == 'PRESS':
+            self._finish(context)
+            return {'FINISHED'}
+        if event.type != 'LEFTMOUSE' or event.value != 'PRESS':
+            return {'PASS_THROUGH'}
+        region, rv3d = self._view(context, event)
+        if region is None:
+            return {'PASS_THROUGH'}         # the sidebar and the other editors keep working
+        from bpy_extras import view3d_utils
+        coord = (event.mouse_x - region.x, event.mouse_y - region.y)
+        hit = surface_uv(context, view3d_utils.region_2d_to_origin_3d(region, rv3d, coord),
+                         view3d_utils.region_2d_to_vector_3d(region, rv3d, coord))
+        mat = _material(context)
+        tex = _id_select_node(context, self.uid, self.channel)
+        node = mat.node_tree.nodes.get(nodes.map_slot_name('ID')) if mat is not None else None
+        if tex is None or node is None or node.image is None:
+            self._finish(context)
+            return {'CANCELLED'}
+        if hit is None:
+            self.report({'INFO'}, "Nothing with a UV map under the cursor")
+        elif hit[1] is not mat:
+            self.report({'WARNING'}, "That part does not use this material")
+        else:
+            result = generators.add_palette_color(tex, texel_at(node.image, hit[2]))
+            if result == 'FULL':
+                self.report({'WARNING'}, f"The palette holds {generators.MAX_ID_COLORS} colors")
+            elif result == 'DUPLICATE':
+                self.report({'INFO'}, "That color is already in the palette")
+            context.area.tag_redraw()
+        return {'RUNNING_MODAL'}
+
+
 class ESSENCE_OT_id_color_remove(_Base, bpy.types.Operator):
     bl_idname = "essence.id_color_remove"
     bl_label = "Remove Color"
@@ -929,7 +1054,7 @@ classes = (
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
     ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
     ESSENCE_OT_rename_entry, ESSENCE_OT_add_paint, ESSENCE_OT_preview, ESSENCE_OT_preview_stop,
-    ESSENCE_OT_id_color_add, ESSENCE_OT_id_color_remove,
+    ESSENCE_OT_id_color_add, ESSENCE_OT_id_color_sample, ESSENCE_OT_id_color_remove,
     ESSENCE_OT_show_map, ESSENCE_OT_light_gizmo,
     ESSENCE_OT_derive_curvature,
     ESSENCE_OT_filter_apply,
