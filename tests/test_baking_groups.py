@@ -247,7 +247,7 @@ def test_object_ids_from_a_merge_follow_the_part_names(addon):
     check(_bake('ID') == {'FINISHED'}, "bake failed")
     img = bpy.data.images["Low_Mat_ID"]
     for (u, name) in ((0.25, "PartLeft"), (0.75, "PartRight")):
-        want = addon.bake.name_color(name)[:3]
+        want = addon.bake.IdColors(["PartLeft", "PartRight"]).color(name)[:3]
         got = _px(img, u, 0.5)[:3]
         check(sum((x - y) ** 2 for x, y in zip(got, want)) ** 0.5 < 0.03,
               f"{name}: {got} should be its name color {want}")

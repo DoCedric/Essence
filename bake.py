@@ -16,11 +16,11 @@ adding an entry to MAP_TYPES and a builder (or a native bake pass).
 
 import colorsys
 import contextlib
-import hashlib
 import os
 import uuid
 
 import bpy
+import numpy as np
 import bpy.utils.previews
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty
 from mathutils import Vector
@@ -66,8 +66,8 @@ ID_MODES = (
     ('UV_ISLAND', "UV Island",
      "One color per UV island of the low poly itself (a High Poly collection is ignored)"),
 )
-# The face attribute an ID bake reads its hue from (objects of a merged high poly, materials,
-# UV islands); written for the bake and removed again.
+# The face attribute an ID bake reads its color from (objects of a merged high poly, materials,
+# islands); written for the bake and removed again.
 ID_ATTRIBUTE = "essence_id"
 UV_ISLAND_ATTRIBUTE = ID_ATTRIBUTE
 # Object types with a surface a bake ray can hit (a curve with a bevel, text, ...).
@@ -387,14 +387,91 @@ def _position_builder(context, obj):
     return build
 
 
-def name_hue(name):
-    """A stable hue for a name (an object's or a material's ID color)."""
-    return int(hashlib.md5(name.encode()).hexdigest()[:8], 16) / 0xffffffff
+_id_sequence = []
 
 
-def name_color(name):
-    """A stable, saturated color for a name (an object's or a material's ID color)."""
-    return (*colorsys.hsv_to_rgb(name_hue(name), 0.8, 0.9), 1.0)
+def _id_colors_sequence():
+    """256 colors, each as far (as displayed, so in sRGB) from all the ones before it as the
+    candidates allow: any run of the first n is as spread out as n colors can be, so parts that
+    are numbered next to each other, or a hundred of them, still differ clearly. The candidates
+    are never black (a black texel in an ID map is a ray that hit nothing) and never grey."""
+    if not _id_sequence:
+        cands = np.array([colorsys.hsv_to_rgb(h / 72, s, v) for h in range(72)
+                          for s in (0.5, 0.7, 0.85, 1.0) for v in (0.6, 0.75, 0.9, 1.0)])
+        shown = np.where(cands <= 0.0031308, 12.92 * cands,
+                         1.055 * np.power(np.maximum(cands, 1e-9), 1 / 2.4) - 0.055)
+        chosen = [0]
+        dist = np.linalg.norm(shown - shown[0], axis=1)
+        for _ in range(255):
+            k = int(np.argmax(dist))
+            chosen.append(k)
+            dist = np.minimum(dist, np.linalg.norm(shown - shown[k], axis=1))
+        _id_sequence.extend(tuple(float(x) for x in cands[k]) for k in chosen)
+    return _id_sequence
+
+
+def index_color(i):
+    """The ID color of part number `i` (the sequence repeats after 256 parts)."""
+    seq = _id_colors_sequence()
+    return (*seq[i % len(seq)], 1.0)
+
+
+class IdColors:
+    """Which number, so which color, every part of one ID bake gets. Objects and materials are
+    numbered in alphabetical order of their names, so rebaking the same parts gives the same
+    colors; islands are numbered as they are met, across the objects of the bake."""
+
+    def __init__(self, names=()):
+        self.names = {n: i for i, n in enumerate(sorted(set(names)))}
+        self.islands = 0
+
+    def color(self, name):
+        if name not in self.names:      # not announced: after the others
+            self.names[name] = len(self.names)
+        return index_color(self.names[name])
+
+    def take_islands(self, count):
+        first = self.islands
+        self.islands += count
+        return first
+
+
+def part_names(obj, mode):
+    """The names that an ID bake of `mode` tells apart in `obj`: itself, or its materials."""
+    if mode == 'MATERIAL':
+        return [s.material.name if s.material is not None else "" for s in obj.material_slots] \
+            or [""]
+    return [obj.name]
+
+
+def mesh_island_indices(mesh):
+    """The connected piece of geometry of every polygon of `mesh`, numbered in order of
+    appearance."""
+    n = len(mesh.vertices)
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    edges = np.empty(len(mesh.edges) * 2, dtype=np.int64)
+    mesh.edges.foreach_get("vertices", edges)
+    for a, b in edges.reshape(-1, 2).tolist():
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+    roots = np.array([find(i) for i in range(n)], dtype=np.int64)
+    loop_vertex = np.empty(len(mesh.loops), dtype=np.int64)
+    mesh.loops.foreach_get("vertex_index", loop_vertex)
+    start = np.empty(len(mesh.polygons), dtype=np.int64)
+    mesh.polygons.foreach_get("loop_start", start)
+    if not len(start):
+        return []
+    face_root = roots[loop_vertex[start]]
+    _, first, inverse = np.unique(face_root, return_index=True, return_inverse=True)
+    return np.argsort(np.argsort(first))[inverse].tolist()
 
 
 def uv_island_indices(mesh):
@@ -428,43 +505,40 @@ def uv_island_indices(mesh):
     return out
 
 
-def _id_hues(obj, mode, first=0, name=None):
-    """The ID hue of every face of `obj` for an "ID by" mode, and how many UV islands were
-    numbered. A shader cannot tell objects of a merged high poly, materials or UV islands
-    apart, so all of them reach it as a face attribute. Mesh islands need none (None).
-    `name` is the object's name for its ID (the original's, for a copy)."""
+def _id_colors(obj, mode, ids, name=None):
+    """The ID color (RGBA) of every face of `obj` for an "ID by" mode, and how many islands
+    were numbered. A shader cannot tell objects of a merged high poly, materials or islands
+    apart, so all of them reach it as a face attribute. `name` is the object's name for its ID
+    (the original's, for a copy)."""
     mesh = obj.data
+    n = len(mesh.polygons)
     if mode == 'OBJECT':
-        return [name_hue(name or obj.name)] * len(mesh.polygons), 0
+        return [ids.color(name or obj.name)] * n, 0
     if mode == 'MATERIAL':
-        names = [s.material.name if s.material is not None else "" for s in obj.material_slots]
-        hues = [name_hue(n) for n in names] or [name_hue("")]
-        idx = [0] * len(mesh.polygons)
+        colors = [ids.color(s.material.name if s.material is not None else "")
+                  for s in obj.material_slots] or [ids.color("")]
+        idx = [0] * n
         mesh.polygons.foreach_get("material_index", idx)
-        return [hues[min(i, len(hues) - 1)] for i in idx], 0
-    if mode == 'UV_ISLAND':
-        islands = uv_island_indices(mesh)
-        return [((first + i) * _GOLDEN) % 1.0 for i in islands], len(set(islands))
-    return None, 0
+        return [colors[min(i, len(colors) - 1)] for i in idx], 0
+    islands = (uv_island_indices(mesh) if mode == 'UV_ISLAND' else mesh_island_indices(mesh))
+    first = ids.take_islands(len(set(islands)))
+    return [index_color(first + i) for i in islands], len(set(islands))
 
 
-def _write_id(mesh, hues):
+def _write_id(mesh, colors):
     if ID_ATTRIBUTE in mesh.attributes:
         mesh.attributes.remove(mesh.attributes[ID_ATTRIBUTE])
-    attr = mesh.attributes.new(ID_ATTRIBUTE, 'FLOAT', 'FACE')
-    attr.data.foreach_set("value", hues)
+    attr = mesh.attributes.new(ID_ATTRIBUTE, 'FLOAT_COLOR', 'FACE')
+    attr.data.foreach_set("color", [c for rgba in colors for c in rgba])
 
 
 @contextlib.contextmanager
-def _id_attribute(obj, mode, first=0):
-    """Give the low poly's mesh its ID hues as a face attribute while it is baked, and take it
-    away again, whatever happens. UV islands are numbered from `first`, so the objects of one
-    texture set get different colors. Yields the number of UV islands."""
-    hues, count = _id_hues(obj, mode, first)
-    if hues is None:
-        yield 0
-        return
-    _write_id(obj.data, hues)
+def _id_attribute(obj, mode, ids):
+    """Give the low poly's mesh its ID colors as a face attribute while it is baked, and take
+    it away again, whatever happens. Islands are numbered through `ids`, so the objects of one
+    texture set get different colors. Yields the number of islands."""
+    colors, count = _id_colors(obj, mode, ids)
+    _write_id(obj.data, colors)
     try:
         yield count
     finally:
@@ -472,30 +546,18 @@ def _id_attribute(obj, mode, first=0):
             obj.data.attributes.remove(obj.data.attributes[ID_ATTRIBUTE])
 
 
-def _uv_island_attribute(obj, first=0):
-    return _id_attribute(obj, 'UV_ISLAND', first)
+def _uv_island_attribute(obj, ids=None):
+    return _id_attribute(obj, 'UV_ISLAND', ids or IdColors())
 
 
 def _id_builder(mode):
-    """A flat color per part: a hue the shader reads (the ID attribute, or Geometry Random Per
-    Island for mesh islands), at a fixed saturation and value."""
+    """A flat color per part: the ID attribute written for the bake (see `_id_colors`)."""
     def build(nt, x, y):
-        if mode == 'MESH_ISLAND':
-            src = nt.nodes.new('ShaderNodeNewGeometry')
-            hue = src.outputs['Random Per Island']
-        else:
-            src = nt.nodes.new('ShaderNodeAttribute')
-            src.attribute_type = 'GEOMETRY'
-            src.attribute_name = ID_ATTRIBUTE
-            hue = src.outputs['Factor']
+        src = nt.nodes.new('ShaderNodeAttribute')
+        src.attribute_type = 'GEOMETRY'
+        src.attribute_name = ID_ATTRIBUTE
         src.location = (x, y)
-        comb = nt.nodes.new('ShaderNodeCombineColor')
-        comb.mode = 'HSV'
-        comb.inputs['Green'].default_value = 0.8
-        comb.inputs['Blue'].default_value = 0.9
-        comb.location = (x + 250, y)
-        nt.links.new(hue, comb.inputs['Red'])
-        return comb.outputs['Color'], [src, comb]
+        return src.outputs['Color'], [src]
     return build
 
 
@@ -619,7 +681,7 @@ def auto_extrusion(obj):
     return obj.dimensions.length * 0.02
 
 
-def merge_high(context, objects, id_mode=None):
+def merge_high(context, objects, id_mode=None, ids=None):
     """One temporary mesh object made of `objects` with their modifiers applied, placed where
     they are. Blender's selected-to-active bake costs per high-poly object, not per triangle
     (on a real file 60 objects took 27 s, the same geometry as one mesh 1.1 s), so every
@@ -627,6 +689,7 @@ def merge_high(context, objects, id_mode=None):
     by object and by material survive the merge. Faces without a material get a temporary one.
     Returns (object, teardown)."""
     temps, meshes = [], []
+    ids = ids or IdColors(n for o in objects for n in part_names(o, id_mode))
     # excluded collections are not evaluated
     with _ForceSelectable(context, objects), _render_settings(objects):
         dg = context.evaluated_depsgraph_get()
@@ -641,11 +704,10 @@ def merge_high(context, objects, id_mode=None):
             t = bpy.data.objects.new(o.name, me)
             t.matrix_world = o.matrix_world
             context.scene.collection.objects.link(t)
-            if id_mode is not None:
+            if id_mode in ('OBJECT', 'MATERIAL'):
                 # the part's own name: the copy's is "<name>.001"
-                hues, _ = _id_hues(t, id_mode, name=o.name)
-                if hues is not None:
-                    _write_id(me, hues)
+                colors, _ = _id_colors(t, id_mode, ids, name=o.name)
+                _write_id(me, colors)
             temps.append(t)
     if not temps:
         raise RuntimeError("the high-poly objects have no surface")
@@ -656,6 +718,9 @@ def merge_high(context, objects, id_mode=None):
                                    selected_objects=temps, selected_editable_objects=temps):
             bpy.ops.object.join()
     merged.name = ".Essence High"
+    if id_mode in ('MESH_ISLAND', 'UV_ISLAND'):
+        colors, _ = _id_colors(merged, 'MESH_ISLAND', ids)     # numbered over the whole merge
+        _write_id(merged.data, colors)
     fill = None
     if not merged.material_slots:
         merged.data.materials.append(None)
@@ -873,19 +938,23 @@ class ESSENCE_OT_bake(bpy.types.Operator):
             colls = tuple(c for c in (high, floaters if floaters_too else None) if c is not None)
             groups[obj] = colls if high is not None else ()
         merges, teardowns = {}, []
+        # every part of the bake gets its own number, whatever group it is in
+        names = [n for o in objects if not groups[o] for n in part_names(o, id_mode)]
+        names += [n for colls in groups.values() for c in colls for h in high_poly_objects(c)
+                  for n in part_names(h, id_mode)]
+        ids = IdColors(names)
         try:
             for colls in dict.fromkeys(g for g in groups.values() if g):
                 sources = list(dict.fromkeys(o for c in colls for o in high_poly_objects(c)))
                 if not sources:
                     raise RuntimeError(f"high-poly collection '{colls[0].name}' has no objects")
-                merged, drop = merge_high(context, sources, id_mode)
+                merged, drop = merge_high(context, sources, id_mode, ids)
                 merges[colls] = merged
                 teardowns.append(drop)
             teardowns.append(_activate_target(mat, image, map_type))
             if map_type == 'NORMAL':
                 teardowns.append(_detach_normal_input(mat))
             teardowns.append(other_targets(objects, mat))
-            first_island = 0
             for i, obj in enumerate(objects):
                 build = _position_builder(context, obj) if map_type == 'POSITION' else build_color
                 colls = groups[obj]
@@ -897,10 +966,9 @@ class ESSENCE_OT_bake(bpy.types.Operator):
                             else list(objects))
                 else:
                     keep = []
-                with (_id_attribute(obj, id_mode, first_island) if id_mode and not high
-                      else contextlib.nullcontext(0)) as count:
+                with (_id_attribute(obj, id_mode, ids) if id_mode and not high
+                      else contextlib.nullcontext(0)):
                     self._bake_object(context, mat, obj, map_type, build, high, i == 0, keep)
-                first_island += count
         finally:
             for t in reversed(teardowns):
                 t()

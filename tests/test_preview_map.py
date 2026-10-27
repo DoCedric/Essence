@@ -193,8 +193,7 @@ def test_an_eyedropped_color_matches_the_id_map_in_standard(addon):
         return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
     import colorsys
-    colors = [bake.name_color(f"Material {i}")[:3] for i in range(40)]
-    colors += [colorsys.hsv_to_rgb((i * 0.6180339887) % 1.0, 0.8, 0.9) for i in range(40)]
+    colors = [bake.index_color(i)[:3] for i in range(150)]
     worst = 0.0
     for c in colors:
         back = [to_linear(round(to_display(v) * 255) / 255) for v in c]

@@ -131,13 +131,13 @@ def test_material_ids(addon):
     # Each material is its own texture set: its image holds its own faces only.
     for (u, v), m in (((0.25, 0.3), mats[0]), ((0.75, 0.7), mats[1])):
         img = bpy.data.images[f"{m.name}_ID"]
-        expected = addon.bake.name_color(m.name)[:3]
+        expected = addon.bake.IdColors(["Paint", "Metal"]).color(m.name)[:3]
         check(_distance(_at(img, u, v), expected) < 0.03,
               f"{m.name}: {_at(img, u, v)} should be its name color {expected}")
         other = _at(img, 1 - u, v)
         check(max(other) < 0.01, f"{m.name}: the other material's faces are not in it: {other}")
-    _differ(addon.bake.name_color("Paint")[:3], addon.bake.name_color("Metal")[:3],
-            "two materials")
+    ids = addon.bake.IdColors(["Paint", "Metal"])
+    _differ(ids.color("Paint")[:3], ids.color("Metal")[:3], "two materials")
 
 
 def test_material_ids_from_a_high_poly(addon):
@@ -150,9 +150,10 @@ def test_material_ids_from_a_high_poly(addon):
     _high_collection(low, *halves)
     check(_bake_id('MATERIAL', low) == {'FINISHED'}, "bake failed")
     img = baked("Low", "ID")
-    check(_distance(_at(img, 0.25, 0.5), addon.bake.name_color("PartA")[:3]) < 0.03,
+    ids = addon.bake.IdColors(["PartA", "PartB"])
+    check(_distance(_at(img, 0.25, 0.5), ids.color("PartA")[:3]) < 0.03,
           "the color of the high-poly material that was hit")
-    check(_distance(_at(img, 0.75, 0.5), addon.bake.name_color("PartB")[:3]) < 0.03,
+    check(_distance(_at(img, 0.75, 0.5), ids.color("PartB")[:3]) < 0.03,
           "and of the other one")
 
 
@@ -279,3 +280,68 @@ def test_the_id_slot_reads_without_interpolation(addon):
     bpy.ops.essence.add_layer()
     slot = low.active_material.node_tree.nodes[addon.nodes.map_slot_name('ID')]
     check(slot.interpolation == 'Closest', f"the ID slot interpolates: {slot.interpolation}")
+
+
+def test_id_colors_are_spread_out_and_stable(addon):
+    """Parts are numbered, not hashed: 150 parts all differ clearly (hashed hues put several
+    parts a hair apart), the same names give the same colors in any order, and the colors are
+    never black or grey."""
+    import colorsys
+    bake = addon.bake
+    cols = [bake.index_color(i)[:3] for i in range(150)]
+
+    def shown(c):
+        return tuple(12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055 for v in c)
+    seen = [shown(c) for c in cols]
+    worst = min(_distance(seen[i], seen[j]) for i in range(150) for j in range(i))
+    check(worst > 0.1, f"two of 150 parts are only {worst} apart as displayed")
+    for c in cols:
+        h, s, v = colorsys.rgb_to_hsv(*c)
+        check(s > 0.45 and v > 0.55, f"{c} is too pale or too dark")
+    a = bake.IdColors(["Door", "Arm", "Flag"])
+    b = bake.IdColors(["Flag", "Door", "Arm"])
+    check(all(a.color(n) == b.color(n) for n in ("Door", "Arm", "Flag")), "order must not matter")
+    check(a.color("Arm") == bake.index_color(0), "alphabetical: Arm is the first")
+    check(len({tuple(a.color(n)) for n in ("Door", "Arm", "Flag")}) == 3, "three colors")
+
+
+def test_rebaking_keeps_the_colors_and_every_part_differs(addon):
+    low = make_plane("Low", size=2.0)
+    parts = _half_planes()
+    _high_collection(low, *parts)
+    check(_bake_id('OBJECT', low) == {'FINISHED'}, "bake failed")
+    first = (_at(baked("Low", "ID"), 0.25, 0.5), _at(baked("Low", "ID"), 0.75, 0.5))
+    check(_bake_id('OBJECT', low) == {'FINISHED'}, "second bake failed")
+    img = baked("Low", "ID")
+    _same(first[0], _at(img, 0.25, 0.5), "rebake, left")
+    _same(first[1], _at(img, 0.75, 0.5), "rebake, right")
+    ids = addon.bake.IdColors(["HighLeft", "HighRight"])
+    check(_distance(first[0], ids.color("HighLeft")[:3]) < 0.01, "HighLeft is number 0")
+    check(_distance(first[1], ids.color("HighRight")[:3]) < 0.01, "HighRight is number 1")
+
+
+def test_mesh_island_colors_are_numbered_over_the_whole_merge(addon):
+    low = make_plane("Low", size=2.0)
+    meshes = []
+    for name, x in (("PieceA", -0.5), ("PieceB", 0.5)):
+        bpy.ops.mesh.primitive_plane_add(size=1.0, location=(x, 0, 0.02))
+        o = bpy.context.active_object
+        o.name = name
+        o.scale = (1.0, 2.0, 1.0)
+        meshes.append(o)
+    _high_collection(low, *meshes)
+    check(_bake_id('MESH_ISLAND', low) == {'FINISHED'}, "bake failed")
+    img = baked("Low", "ID")
+    left, right = _at(img, 0.25, 0.5), _at(img, 0.75, 0.5)
+    _differ(left, right, "two pieces from two objects")
+    cols = [addon.bake.index_color(i)[:3] for i in (0, 1)]
+    check({round(x, 2) for x in left} in [{round(x, 2) for x in c} for c in cols],
+          f"{left} should be island 0 or 1")
+
+
+def test_mesh_island_indices(addon):
+    mesh = bpy.data.meshes.new("Two")
+    verts = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (3, 0, 0), (4, 0, 0), (4, 1, 0), (3, 1, 0),
+             (1, 2, 0), (0, 2, 0)]
+    mesh.from_pydata(verts, [], [(0, 1, 2, 3), (4, 5, 6, 7), (3, 2, 8, 9)])
+    check(addon.bake.mesh_island_indices(mesh) == [0, 1, 0], "the first and third share edges")

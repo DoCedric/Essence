@@ -49,7 +49,7 @@ def test_defaults(addon):
     tex = _tex(addon, mat, e)
     close(tex.inputs['Tolerance'].default_value, 0.01, 1e-6, "the default tolerance")
     check(tex.inputs['Colors'].default_value == 1, "one color to begin with")
-    check(addon.generators.GENERATORS['ID_SELECT'].version == 3, "version 3: white within the tolerance")
+    check(addon.generators.GENERATORS['ID_SELECT'].version == 4, "version 4: exact at zero tolerance")
 
 
 def test_an_exact_match_is_white_with_the_default_settings(addon):
@@ -207,7 +207,7 @@ def test_an_older_id_select_with_one_color_becomes_a_palette(addon):
     tex.inputs['Tolerance'].default_value = 0.07
     bpy.ops.essence.rebuild()
     tex = _tex(addon, mat, e)
-    check(ng["essence_version"] == 3 and 'ID Color' not in tex.inputs, "rebuilt to the palette")
+    check(ng["essence_version"] == 4 and 'ID Color' not in tex.inputs, "rebuilt to the palette")
     check(all(abs(a - b) < 1e-5 for a, b in zip(tex.inputs['ID Color 1'].default_value[:3], BLUE)),
           "the old color is the first of the palette")
     check(tex.inputs['Colors'].default_value == 1, "and the only one")
@@ -298,7 +298,7 @@ def test_a_version_2_group_is_rebuilt_with_its_values(addon):
     tex.node_tree["essence_version"] = 2
     bpy.ops.essence.rebuild()
     tex = _tex(addon, mat, e)
-    check(tex.node_tree["essence_version"] == 3, "rebuilt")
+    check(tex.node_tree["essence_version"] == 4, "rebuilt")
     check(tex.inputs['Colors'].default_value == 2, "the palette is kept")
     close(tex.inputs['Softness'].default_value, 0.03, 1e-6, "the softness is kept")
     for g, want in zip(_got(ob, mat, e), (1, 0, 1, 0)):
@@ -369,3 +369,26 @@ def test_sample_needs_an_id_map(addon):
     ob, mat, e = _setup(addon, 'ID_SELECT')
     result = bpy.ops.essence.id_color_sample('INVOKE_DEFAULT', uid=e.uid, channel='ROUGHNESS')
     check('RUNNING_MODAL' not in result, f"no ID map, nothing to sample: {result}")
+
+
+def test_two_ids_one_8_bit_step_apart_are_told_apart(addon):
+    """Reported from the GUI: #F376C3 and #F376C2 (two parts, one 8-bit step apart) were both
+    selected with Tolerance 0 and Softness 0, because the softness floor was 0.001."""
+    ob, mat, e = _setup(addon, 'ID_SELECT')
+    img = bpy.data.images.new("ids", 8, 8, float_buffer=True)
+    img.colorspace_settings.name = 'Non-Color'
+    near_a = (0.4, 0.2, 0.55)
+    near_b = (0.4, 0.2, 0.5515)         # about one 8-bit step (in sRGB) away
+    px = []
+    for y in range(8):
+        for x in range(8):
+            px += [*(near_a if x < 4 else near_b), 1.0]
+    img.pixels.foreach_set(px)
+    img.update()
+    mat.node_tree.nodes[addon.nodes.map_slot_name('ID')].image = img
+    bpy.ops.essence.rebuild()
+    tex = _tex(addon, mat, e)
+    _set(tex, Tolerance=0.0, Softness=0.0)
+    _palette(tex, near_a)
+    close(_value(ob, mat, e, (0.25, 0.5)), 1.0, 0.01, "the picked part")
+    close(_value(ob, mat, e, (0.75, 0.5)), 0.0, 0.01, "the part one step away is not selected")
