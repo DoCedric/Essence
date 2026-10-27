@@ -924,6 +924,8 @@ class ESSENCE_MT_add(bpy.types.Menu):
     def draw(self, context):
         self.layout.operator("essence.add_layer", text="Layer", icon='ADD')
         self.layout.operator("essence.add_folder", text="Folder", icon='NEWFOLDER')
+        self.layout.separator()
+        self.layout.menu("ESSENCE_MT_add_smart", text="Smart Material", icon='MATERIAL')
 
 
 class ESSENCE_MT_add_to(bpy.types.Menu):

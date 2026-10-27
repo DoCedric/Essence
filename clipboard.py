@@ -338,21 +338,26 @@ class ESSENCE_OT_paste(_EntryOp, bpy.types.Operator):
         if src is None:
             self.report({'WARNING'}, "Nothing to paste: the copied layer is gone")
             return {'CANCELLED'}
-        ob = context.active_object
-        mat = ob.active_material
-        if mat is None:
-            mat = bpy.data.materials.new(f"{ob.name} Essence")
-            ob.data.materials.append(mat)
-            ob.active_material = mat
-        at = _owner(mat, _target(mat, self.uid))
-        if at is not None and at.kind == 'FOLDER':
-            parent, anchor = at.uid, None
-        else:
-            parent, anchor = (at.parent, at.uid) if at is not None else ("", None)
+        mat, parent, anchor = paste_target(context, self.uid)
         new = copy_entry(src_mat, src.uid, mat, parent, anchor)
         s = mat.essence
         s.active_index = next(i for i, x in enumerate(s.layers) if x.uid == new)
         return {'FINISHED'}
+
+
+def paste_target(context, uid=""):
+    """Where pasted entries go: the material (made when the object has none), the parent and
+    the anchor for `copy_entry`: inside the selected folder, else above the selected layer."""
+    ob = context.active_object
+    mat = ob.active_material
+    if mat is None:
+        mat = bpy.data.materials.new(f"{ob.name} Essence")
+        ob.data.materials.append(mat)
+        ob.active_material = mat
+    at = _owner(mat, _target(mat, uid))
+    if at is not None and at.kind == 'FOLDER':
+        return mat, at.uid, None
+    return (mat, at.parent, at.uid) if at is not None else (mat, "", None)
 
 
 class ESSENCE_OT_remove_entry(_EntryOp, bpy.types.Operator):
@@ -380,6 +385,8 @@ def draw_entry_menu(layout, mat, e):
         layout.operator("essence.duplicate", icon='DUPLICATE').uid = e.uid
         layout.operator("essence.copy", icon='COPYDOWN').uid = e.uid
     layout.operator("essence.paste", icon='PASTEDOWN').uid = e.uid
+    if e.kind in OWNER_KINDS:
+        layout.operator("essence.save_smart_material", icon='ASSET_MANAGER').uid = e.uid
     layout.separator()
     layout.operator("essence.remove_entry", icon='X').uid = e.uid
 
