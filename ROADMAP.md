@@ -5,7 +5,7 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets, baking groups and the multi-object bake are built and confirmed by the user; Height from mesh is next. The asset library moved to the last sprint (11). `tests/run_all.py`: 321/321 pass headless.
+Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets, baking groups and the multi-object bake are built and confirmed by the user, and the sprint is ready to merge. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 321/321 pass headless.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
@@ -167,18 +167,19 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **ID colors and exact select** (reported from the GUI: a wall of near-identical pinks, and a part one 8-bit step away selected at Tolerance 0): ID Select version 4 is exact at Tolerance 0 and Softness 0 (the softness floor was 0.001, now 1e-5 plus a float-noise margin). ID colors are numbered (objects and materials alphabetically, islands as met) and taken from a 256-color farthest-point sequence instead of a name hash, in every ID mode, as a face color attribute. Rebaking unchanged parts keeps the colors. [H] `tests/test_mesh_id.py`, `tests/test_generators_id.py`. [G] confirmed by the user (2026-10-27).
 - [x] **Sample button for ID Select** (the user asked for it to speed up picking): click parts of the model, each adds its exact ID color from the image (ray, UV, texel) to the palette; right-click or Esc ends. [H] `tests/test_generators_id.py`: the UV and texel under a ray on a scaled, rotated object, palette rules, a refusal without an ID map, the panel. [G] confirmed by the user (2026-10-27).
 - [x] **Milestone checklist** [G] (confirmed by the user, 2026-10-27): baking groups (Pair by Name links the collections correctly), a texture set of several objects into one image (works, with the ID map issue above, now fixed), the Texture set box, ID Select.
-- [ ] **Height from mesh** (designed, see "Height from mesh" in the design doc; three decisions are open, Open Question 12). A new Mesh Maps slot `HEIGHT`, a bake entry with a thumbnail, a Range setting. Plan:
-  - [ ] Decide with the user: method (position delta, recommended, or Ray Length), Range (automatic by default, recommended), and that the slot does not feed the Bump node (recommended). [ask]
-  - [ ] Optional spike: is Light Path Ray Length readable in a bake, and does it equal the distance to the high poly with the extrusion subtracted? (It does not work with a cage, so it can only ever be a fast path.)
-  - [ ] Bake pieces: the high Position (exists), a hit mask (white emission), the low poly's own Position and object-space Normal, all float, on the same size as the set and through the baking groups (floaters and cage included). [H]
-  - [ ] Combine in numpy: `dot(P_high - P_low, N_low)` with the Generated coordinates scaled back by the dimensions, divided by the Range, 0.5 + 0.5 * h / range, 0.5 where nothing was hit; written to `<material>_Height` (float, Non-Color, packed, stamped, `essence_height_range` on the image). [H]
-  - [ ] Bake panel: a Range field for this map (0 = automatic), the map in the picker with a thumbnail; the slot in Mesh Maps with Show on Mesh. [H] draws
-  - [ ] Tests (headless): a flat plane at +0.1 and at -0.1, a tilted plane (distance along the normal), a scaled and rotated low poly gives the same distances, a sphere pair, floaters, a cage, automatic range, a miss is 0.5, a texture set of two objects, save and reload, an old file without the slot. [H]
-  - [ ] [G] the look and the Show on Mesh preview on a real high and low poly.
+- [x] Decided with the user: **Height from mesh is deferred** to Sprint 9 as a nice-to-have, to build when the export to Unity is tested there (nothing reads the map before that). The plan moved with it.
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
 - **Sprint 8, painting and viewport:** paint layers (per-channel painting, the paint item machinery on a channel), paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), texture set settings. Already built: paint items on masks and the preview buttons (layer, mask, whole-stack channels, mesh maps).
-- **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material.
+- **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material; tested in Unity.
+  - [ ] Nice-to-have, **Height from mesh** (designed, see "Height from mesh" in the design doc; three decisions are open, Open Question 12). A new Mesh Maps slot `HEIGHT`, a bake entry with a thumbnail, a Range setting. Plan:
+    - [ ] Decide with the user: method (position delta, recommended, or Ray Length), Range (automatic by default, recommended), and that the slot does not feed the Bump node (recommended). [ask]
+    - [ ] Optional spike: is Light Path Ray Length readable in a bake, and does it equal the distance to the high poly with the extrusion subtracted? (It does not work with a cage, so it can only ever be a fast path.)
+    - [ ] Bake pieces: the high Position (exists), a hit mask (white emission), the low poly's own Position and object-space Normal, all float, on the same size as the set and through the baking groups (floaters and cage included). [H]
+    - [ ] Combine in numpy: `dot(P_high - P_low, N_low)` with the Generated coordinates scaled back by the dimensions, divided by the Range, 0.5 + 0.5 * h / range, 0.5 where nothing was hit; written to `<material>_Height` (float, Non-Color, packed, stamped, `essence_height_range` on the image). [H]
+    - [ ] Bake panel: a Range field for this map (0 = automatic), the map in the picker with a thumbnail; the slot in Mesh Maps with Show on Mesh. [H] draws
+    - [ ] Tests (headless): a flat plane at +0.1 and at -0.1, a tilted plane (distance along the normal), a scaled and rotated low poly gives the same distances, a sphere pair, floaters, a cage, automatic range, a miss is 0.5, a texture set of two objects, save and reload, an old file without the slot. [H]
+    - [ ] [G] the look and the Show on Mesh preview on a real high and low poly.
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
 - **Sprint 11, Essence asset library (last):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).

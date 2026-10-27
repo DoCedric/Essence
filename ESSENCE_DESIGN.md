@@ -230,7 +230,7 @@ Notes:
 - **One Bump node, at the end of the stack.** All heights are summed into a single height value feeding one Bump node (Strength, Distance), whose Normal output goes to the shader's Normal input. Chained Bump nodes would re-evaluate the height network and compound. See "Verify".
 - A layer's height can be scaled per layer (`B * strength * mask`) before it is added; overall intensity is controlled once, at the end of the stack.
 
-### Height from mesh *(designed, not built)*
+### Height from mesh *(designed, not built; deferred to Sprint 9, export, as a nice-to-have)*
 The distance from the low-poly surface to the high-poly surface, as a Mesh Maps slot (`HEIGHT`), like Substance's Height from Mesh. White where the high poly stands above the low poly, black where it lies below, mid grey (0.5) on the surface and wherever a ray found no high poly.
 
 **Method (recommended).** Build it from parts that already exist and are verified, in the low poly's object space, so scale and rotation do not matter and a cage or floaters work the same as for the normal:
@@ -596,7 +596,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 ### P1 Core (the "full workflow" line)
 10. **Adjustment layers and filter stack**: levels, HSV, color balance, curves, invert, gradient map, threshold, channel mix. 🟡 all but channel mix (color balance has no shader node)
 11. **Mask generators and asset library**: noise, gradient, grunge, edge wear, dirt, curvature wear, height gradient, position gradient, as node group assets in catalogs. 🟡 generators built (live and map-reading), bundled grunge images; the asset library is the last sprint (Sprint 11)
-12. **More baked maps**: Curvature, Position, Thickness, Material/Object/Color ID, Height from mesh. 🟡 all but Height from mesh
+12. **More baked maps**: Curvature, Position, Thickness, Material/Object/Color ID, Height from mesh. 🟡 all but Height from mesh (deferred to the export sprint: nothing reads it before a height export)
 13. **ID and Color Selection masks.** ✅ (ID Select)
 14. **Nested folders; Passthrough folder mode; folder opacity.** ⬜
 15. **Smart materials**: folder presets as assets, drop onto an object. ⬜
@@ -648,7 +648,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 9. ~~**Texture set model**~~ Decided with 4: objects sharing a material share its UV layout (see the B8 rule).
 10. ~~**Mesh maps vs live generators**~~ Decided (Sprint 5): live when the shader reads it for free (normal, position), baked when it needs the neighbourhood or data a shader cannot read (see "Live versus baked generators").
 11. **Mesh Map source kind and presets**: a source kind that reads a Mesh Maps slot directly (Curvature, AO, ID, Position, Thickness) plus presets of ordinary items (Edge Wear, Dirt, Cavity as a map source, Levels and a noise fill, shipped with the asset library), instead of or next to the dedicated generators. The user compared: the generators work well; decide whether presets are still wanted.
-12. **Height from mesh**: three small decisions before it is built. (a) Method: the position delta (four bakes, works with a cage, recommended) or Light Path Ray Length (one bake, breaks with a cage). (b) Range: automatic from the measured maximum by default, with a manual Distance, and the range kept on the image (recommended). (c) Use: a Mesh Maps slot only, not wired into the Bump node, because the baked normal already holds the detail (recommended). See "Height from mesh".
+12. **Height from mesh** (deferred with the user to the export sprint, 2026-10-27): three small decisions before it is built. (a) Method: the position delta (four bakes, works with a cage, recommended) or Light Path Ray Length (one bake, breaks with a cage). (b) Range: automatic from the measured maximum by default, with a manual Distance, and the range kept on the image (recommended). (c) Use: a Mesh Maps slot only, not wired into the Bump node, because the baked normal already holds the detail (recommended). See "Height from mesh".
 12. **Shader recompile cost of deep stacks** (about 7 s to add a layer to a 14-layer stack): retry Freeze to image, a pause-live-updates toggle, or a lighter per-layer shader (see B12).
 13. **Anchor points**: postponed by the user. An intermediate stack result has to become selectable as a generator input without a cycle in the chain.
 14. **Bundled masks when they ship**: pack or reference (see `bundled.py`); they stay untracked in git while they are only for testing.
