@@ -264,10 +264,8 @@ def _stack(self, context):
         return
     _preview_notice(layout, mat, context)
     bar = layout.row(align=True)
-    bar.operator("essence.add_layer", icon='ADD', text="")
-    bar.operator("essence.add_folder", icon='NEWFOLDER', text="")
-    bar.menu("ESSENCE_MT_add_mask", icon='MOD_MASK', text="")
-    bar.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER', text="")
+    bar.menu("ESSENCE_MT_add", icon='ADD', text="")
+    bar.menu("ESSENCE_MT_add_to", icon='MODIFIER', text="")
     bar.operator("essence.remove_layer", icon='REMOVE', text="")
     bar.separator()
     bar.operator("essence.duplicate", icon='DUPLICATE', text="")

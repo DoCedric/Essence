@@ -216,6 +216,7 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
                ('WHITE', "White (reveals)", "Layer is fully visible until erased")],
         default='WHITE')
     size: IntProperty(name="Size", default=1024, min=64, max=8192)
+    generator: StringProperty(options={'HIDDEN', 'SKIP_SAVE'})  # a generator mask, no image
 
     @classmethod
     def poll(cls, context):
@@ -232,9 +233,10 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
         owner = _owner(mat, cur) if cur is not None else None
         if owner is None or any(x.kind == 'MASK' and x.parent == owner.uid for x in s.layers):
             return {'CANCELLED'}
-        name = "Mask"
+        gen = generators.GENERATORS.get(self.generator)
+        name = gen.label if gen is not None else "Mask"
         img = None
-        if self.source == 'PAINT':
+        if self.source == 'PAINT' and gen is None:
             v = 0.0 if self.fill == 'BLACK' else 1.0
             img = nodes.new_paint_image(f"{mat.name}_{owner.name}_{name}", self.size,
                                         (v, v, v, 1.0))
@@ -250,6 +252,10 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
         tree = stack.Tree(s.layers)
         tree.apply()
         nodes.rebuild_stack(mat)
+        if gen is not None:
+            e = s.layers[tree.index(uid)]
+            e.source.gen_type = gen.id
+            e.source.kind = 'GENERATOR'     # its update wires the generator
         s.active_index = tree.index(uid)  # selects the mask, which shows its options
         return {'FINISHED'}
 
@@ -412,6 +418,8 @@ class ESSENCE_OT_add_fill(_Base, bpy.types.Operator):
                       "procedural or value) blended onto the mask value built so far")
     bl_options = {'REGISTER', 'UNDO'}
 
+    generator: StringProperty(options={'HIDDEN', 'SKIP_SAVE'})  # starts as this generator
+
     @classmethod
     def poll(cls, context):
         mat = _material(context)
@@ -423,23 +431,30 @@ class ESSENCE_OT_add_fill(_Base, bpy.types.Operator):
         s = mat.essence
         owner_uid = _adjustment_owner(mat, _active(mat)).uid
         n = sum(1 for x in s.layers if x.kind == 'FILL' and x.parent == owner_uid)
+        gen = generators.GENERATORS.get(self.generator)
         e = s.layers.add()
         e.kind = 'FILL'
         e.uid = uid = stack.new_uid()
         e.parent = owner_uid
-        e.name = "Fill" if n == 0 else f"Fill {n + 1}"
+        e.name = gen.label if gen is not None else "Fill" if n == 0 else f"Fill {n + 1}"
         sources.SUSPEND = True
         try:
             e.adj_enabled = True
             e.fill_blend = 'NORMAL'
             e.source.channel = 'MASK'
             e.source.uid = uid
-            e.source.kind = 'VALUE'  # white: neutral for Multiply; pick a source in the panel
+            if gen is not None:
+                e.source.gen_type = gen.id
+                e.source.kind = 'GENERATOR'
+            else:
+                e.source.kind = 'VALUE'  # white: neutral for Multiply; pick a source in the panel
         finally:
             sources.SUSPEND = False
         tree = stack.Tree(s.layers)
         tree.apply()
         _reapply(mat, owner_uid)
+        if gen is not None:   # its own node comes on the first pass, the generator on the second
+            _reapply(mat, owner_uid)
         s.active_index = tree.index(uid)
         return {'FINISHED'}
 
@@ -865,26 +880,98 @@ class ESSENCE_OT_filter_apply_all(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
-class ESSENCE_MT_add_adjustment(bpy.types.Menu):
-    bl_idname = "ESSENCE_MT_add_adjustment"
-    bl_label = "Add Adjustment"
+class ESSENCE_OT_add_generator(_Base, bpy.types.Operator):
+    bl_idname = "essence.add_generator"
+    bl_label = "Add Generator"
+    bl_description = ("Add a generator to the mask: on top of the selected mask's items, as "
+                      "the mask of a layer or folder that has none, or on top of its mask")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    generator: StringProperty(options={'HIDDEN', 'SKIP_SAVE'})
+
+    @classmethod
+    def poll(cls, context):
+        mat = _material(context)
+        return mat is not None and _active(mat) is not None
+
+    def execute(self, context):
+        mat = _material(context)
+        if self.generator not in generators.GENERATORS:
+            return {'CANCELLED'}
+        s = mat.essence
+        cur = _active(mat)
+        target = _adjustment_owner(mat, cur)
+        if target is None or target.kind != 'MASK':
+            owner = _owner(mat, cur)
+            target = next((x for x in s.layers if x.kind == 'MASK' and x.parent == owner.uid),
+                          None)
+            if target is None:
+                return bpy.ops.essence.add_mask(generator=self.generator)
+            s.active_index = next(i for i, x in enumerate(s.layers) if x.uid == target.uid)
+        return bpy.ops.essence.add_fill(generator=self.generator)
+
+
+def _sub_menu(layout, idname, text, icon, enabled):
+    col = layout.column()
+    col.enabled = enabled
+    col.menu(idname, text=text, icon=icon)
+
+
+class ESSENCE_MT_add(bpy.types.Menu):
+    bl_idname = "ESSENCE_MT_add"
+    bl_label = "Add"
 
     def draw(self, context):
+        self.layout.operator("essence.add_layer", text="Layer", icon='ADD')
+        self.layout.operator("essence.add_folder", text="Folder", icon='NEWFOLDER')
+
+
+class ESSENCE_MT_add_to(bpy.types.Menu):
+    bl_idname = "ESSENCE_MT_add_to"
+    bl_label = "Add to Selected"
+
+    def draw(self, context):
+        layout = self.layout
         mat = _material(context)
         owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
-        if owner is not None:
-            if owner.kind == 'MASK':
-                self.layout.operator("essence.add_paint", text="Paint", icon='BRUSH_DATA')
-                self.layout.operator("essence.add_fill", text="Fill", icon='IMAGE_DATA')
-                self.layout.separator()
-            self.layout.label(text="Baked filters (press Apply)")
-            for ft in filters.TYPES:
-                self.layout.operator("essence.add_filter", text=ft.label,
-                                     icon='FILTER').filter_type = ft.id
-            self.layout.separator()
+        _sub_menu(layout, "ESSENCE_MT_add_mask", "Mask", 'MOD_MASK',
+                  ESSENCE_OT_add_mask.poll(context))
+        layout.separator()
+        layout.operator("essence.add_fill", text="Fill", icon='IMAGE_DATA')
+        layout.operator("essence.add_paint", text="Paint", icon='BRUSH_DATA')
+        _sub_menu(layout, "ESSENCE_MT_add_generator", "Generator", 'SHADING_RENDERED',
+                  ESSENCE_OT_add_generator.poll(context))
+        layout.separator()
+        _sub_menu(layout, "ESSENCE_MT_add_filter", "Filters", 'FILTER', owner is not None)
+        _sub_menu(layout, "ESSENCE_MT_add_adjustment", "Adjustments", 'MODIFIER',
+                  owner is not None)
+
+
+class ESSENCE_MT_add_generator(bpy.types.Menu):
+    bl_idname = "ESSENCE_MT_add_generator"
+    bl_label = "Generator"
+
+    def draw(self, context):
+        for g in generators.GENERATORS.values():
+            self.layout.operator("essence.add_generator", text=g.label).generator = g.id
+
+
+class ESSENCE_MT_add_filter(bpy.types.Menu):
+    bl_idname = "ESSENCE_MT_add_filter"
+    bl_label = "Baked Filters (press Apply)"
+
+    def draw(self, context):
+        for ft in filters.TYPES:
+            self.layout.operator("essence.add_filter", text=ft.label).filter_type = ft.id
+
+
+class ESSENCE_MT_add_adjustment(bpy.types.Menu):
+    bl_idname = "ESSENCE_MT_add_adjustment"
+    bl_label = "Adjustments"
+
+    def draw(self, context):
         for t in adjustments.TYPES:
-            op = self.layout.operator("essence.add_adjustment", text=t.label)
-            op.adj_type = t.id
+            self.layout.operator("essence.add_adjustment", text=t.label).adj_type = t.id
 
 
 class ESSENCE_OT_mask_non_color(_Base, bpy.types.Operator):
@@ -1044,7 +1131,8 @@ classes = (
     ESSENCE_OT_derive_curvature,
     ESSENCE_OT_filter_apply,
     ESSENCE_OT_filter_apply_all,
-    ESSENCE_MT_add_adjustment,
+    ESSENCE_OT_add_generator, ESSENCE_MT_add, ESSENCE_MT_add_to, ESSENCE_MT_add_generator,
+    ESSENCE_MT_add_filter, ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_exit_paint,
     ESSENCE_OT_rebuild, ESSENCE_MT_add_mask,

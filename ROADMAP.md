@@ -5,11 +5,12 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-fill-folders`: the paint fill modes first (pulled forward from Sprint 8 by the user), then folders and materials. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 346/346 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-fill-folders`: the paint fill modes first (pulled forward from Sprint 8 by the user), then folders and materials. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 351/351 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks**: none (row menu and copy/paste confirmed 2026-10-27).
+**Pending GUI checks** (one):
+- **Add menus**: the stack bar has two menus where the four add buttons were. The plus: Layer, Folder. The second (Add to Selected): Mask, Fill, Paint, Generator, Filters, Adjustments, with what does not fit the selection greyed out (Fill and Paint need a mask selected; Mask is greyed when the layer has one). Generator on a layer without a mask gives it a generator mask; on a layer with a mask, or on the mask, it adds a generator fill to that mask.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -179,7 +180,7 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **Per-row buttons moved off the rows** (the user's request, to keep rows uncluttered): the preview toggle is on the stack bar and works on the selected layer or mask; the per-row Add Mask button is gone (the bar's mask menu does it). [H] `tests/test_preview.py`.
 - [ ] Smart materials (folder presets as assets, drop onto an object).
 - [x] **Duplicate / copy / paste of layers and folders** (`clipboard.py`): with masks, items, contents, copied paint images and filter groups, across materials; buttons on the stack bar and a row menu (right-click or Shift+click: Rename, Duplicate, Copy, Paste, Delete). [H] `tests/test_clipboard.py`. [G] confirmed by the user (2026-10-27).
-- [ ] Add menu grouping.
+- [x] **Add menu grouping**: two menus on the stack bar, Add (Layer, Folder) and Add to Selected (Mask, Fill, Paint, Generator, Filters, Adjustments); Generator adds straight to the mask (`essence.add_generator`). [H] `tests/test_add_menus.py`. [G] pending: see Pending GUI checks.
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 8, painting and viewport:** paint layers (per-channel painting, the paint item machinery on a channel), the fill modes on paint layers (built for masks and paint items in Sprint 7), texture set settings. Already built: paint items on masks and the preview buttons (layer, mask, whole-stack channels, mesh maps).
