@@ -257,7 +257,8 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
 class ESSENCE_OT_select_entry(_Base, bpy.types.Operator):
     bl_idname = "essence.select_entry"
     bl_label = "Select"
-    bl_description = "Select this entry. Ctrl-click to rename it"
+    bl_description = ("Select this entry. Ctrl+click to rename it; Shift+click or right-click "
+                      "for its menu (duplicate, copy, paste, delete)")
     bl_options = {'INTERNAL'}
 
     uid: StringProperty()
@@ -275,6 +276,8 @@ class ESSENCE_OT_select_entry(_Base, bpy.types.Operator):
         result = self.execute(context)
         if event.ctrl and result == {'FINISHED'}:
             bpy.ops.essence.rename_entry('INVOKE_DEFAULT', uid=self.uid)
+        elif event.shift and result == {'FINISHED'}:
+            bpy.ops.wm.call_menu(name="ESSENCE_MT_entry")
         return result
 
 

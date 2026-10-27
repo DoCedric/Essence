@@ -319,7 +319,7 @@ Today a layer is "a value per channel". The dream layer has a **source per chann
 | **Layer opacity** (overall, plus per-channel opacity beyond the enable checkbox) | Factor multiplier in the layer group | L | ✅ | |
 | **Blend mode per channel** (see B3) | Mix node blend types, Math formulas | L | ✅ | |
 | Paint layer (channel images painted directly) | Per-channel image + paint slots | B/L | ⬜ | P1 |
-| Layer duplicate / copy / paste / hide / solo | Operators, node group copy | O | ⬜ | P1 |
+| Layer duplicate / copy / paste / hide / solo | Operators, node group copy | O | 🟡 duplicate, copy and paste verified headless (`clipboard.py`); hide is the eye, solo is the preview toggle; the row menu needs a GUI check | P1 |
 | Layer instances (shared content, linked) | Shared node group / shared image datablock | L | ⬜ | P3 |
 | Height blending (layer height drives where it shows, "material layering by height") | Mask generator: Math Compare of heights | L | ⬜ | P2 |
 | Anchor points (use an intermediate stack result as a generator input) | Link from a chosen layer's output socket into a generator node | L | ⬜ | P2 |
@@ -378,6 +378,8 @@ Float channels (roughness, metallic, height) use the same modes through the Mix 
 | Per-channel enable on folders | ⬜ | P3 |
 | Folder collapse / expand in the tree view (a triangle on entries that have something under them; a folder hides its layers, a layer hides its own and its mask's items; stored per entry, defaults to expanded) | ✅ | |
 | **Smart material** = a folder (with its masks and layers) saved as an asset and dropped onto an object | Node-group-based assets + Asset Browser; operator to instantiate | O | ⬜ | P1 |
+
+**Duplicate, copy and paste** ✅ *(verified headless; the row menu needs a GUI check)*. `clipboard.py`. Works on a layer or folder (a mask or item row acts on its owner) with everything it owns: masks, fills, adjustments, filters, a folder's layers and folders. Entries are copied at the ID property level (no update callback fires halfway) and get new uids; nodes are copied by hand (properties, socket values, color ramps, curves, custom properties, retagged with the new uids), links between copied nodes are copied, and the usual `sources.apply` and rebuild wire the rest. Images Essence paints on (and any mask or paint item image, and filter results) are copied with their current pixels and packed, so painting the copy leaves the original alone; images the user picked for an image source are shared. A filter's compositor group is copied too. Within one material, hand-made links into the copied nodes are kept; pasting into another material drops them. Duplicate puts the copy right above the original with a `.001` name; Paste goes above the selected layer or inside the selected folder, into any material (an object without one gets one). The clipboard is a reference to the copied entry (Paste copies it as it is then; when it is gone, Paste is off). Buttons on the stack bar; a row's menu (Rename, Duplicate, Copy, Paste, Delete) by right-click (added to Blender's own button menu, `UI_MT_button_context_menu`, through `context.button_operator`) or Shift+click. Tests: `tests/test_clipboard.py`.
 
 **Folder modes** ✅ *(verified headless, and pixel-identical on the user's file after the upgrade)*. A folder has a **Mode**: **Passthrough** (new folders, decided with the user 2026-10-27; what Substance does) or **Normal** (folders from before modes existed read as Normal, so a file looks the same). Normal: the children chain from the stack below the folder and the folder node lerps between that stack (A) and the children's result (B) by mask * visible * opacity. Passthrough: the folder node leaves the channel chain (its A and B are unlinked) and each child's Mask input is its own mask times the folder's **Factor** output (mask * visible * opacity), through a hidden Math node `Essence Folder Factor <child uid>`; a sub-folder is a child too, so nested Passthrough folders compound, and a Normal folder inside a Passthrough one lerps by its mask times the outer Factor. The two modes differ when several layers overlap inside a partly masked folder (Passthrough: each layer blends by mask * factor; Normal: the layers combine first). Folder group version 4 adds Opacity and Factor. Found on the way: a group that gains a socket gave existing nodes that socket at 0, not at its default (an upgraded folder would have had Opacity 0 and vanished); `_restore_values` now sets inputs a node did not have to the group's default, for every group upgrade. Tests: `tests/test_folders.py` (both modes, layer masks inside, opacity and eye, four nestings of the two modes, moving through two levels, removal, a broken parent cycle, the upgrade, save and reload, panels); the user's `mailrobo_essence2.blend` baked Base Color and Roughness identical before and after.
 
@@ -534,7 +536,7 @@ All Blender UIList and panel features only.
 | Per-row eye toggle (masks) | ✅ | |
 | **Per-row eye toggle for layers and folders** | ✅ | |
 | **Blend mode and opacity visible on the active layer** | ✅ opacity and the blend mode per channel in Layer Properties | |
-| Duplicate, copy/paste across materials | ⬜ | P1 |
+| Duplicate, copy/paste across materials (stack bar buttons; a row's menu by right-click or Shift+click: Rename, Duplicate, Copy, Paste, Delete) | ✅ verified headless, menu GUI check pending | |
 | Drag to reorder | ⬜ (UIList has no drag reorder in the API; arrows only) | P4 |
 | Multi-select | ⬜ (native UIList has none) | 🚫 |
 | Search/filter by name | native UIList filter | ⬜ | P3 |
@@ -611,7 +613,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 20. **Remaining blend modes** (contrast, dodge/burn, compare). ⬜
 21. **Freeze to image** for layers, folders and the whole stack (performance step for procedural-heavy stacks; do late in P1, once real stacks show the need). ⬜ (a first version was removed again, see B12)
 22. **Baking groups; multi-object bake into one image.** ✅ (texture sets)
-23. **Mask stack blend modes; levels/curves on masks; layer duplicate/copy/paste; Add menu grouping.** 🟡 the first two done (fills, adjustments)
+23. **Mask stack blend modes; levels/curves on masks; layer duplicate/copy/paste; Add menu grouping.** 🟡 all but Add menu grouping done (fills, adjustments, `clipboard.py`)
 24. **Specular, AO channels; texture set settings (resolution, channels, export preset).** ⬜ (AO is a mesh map overlay, not a channel)
 
 ### P2 Important

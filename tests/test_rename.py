@@ -7,6 +7,10 @@ import bpy
 from harness import check, make_plane
 
 
+def _click(ctrl=False, shift=False):
+    return SimpleNamespace(ctrl=ctrl, shift=shift)
+
+
 def _entry(mat, uid):
     return next(e for e in mat.essence.layers if e.uid == uid)
 
@@ -72,23 +76,23 @@ def test_ctrl_click_on_a_row_selects_it_and_asks_for_a_name(addon):
 
     # a plain click only selects
     mat.essence.active_index = 0
-    r = ops.ESSENCE_OT_select_entry.invoke(Stub(layer), bpy.context, SimpleNamespace(ctrl=False))
+    r = ops.ESSENCE_OT_select_entry.invoke(Stub(layer), bpy.context, _click(ctrl=False))
     check(r == {'FINISHED'} and mat.essence.layers[mat.essence.active_index].uid == layer,
           "a plain click selects the row")
     # ctrl-click selects too, and then opens the rename popup (there is no window in the tests:
     # the popup operator is allowed to refuse, the selection must have happened)
     mat.essence.active_index = 0
     try:
-        r = ops.ESSENCE_OT_select_entry.invoke(Stub(mask), bpy.context, SimpleNamespace(ctrl=True))
+        r = ops.ESSENCE_OT_select_entry.invoke(Stub(mask), bpy.context, _click(ctrl=True))
     except RuntimeError:
         r = {'FINISHED'}
     check(mat.essence.layers[mat.essence.active_index].uid == mask, "ctrl-click selects the row")
     # a row that is gone is not renamed
-    r = ops.ESSENCE_OT_select_entry.invoke(Stub("nope"), bpy.context, SimpleNamespace(ctrl=True))
+    r = ops.ESSENCE_OT_select_entry.invoke(Stub("nope"), bpy.context, _click(ctrl=True))
     check(r == {'CANCELLED'}, "no such row, nothing happens")
     check("Ctrl" in ops.ESSENCE_OT_select_entry.bl_description, "the tooltip tells about it")
     r = ops.ESSENCE_OT_rename_entry.invoke(SimpleNamespace(uid="nope", name=""), bpy.context,
-                                           SimpleNamespace(ctrl=False))
+                                           _click())
     check(r == {'CANCELLED'}, "the popup does not open for a row that is gone")
 
 

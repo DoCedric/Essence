@@ -270,6 +270,10 @@ def _stack(self, context):
     bar.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER', text="")
     bar.operator("essence.remove_layer", icon='REMOVE', text="")
     bar.separator()
+    bar.operator("essence.duplicate", icon='DUPLICATE', text="")
+    bar.operator("essence.copy", icon='COPYDOWN', text="")
+    bar.operator("essence.paste", icon='PASTEDOWN', text="")
+    bar.separator()
     _preview_active_button(bar, mat)
     bar.separator()
     bar.operator("essence.move_layer", icon='TRIA_UP', text="").direction = 'UP'
