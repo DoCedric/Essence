@@ -9,8 +9,7 @@ Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-f
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks** (one):
-- **Row menu and copy/paste**: right-click a row's name: under Blender's own entries are Rename, Duplicate, Copy, Paste, Delete for that row. Shift+click a row: the same menu. Duplicate a layer with a painted mask, paint on the copy's mask: the original's mask stays as it was. Copy a layer, select another object, Paste: it appears there and looks the same. The Duplicate, Copy and Paste buttons on the stack bar.
+**Pending GUI checks**: none (row menu and copy/paste confirmed 2026-10-27).
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -179,7 +178,7 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **The tree view is the only stack view** (the user's choice): the flat list, its toggle and the folder mode's info line (it read as confusing) are gone. [H]
 - [x] **Per-row buttons moved off the rows** (the user's request, to keep rows uncluttered): the preview toggle is on the stack bar and works on the selected layer or mask; the per-row Add Mask button is gone (the bar's mask menu does it). [H] `tests/test_preview.py`.
 - [ ] Smart materials (folder presets as assets, drop onto an object).
-- [x] **Duplicate / copy / paste of layers and folders** (`clipboard.py`): with masks, items, contents, copied paint images and filter groups, across materials; buttons on the stack bar and a row menu (right-click or Shift+click: Rename, Duplicate, Copy, Paste, Delete). [H] `tests/test_clipboard.py`. [G] pending: see Pending GUI checks.
+- [x] **Duplicate / copy / paste of layers and folders** (`clipboard.py`): with masks, items, contents, copied paint images and filter groups, across materials; buttons on the stack bar and a row menu (right-click or Shift+click: Rename, Duplicate, Copy, Paste, Delete). [H] `tests/test_clipboard.py`. [G] confirmed by the user (2026-10-27).
 - [ ] Add menu grouping.
 
 ## Later sprints (outline, to be detailed)
