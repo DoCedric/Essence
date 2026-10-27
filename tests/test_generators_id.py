@@ -302,3 +302,19 @@ def test_a_version_2_group_is_rebuilt_with_its_values(addon):
     close(tex.inputs['Softness'].default_value, 0.03, 1e-6, "the softness is kept")
     for g, want in zip(_got(ob, mat, e), (1, 0, 1, 0)):
         close(g, want, 0.01, "and red and blue are white now")
+
+
+def test_an_exact_match_needs_no_tolerance_and_no_softness(addon):
+    """The mask is an exact comparison of the ID map's RGB with the picked color: Tolerance and
+    Softness at 0 still select the part (float noise must not matter), and a color that is a
+    little off is not selected."""
+    ob, mat, e = _setup(addon, 'ID_SELECT')
+    _id_map(addon, mat)
+    tex = _tex(addon, mat, e)
+    _set(tex, Tolerance=0.0, Softness=0.0)
+    for color, expected in ((RED, (1, 0, 0, 0)), (GREEN, (0, 1, 0, 0)), (BLUE, (0, 0, 1, 0))):
+        _palette(tex, color)
+        for g, want in zip(_got(ob, mat, e), expected):
+            close(g, want, 0.01, f"exactly {color}, no tolerance, no softness")
+    _palette(tex, (RED[0] - 0.02, RED[1], RED[2]))
+    close(_got(ob, mat, e)[0], 0.0, 0.01, "a color 0.02 off is not the part")
