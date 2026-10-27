@@ -261,7 +261,7 @@ def test_the_bake_panel_shows_the_texture_set(addon):
     log = _draw(ui._bake, a)
     said = [c[2].get("text", "") for c in log if c[0] == "label"]
     check("Texture set: Shared" in said, f"no texture set line: {said}")
-    check(any("2 objects bake into one image" in t for t in said), f"no shared note: {said}")
+    check(not any("bake into one image" in t for t in said), f"the note is gone: {said}")
     check(any(c[0] == "prop" and c[1][1] == "bake_size" for c in log), "no Size")
     check(any(c[0] == "prop" and c[1][1] == "bake_high" for c in log), "no High Poly")
     texset(a).bake_high = bpy.data.collections.new("H")

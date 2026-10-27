@@ -238,3 +238,44 @@ def test_id_panels_draw(addon):
               addon.nodes.map_slot_name('ID') for c in log), "no ID slot drawn")
     check(addon.bake._previews.get('ID') is not None, "the ID thumbnail did not load")
     check(addon.bake._previews.get('POSITION') is not None, "the Position thumbnail did not load")
+
+
+def _gapped_parts(gap):
+    """Two high-poly planes with a `gap` (in x) between them, over the 2 x 2 low plane."""
+    parts = []
+    for name, x0, x1 in (("HighLeft", -1.0, -gap / 2), ("HighRight", gap / 2, 1.0)):
+        bpy.ops.mesh.primitive_plane_add(size=1.0, location=((x0 + x1) / 2, 0, 0.02))
+        o = bpy.context.active_object
+        o.name = name
+        o.scale = (x1 - x0, 2.0, 1.0)
+        parts.append(o)
+    bpy.context.view_layer.update()
+    return parts
+
+
+def test_a_gap_between_parts_is_refilled_with_the_nearest_id(addon):
+    """Rays that miss the high poly leave black texels inside the islands, and a mix of two
+    IDs is no ID either: the row across the gap holds only the two colors, a step between."""
+    low = make_plane("Low", size=2.0)
+    _high_collection(low, *_gapped_parts(0.2))
+    sc = bpy.context.scene
+    sc.essence_bake_id = 'OBJECT'
+    sc.essence_bake_aa = '2'     # ignored for an ID map
+    _select(low)
+    _bake('ID')
+    sc.essence_bake_margin = 16  # _bake switches the margin off
+    check(bpy.ops.essence.bake() == {'FINISHED'}, "bake failed")
+    img = baked("Low", "ID")
+    left, right = _at(img, 0.25, 0.5), _at(img, 0.75, 0.5)
+    w = img.size[0]
+    for x in range(w):
+        c = _at(img, (x + 0.5) / w, 0.5)
+        check(_distance(c, left) < 0.03 or _distance(c, right) < 0.03,
+              f"texel {x} is {c}: neither part's color (black hole or a blend)")
+
+
+def test_the_id_slot_reads_without_interpolation(addon):
+    low = make_plane("Low", size=2.0)
+    bpy.ops.essence.add_layer()
+    slot = low.active_material.node_tree.nodes[addon.nodes.map_slot_name('ID')]
+    check(slot.interpolation == 'Closest', f"the ID slot interpolates: {slot.interpolation}")

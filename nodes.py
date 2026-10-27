@@ -259,6 +259,10 @@ def ensure_map_slots(mat):
             node.name = map_slot_name(map_id)
             node.label = map_slot_name(map_id)
             node.location = (-400, 300 + i * 320)
+        if map_id == 'ID':
+            # Linear would blend two neighbouring IDs into a color that is neither of them
+            if node.interpolation != 'Closest':
+                node.interpolation = 'Closest'
 
 
 def layer_modes(entry):

@@ -2,7 +2,7 @@ import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
 from . import adjustments, curvature, filters, generators, gizmo, nodes, preview, sources
-from .bake import HIGH_MAPS, bake_group, resolve_device, texture_set
+from .bake import HIGH_MAPS, resolve_device, texture_set
 
 SPACES = (('VIEW_3D', 'VIEW3D'), ('IMAGE_EDITOR', 'IMAGE'))
 
@@ -796,8 +796,6 @@ def _bake(self, context):
         layout.prop(scene, "essence_bake_id")
         if uv_islands:
             layout.label(text="The islands of the low poly itself", icon='INFO')
-        if scene.essence_bake_aa != '1':
-            layout.label(text="Anti-aliasing blends IDs at edges", icon='ERROR')
     ob = context.active_object
     mat = ob.active_material if ob is not None and ob.type == 'MESH' else None
     if mat is not None:
@@ -811,23 +809,15 @@ def _bake(self, context):
             # The material's High Poly is the default for objects without a group of their own.
             box.prop(es, "bake_high", text="High Poly")
             box.prop(es, "bake_extrusion", text="Extrusion")
-            if ob in objects:
-                sub = box.box()
-                sub.label(text=f"Baking group of {ob.name}", icon='OBJECT_DATA')
-                sub.prop(ob, "essence_bake_high", text="High Poly")
-                sub.prop(ob, "essence_bake_floaters", text="Floaters")
-                sub.prop(ob, "essence_bake_cage", text="Cage")
             box.operator("essence.pair_by_name", icon='LINKED')
-            if len(objects) > 1:
-                col = box.column(align=True)
-                for o in objects:
-                    high, floaters = bake_group(o, mat)
-                    group = (f"{high.name if high else 'no high poly'}"
-                             f"{' + ' + floaters.name if floaters else ''}")
-                    col.label(text=f"{o.name}: {group}")
-        if len(objects) > 1:
-            box.label(text=f"{len(objects)} objects bake into one image", icon='INFO')
-            box.label(text="Their UVs must not overlap")
+            # One baking group per low-poly object of the set
+            for o in objects:
+                sub = box.box()
+                sub.label(text=o.name, icon='OBJECT_DATA' if o is ob else 'MESH_DATA')
+                col = sub.column(align=True)
+                col.prop(o, "essence_bake_high", text="High Poly")
+                col.prop(o, "essence_bake_floaters", text="Floaters")
+                col.prop(o, "essence_bake_cage", text="Cage")
     elif ob is not None and ob.type == 'MESH':
         layout.label(text="No material yet: a bake gives it one", icon='INFO')
     col = layout.column(align=True)

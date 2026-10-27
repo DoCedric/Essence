@@ -309,13 +309,55 @@ def _margin_group(margin):
     return ng
 
 
-def add_margin(context, obj, mat, image, margin):
-    """Give `image`, baked from several objects without a margin, its margin afterwards: the
-    islands of the texture set (a coverage bake) are continued outwards by `margin` pixels in
-    the compositor, and the result is written back into `image` itself, so it stays the same
-    datablock with the same users."""
+def dilate_colors(px, valid, steps):
+    """Continue the colors of `px` (height, width, 4) into the texels that are not `valid` (a
+    boolean grid), one texel per step, copying the neighbour's color unchanged. Unlike the
+    Inpaint node this never blends two colors, which an ID map cannot have (a mix of two IDs
+    is a third color). Returns the filled copy; unreached texels stay as they were."""
+    px = px.copy()
+    valid = valid.copy()
+    for _ in range(steps):
+        grown = valid.copy()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            src = np.zeros_like(valid)
+            col = np.zeros_like(px)
+            ys, yd = (slice(None, -1), slice(1, None)) if dy == 1 else                      (slice(1, None), slice(None, -1)) if dy == -1 else (slice(None), slice(None))
+            xs, xd = (slice(None, -1), slice(1, None)) if dx == 1 else                      (slice(1, None), slice(None, -1)) if dx == -1 else (slice(None), slice(None))
+            src[yd, xd] = valid[ys, xs]
+            col[yd, xd] = px[ys, xs]
+            take = src & ~grown
+            px[take] = col[take]
+            grown |= take
+        if (grown == valid).all():
+            break
+        valid = grown
+    return px
+
+
+def add_margin(context, obj, mat, image, margin, black_is_hole=False):
+    """Give `image`, baked without a margin, its margin afterwards: the islands of the texture
+    set (a coverage bake) are continued outwards by `margin` pixels in the compositor, and the
+    result is written back into `image` itself, so it stays the same datablock with the same
+    users. `black_is_hole` is for ID maps: black texels inside the islands (rays that missed
+    the high poly; an ID is never black) are refilled too, and the colors are continued by
+    copying the nearest one instead of blending (see `dilate_colors`)."""
     log(f"margin: {margin} px on '{image.name}'")
     coverage = bake_coverage(context, obj, mat, image.size[0])
+    if black_is_hole:
+        try:
+            w, h = image.size
+            cov = np.empty(len(coverage.pixels), dtype=np.float32)
+            img = np.empty(len(image.pixels), dtype=np.float32)
+            coverage.pixels.foreach_get(cov)
+            image.pixels.foreach_get(img)
+            img = img.reshape(h, w, 4)
+            valid = (cov.reshape(h, w, 4)[..., 0] > 0.5) & (img[..., :3].max(axis=2) > 1e-4)
+            img[~valid] = (0.0, 0.0, 0.0, 1.0)
+            image.pixels.foreach_set(dilate_colors(img, valid, margin).reshape(-1))
+            image.update()
+        finally:
+            bpy.data.images.remove(coverage)
+        return
     ng = _margin_group(margin)
     try:
         result = run_compositor_group(ng, image, {"Coverage": coverage})

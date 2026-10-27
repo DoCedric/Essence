@@ -857,10 +857,13 @@ class ESSENCE_OT_bake(bpy.types.Operator):
     def _bake_set(self, context, mat, objects, map_type, build_color, image, margin, id_mode,
                   use_high):
         """Bake every object of a texture set into `image`, each from its own baking group.
-        One object gets Cycles' own margin; several are baked with none (Cycles' margin would
-        cover the islands of the others) and get the margin from the compositor afterwards."""
-        several = len(objects) > 1
-        set_if_changed(context.scene.render.bake, 'margin', 0 if several else margin)
+        One object gets Cycles' own margin (an ID map never does); several are baked with none
+        (Cycles' margin would cover the islands of the others) and get the margin from the
+        compositor afterwards."""
+        # An ID map always gets its margin from the compositor, which also refills the texels
+        # whose rays missed the high poly (Cycles' margin leaves those black).
+        by_compositor = len(objects) > 1 or map_type == 'ID'
+        set_if_changed(context.scene.render.bake, 'margin', 0 if by_compositor else margin)
         # Floaters add their detail to every map but AO and Thickness, where something floating
         # above the surface would cast a false shadow or read as thin.
         floaters_too = map_type not in ('AO', 'THICKNESS')
@@ -901,14 +904,17 @@ class ESSENCE_OT_bake(bpy.types.Operator):
         finally:
             for t in reversed(teardowns):
                 t()
-        if several and margin:
+        if by_compositor and margin:
             from . import filters
-            filters.add_margin(context, objects[0], mat, image, margin)
+            filters.add_margin(context, objects[0], mat, image, margin,
+                               black_is_hole=map_type == 'ID')
 
     def execute(self, context):
         scene = context.scene
         map_type = scene.essence_bake_map
         aa = int(scene.essence_bake_aa)
+        if map_type == 'ID':
+            aa = 1      # averaging two colors makes a third one that is no part's ID
         uv_islands = map_type == 'ID' and scene.essence_bake_id == 'UV_ISLAND'
         use_high = map_type in HIGH_MAPS and not uv_islands
 
@@ -1140,7 +1146,8 @@ def register():
         name="Anti-aliasing", items=_AA, default='1',
         description="Supersampling: bake larger, then average down to the final size "
                     "(Cycles samples only smooth shading, not the hard edges between "
-                    "hit and miss, or between UV islands and the background)")
+                    "hit and miss, or between UV islands and the background). ID maps ignore it: "
+                    "averaging two IDs gives a color that is neither")
     S.essence_bake_id = EnumProperty(
         name="ID by", items=ID_MODES, default='OBJECT',
         description="What the ID map tells apart")

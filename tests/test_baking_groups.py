@@ -297,9 +297,10 @@ def test_the_bake_panel_shows_the_groups(addon):
     _select(a)
     log = _draw(ui._bake, a)
     said = [c[2].get("text", "") for c in log if c[0] == "label"]
-    check("Baking group of A_Low" in said, f"no group box: {said}")
-    check("A_Low: A" in said and "B_Low: B" in said, f"no per-object lines: {said}")
+    check("A_Low" in said and "B_Low" in said, f"no box per object: {said}")
     props = [c[1][1] for c in log if c[0] == "prop"]
+    check(props.count("essence_bake_high") == 2, f"a High Poly dropdown per object: {props}")
+    check(not any("overlap" in t or "bake into one" in t for t in said), f"notes are gone: {said}")
     check({"essence_bake_high", "essence_bake_floaters", "essence_bake_cage"} <= set(props),
           f"group fields: {props}")
     check(any(c[0] == "operator" and c[1][0] == "essence.pair_by_name" for c in log),

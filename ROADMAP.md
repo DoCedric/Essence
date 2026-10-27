@@ -1,20 +1,16 @@
 # Essence roadmap
 
-Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run in order, one branch each (`sprint-N-name`). Tick tasks as they finish. Rules are in `CLAUDE.md`. Sprints 0 to 5 are done and detailed below; later ones are outlines to be detailed when reached.
+Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run in order, one branch each (`sprint-N-name`). The asset library is deliberately the last sprint. Tick tasks as they finish. Rules are in `CLAUDE.md`. Sprints 0 to 5 are done and detailed below; later ones are outlines to be detailed when reached.
 
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
-## Status (2026-10-25)
-Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets are built; the asset library is next. `tests/run_all.py`: 308/308 pass headless.
+## Status (2026-10-27)
+Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets, baking groups and the multi-object bake are built and confirmed by the user; Height from mesh is next. The asset library moved to the last sprint (11). `tests/run_all.py`: 312/312 pass headless.
 
-**Pending GUI checks** (everything else is confirmed):
-- **ID Select**: build a palette on a real ID map, remove a color, pick colors from the mesh (Show ID on Mesh, then E over a swatch).
-- **Map preview**: with AgX and an exposure set in the scene, Show ID on Mesh, then end the preview: the view transform and exposure come back.
-- **Rename**: the cursor is in the name field when the Ctrl+click popup opens.
-- **Sprint 1 milestone**: source picker usability, triplanar look, row toggles (never ticked, probably fine in practice).
-- **Baking groups** (Sprint 6): Pair by Name on a file like MailRobo (the per-object list in the Bake panel), a Normal and an AO bake of the whole set and how long they take, a part's floaters in the normal, a cage on one part.
-- **Texture sets** (Sprint 6): two objects sharing a material bake into one image (select one, both bake); the Texture set box in the Bake panel (Size, High Poly, Cage of the active object, Extrusion, the "N objects" note); a high-poly bake of two low polys sharing a material; an older file whose maps are named after the object (the image is renamed, masks using it still work); filters and Derive Curvature on a shared material.
-- From Sprint 0, never checked explicitly: Emission-baked colors match the viewport, and the MaskMap saves straight alpha in PNG/TGA (EXR verified).
+The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
+
+**Pending GUI check** (one):
+- **ID map margin** (fix after the user's report): bake an ID map again on the multi-part file (Bake panel, ID by Object, a Margin above 0), then pick two neighbouring colors in ID Select: there should be no thin line between the two selected areas, and the black gaps and teeth at the island edges in the ID map should be filled. The ID slot is sampled without interpolation and Anti-aliasing is ignored for ID maps.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -50,7 +46,7 @@ Goal: a layer channel can be driven by an image or procedural, mapped and opacit
 - [x] Rebuild and group upgrades preserve hand-wired links and sources. [H]
 - [x] Per-row eye toggle for layers and folders; opacity shown on the active layer. [H] (blend mode display waits for Sprint 2)
 - [x] Design doc and roadmap updated.
-- [ ] **Milestone checklist** [G]: source picker usability, triplanar look, row toggles. (Never ticked; see Pending GUI checks.)
+- [x] **Milestone checklist** [G] (confirmed by the user, 2026-10-27): source picker usability, triplanar look, row toggles.
 - [x] Disabled channels collapse automatically in Layer Properties.
 - [x] Follow-up (branch `sprint-1b-mask-sources`): masks get the same Source options as channels (Image, Procedural, Value, projection, mapping, remap). [H]
 
@@ -127,20 +123,20 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **Thickness** (inside AO): a slot, a bake entry with a thumbnail and a Distance (0 = automatic, a tenth of the biggest object); from a high poly too. [H] `tests/test_mesh_thickness.py`: a thick box against a thin slab, the distance, the automatic distance at two sizes, a thin and a thick high poly. [G] confirmed by the user.
 - [x] (Position, Curvature and ID: done) A Mesh Maps slot, bake entry and thumbnail for each; they follow the existing `Essence_Bake_<MAP>` slot pattern and the float/anti-aliasing/cage options. [H]
 - [x] **Generators that read them**: **Edge Wear** (curvature), **Cavity** (curvature, AO) and **Dirt** (AO, curvature), built as dedicated generators to test against the preset route; `tests/test_generators_maps.py`, and on the user's `BG01` parts. [H] [G] confirmed by the user (they work well on real parts).
-- [x] **Mask by ID**: the **ID Select** generator: a palette of up to 16 colors (Add Color, a remove button on each swatch, a count), Tolerance (default 0.01), Softness, Invert, reading the ID slot; the colors are chosen with Blender's eyedropper on the mesh (Show ID on Mesh, then E over a swatch) or by hand; Show ID Map. The first version's Pick from Selected Face is removed. A version 1 node migrates (its color becomes color 1). [H] `tests/test_generators_id.py`. [G] pending: build a palette on a real ID map, remove a color, pick colors from the mesh with the eyedropper.
+- [x] **Mask by ID**: the **ID Select** generator: a palette of up to 16 colors (Add Color, a remove button on each swatch, a count), Tolerance (default 0.01), Softness, Invert, reading the ID slot; the colors are chosen with Blender's eyedropper on the mesh (Show ID on Mesh, then E over a swatch) or by hand; Show ID Map. The first version's Pick from Selected Face is removed. A version 1 node migrates (its color becomes color 1). [H] `tests/test_generators_id.py`. [G] confirmed by the user (2026-10-27): the palette on a real ID map, removing a color, picking colors from the mesh with the eyedropper (the workflow fully works).
 - Open idea, moved to Open Questions (11) in the design doc: a **Mesh Map source kind** and presets of ordinary items next to the dedicated generators. The user compared them; the generators work well.
 - [x] **Baked inputs for generators**: `Use Baked Position` on Gradient, wired from the Position slot like the detail normal (see "Baked inputs for live generators" in the design doc). [H] `tests/test_mesh_position.py`
 - [x] Decided: the ID picker is Blender's eyedropper on a map preview (see ID Select above). Baking groups and multi-object bake move to Sprint 6.
 
-- [x] **Milestone checklist** [G] (confirmed by the user, except ID Select, see Pending GUI checks): the generator picker and the gizmo, Position, Curvature (including the island borders), ID maps, Thickness, Edge Wear, Cavity and Dirt on real parts, paint items, the filters on layer channels, the bundled masks at Blender's start and the GPU bake. Anchor points are postponed by the user.
+- [x] **Milestone checklist** [G] (confirmed by the user, ID Select on 2026-10-27): the generator picker and the gizmo, Position, Curvature (including the island borders), ID maps, Thickness, Edge Wear, Cavity and Dirt on real parts, paint items, the filters on layer channels, the bundled masks at Blender's start and the GPU bake. Anchor points are postponed by the user.
 
 ## Renaming (`sprint-5-generators` branch, interim)
-- [x] **Ctrl+click on a row of the tree view renames it** (a popup with the name; a plain click only selects; works on folders, layers, masks, fills, adjustments and filters; the node labels follow). [H] `tests/test_rename.py`. [G] confirmed by the user, except that the field did not take focus by itself: fixed (the field is drawn with `activate_init`), [G] pending: that the cursor is in the field when the popup opens.
+- [x] **Ctrl+click on a row of the tree view renames it** (a popup with the name; a plain click only selects; works on folders, layers, masks, fills, adjustments and filters; the node labels follow). [H] `tests/test_rename.py`. [G] confirmed by the user, except that the field did not take focus by itself: fixed (the field is drawn with `activate_init`), [G] confirmed by the user (2026-10-27): the cursor is in the field when the popup opens.
 
 ## Preview buttons (`sprint-5-generators` branch, interim)
 - [x] **Preview (solo)**: a toggle next to the eye on layer and mask rows (a mask as grey, a layer as its own Color, flat), channel buttons for the whole stack's result in the Material panel, a notice with Stop and a hint for Solid shading; an Emission node wired into the Material Output, the old link remembered and put back exactly; rebuilds keep it, removing the entry ends it, a bake during it keeps it, it survives a save. [H] `tests/test_preview.py`. [G] confirmed by the user.
 - [x] Dropped by the user: the alt-click on a thumbnail (the toggle does the job).
-- [x] **Map previews and a color picker from the mesh**: a `MAP` preview shows a Mesh Maps slot on the mesh (Show on Mesh in each slot, Show ID on Mesh in the ID Select panel) so the swatch's eyedropper can pick an ID from the model; color management is switched to Standard (no look, exposure 0, gamma 1) while a map preview runs and put back exactly afterwards, also after a save and reload. [H] `tests/test_preview_map.py`. [G] pending: Show ID on Mesh, the eyedropper on a part, ending the preview (the view transform comes back), with AgX and exposure set in the scene.
+- [x] **Map previews and a color picker from the mesh**: a `MAP` preview shows a Mesh Maps slot on the mesh (Show on Mesh in each slot, Show ID on Mesh in the ID Select panel) so the swatch's eyedropper can pick an ID from the model; color management is switched to Standard (no look, exposure 0, gamma 1) while a map preview runs and put back exactly afterwards, also after a save and reload. [H] `tests/test_preview_map.py`. [G] confirmed by the user (2026-10-27): Show ID on Mesh, the eyedropper on a part, ending the preview (the view transform comes back).
 
 ## Bake device (`sprint-5-generators` branch, interim)
 - [x] **Bakes use the GPU when available**: Device in the Bake panel, Auto by default (GPU if Cycles has one enabled in Preferences, else CPU) or CPU; the panel shows what it will use; the scene's device is restored; a failed GPU bake is retried on the CPU. The filter and curvature bakes stay on the CPU. [H] `tests/test_bake_quality.py` (including a real GPU bake on this machine's RTX 3060: 2.2 s against 8.1 s on the CPU). [G] confirmed by the user: a high-poly bake on the GPU and its time.
@@ -155,7 +151,7 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] [G] confirmed by the user: Blender started with the addon, the masks are in the mask picker grid and the image pickers.
 - [x] Decided: no preference to turn the loading off, and the masks in `assets/masks` stay untracked in git while they are only for testing. Open: whether to pack instead of reference when they ship for real (see the note at the top of `bundled.py`).
 
-## Sprint 6: Texture sets, asset library, mesh-map leftovers (`sprint-6-texture-sets`)
+## Sprint 6: Texture sets, baking groups, mesh-map leftovers (`sprint-6-texture-sets`)
 - [x] Decided with the user: **texture set = material** (option 1 of three: texture sets, a scene list of baking groups, or both). Size, High Poly and Extrusion move to the material, the Cage to the low-poly object.
 - [x] **Texture set bake**: every object using a selected object's material bakes into `<material>_<Map>`; hidden objects of the set are baked and hidden again; other materials of those objects bake into a throwaway image; an object-named image from before is renamed so its users follow. [H] `tests/test_texture_sets.py`
 - [x] **Margin of a multi-object set**: found that Cycles' margin overwrites the other objects' islands (one call or several). Several objects bake with margin 0 and the compositor adds the margin (coverage + Inpaint); one object keeps Cycles' margin. [H]
@@ -167,12 +163,21 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **Only the bake's geometry renders** (other low polys and props switched off for rendering and put back). [H]
 - [x] **AO across groups** [ask]: every group's high poly occludes. On the user's file that turns 34.5% of the islands black against 4.5% with each group alone; the user chose to keep every part occluding.
 - [x] **ID Select fix** (reported from the GUI: the picked part was bright grey, not white): the fade starts at the tolerance instead of being centred on it, so an exact match is 1 with the default settings. Group version 3, values kept. [H] `tests/test_generators_id.py`
-- [ ] **Milestone checklist** [G]: see Pending GUI checks.
-- [ ] Essence asset library (catalogs), noise/gradient/grunge assets (the bundled masks move there), generators and smart masks as assets.
-- [ ] Height from mesh.
+- [x] **Bake panel: a baking group box per object** (reported from the GUI): every object of the texture set has its own box with High Poly, Floaters and Cage dropdowns, Pair by Name still fills them; the "N objects bake into one image / UVs must not overlap" notes and the per-object text lines are gone. [H] `tests/test_baking_groups.py`, `tests/test_texture_sets.py` (panel draws)
+- [x] **ID map margin and borders** (reported from the GUI: black gaps and teeth at island borders, and a thin line between two selected colors): found three causes. The ID slot's image node sampled with Linear interpolation, which blends two neighbouring IDs into a third color (now Closest); the supersampling average did the same (an ID map ignores Anti-aliasing now); and rays that missed the high poly left black texels inside the islands that no margin touches, while the compositor's Inpaint blends two colors across a gap. An ID map now gets its margin from `filters.dilate_colors`: black texels inside the islands are refilled and the colors continue outwards by copying the nearest one. [H] `tests/test_mesh_id.py` (a 0.2 gap between two parts holds only the two colors; the slot interpolation). [G] pending: see Pending GUI checks.
+- [x] **Milestone checklist** [G] (confirmed by the user, 2026-10-27): baking groups (Pair by Name links the collections correctly), a texture set of several objects into one image (works, with the ID map issue above, now fixed), the Texture set box, ID Select.
+- [ ] **Height from mesh** (designed, see "Height from mesh" in the design doc; three decisions are open, Open Question 12). A new Mesh Maps slot `HEIGHT`, a bake entry with a thumbnail, a Range setting. Plan:
+  - [ ] Decide with the user: method (position delta, recommended, or Ray Length), Range (automatic by default, recommended), and that the slot does not feed the Bump node (recommended). [ask]
+  - [ ] Optional spike: is Light Path Ray Length readable in a bake, and does it equal the distance to the high poly with the extrusion subtracted? (It does not work with a cage, so it can only ever be a fast path.)
+  - [ ] Bake pieces: the high Position (exists), a hit mask (white emission), the low poly's own Position and object-space Normal, all float, on the same size as the set and through the baking groups (floaters and cage included). [H]
+  - [ ] Combine in numpy: `dot(P_high - P_low, N_low)` with the Generated coordinates scaled back by the dimensions, divided by the Range, 0.5 + 0.5 * h / range, 0.5 where nothing was hit; written to `<material>_Height` (float, Non-Color, packed, stamped, `essence_height_range` on the image). [H]
+  - [ ] Bake panel: a Range field for this map (0 = automatic), the map in the picker with a thumbnail; the slot in Mesh Maps with Show on Mesh. [H] draws
+  - [ ] Tests (headless): a flat plane at +0.1 and at -0.1, a tilted plane (distance along the normal), a scaled and rotated low poly gives the same distances, a sphere pair, floaters, a cage, automatic range, a miss is 0.5, a texture set of two objects, save and reload, an old file without the slot. [H]
+  - [ ] [G] the look and the Show on Mesh preview on a real high and low poly.
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 7, folders and materials:** nested folders, Passthrough, folder opacity, smart materials, duplicate/copy/paste, Add menu grouping.
 - **Sprint 8, painting and viewport:** paint layers (per-channel painting, the paint item machinery on a channel), paint bucket modes (Full, Mesh, UV island, Face: native Fill tool restricted by face-selection paint masking), texture set settings. Already built: paint items on masks and the preview buttons (layer, mask, whole-stack channels, mesh maps).
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material.
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
+- **Sprint 11, Essence asset library (last):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).
