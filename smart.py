@@ -40,7 +40,10 @@ def ensure_library():
     preferences), its Smart Materials folder and catalog. Returns the catalog id."""
     prefs = bpy.context.preferences
     if library() is None:
-        prefs.filepaths.asset_libraries.new(name=LIBRARY_NAME, directory=DEFAULT_DIR)
+        lib = prefs.filepaths.asset_libraries.new(name=LIBRARY_NAME, directory=DEFAULT_DIR)
+        # A dropped smart material must be editable (Blender's default links it, packed), and
+        # each drop needs its own painted images (Append Reuse would share them).
+        lib.import_method = 'APPEND'
         prefs.is_dirty = True
     root = library_dir()
     os.makedirs(os.path.join(root, CATALOG), exist_ok=True)

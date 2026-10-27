@@ -37,6 +37,7 @@ def test_library_and_catalog(addon):
         check(lib is not None and os.path.normcase(bpy.path.abspath(lib.path))
               == os.path.normcase(root), f"the Essence library points at {lib and lib.path}")
         check(os.path.isdir(os.path.join(root, "Smart Materials")), "the Smart Materials folder")
+        check(lib.import_method == 'APPEND', f"dropped assets are appended: {lib.import_method}")
         cats = open(os.path.join(root, smart.CATS_FILE), encoding="utf-8").read()
         check("VERSION 1" in cats and f"{cid}:Smart Materials:Smart Materials" in cats, cats)
         smart.ensure_library()
