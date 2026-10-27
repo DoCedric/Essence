@@ -254,7 +254,6 @@ def _stack(self, context):
         col.operator("essence.add_layer", icon='ADD')
         col.operator("essence.add_folder", icon='NEWFOLDER')
         return
-    s = mat.essence
     _preview_notice(layout, mat, context)
     bar = layout.row(align=True)
     bar.operator("essence.add_layer", icon='ADD', text="")
