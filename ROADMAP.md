@@ -5,7 +5,7 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets, baking groups and the multi-object bake are built and confirmed by the user; Height from mesh is next. The asset library moved to the last sprint (11). `tests/run_all.py`: 312/312 pass headless.
+Sprints 0 to 5 are done and merged into `main`. Sprint 6 is on `sprint-6-texture-sets`: texture sets, baking groups and the multi-object bake are built and confirmed by the user; Height from mesh is next. The asset library moved to the last sprint (11). `tests/run_all.py`: 321/321 pass headless.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
