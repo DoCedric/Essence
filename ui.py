@@ -48,10 +48,22 @@ def _filter_icon(mat, item):
 
 
 def _preview_button(row, mat, kind, ident):
-    """The toggle next to the eye that shows this layer's color or this mask on its own."""
+    """The toggle that shows this layer's color or this mask on its own."""
     on = preview.active(mat) == (kind, ident)
     op = row.operator("essence.preview", text="", icon='SHADING_TEXTURE', depress=on)
     op.kind, op.ident = kind, ident
+
+
+def _preview_active_button(row, mat):
+    """The stack bar's preview toggle: it works on the selected layer or mask, so the rows
+    stay free of per-row buttons."""
+    e, _ = _active(mat)
+    if e is not None and e.kind in ('LAYER', 'MASK'):
+        _preview_button(row, mat, e.kind, e.uid)
+    else:
+        sub = row.row(align=True)
+        sub.enabled = False
+        sub.operator("essence.preview", text="", icon='SHADING_TEXTURE')
 
 
 def _palette(col, tex, e, ch, mat):
@@ -113,9 +125,10 @@ def _previewing(mat, kind, ident):
     return preview.active(mat) == (kind, ident)
 
 
-def _entry_row(layout, mat, item, active, add_mask=False, foldable=False):
+def _entry_row(layout, mat, item, active, foldable=False):
     """One entry of the tree view: a fold triangle when something hangs under it, its icon, a
-    button that selects it (pressed while it is the active one) and its eye toggle."""
+    button that selects it (pressed while it is the active one) and its eye toggle. Buttons that
+    act on one entry live on the stack bar and work on the active one."""
     tree = mat.node_tree
     node = tree.nodes.get(item.node_name) if tree is not None else None
     row = layout.row(align=True)
@@ -155,10 +168,6 @@ def _entry_row(layout, mat, item, active, add_mask=False, foldable=False):
     elif toggle is not None:
         row.prop(toggle, "default_value", text="", emboss=False,
                  icon='HIDE_OFF' if toggle.default_value else 'HIDE_ON')
-    if item.kind in ('LAYER', 'MASK'):
-        _preview_button(row, mat, item.kind, item.uid)
-    if add_mask:  # a layer or folder without a mask: a button for a white or black one
-        row.operator("essence.add_mask_menu", text="", icon='MOD_MASK').uid = item.uid
 
 
 def _tree(layout, mat):
@@ -206,7 +215,7 @@ def _tree(layout, mat):
             left, right = split.column(align=True), split.column(align=True)
         else:
             left, right = box.column(align=True), None
-        _entry_row(left, mat, e, e.uid == active, add_mask=right is None, foldable=foldable(e))
+        _entry_row(left, mat, e, e.uid == active, foldable=foldable(e))
         draw_items(left, e, e.collapsed)
         if right is not None:
             draw_masks(right, e, e.collapsed)
@@ -219,8 +228,7 @@ def _tree(layout, mat):
             draw_masks(right, e, e.collapsed)
         else:
             left = box.column(align=True)
-        _entry_row(left, mat, e, e.uid == active, add_mask=not masks.get(e.uid),
-                   foldable=foldable(e))
+        _entry_row(left, mat, e, e.uid == active, foldable=foldable(e))
         for child in ([] if e.collapsed else reversed(kids.get(e.uid, []))):
             row = box.split(factor=0.04)
             row.label(text="")
@@ -261,6 +269,8 @@ def _stack(self, context):
     bar.menu("ESSENCE_MT_add_mask", icon='MOD_MASK', text="")
     bar.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER', text="")
     bar.operator("essence.remove_layer", icon='REMOVE', text="")
+    bar.separator()
+    _preview_active_button(bar, mat)
     bar.separator()
     bar.operator("essence.move_layer", icon='TRIA_UP', text="").direction = 'UP'
     bar.operator("essence.move_layer", icon='TRIA_DOWN', text="").direction = 'DOWN'

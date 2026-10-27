@@ -311,30 +311,6 @@ class ESSENCE_OT_rename_entry(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
-class ESSENCE_OT_add_mask_menu(_Base, bpy.types.Operator):
-    bl_idname = "essence.add_mask_menu"
-    bl_label = "Add Mask"
-    bl_description = "Add a white or black mask to this layer or folder"
-    bl_options = {'INTERNAL'}
-
-    uid: StringProperty()
-
-    def execute(self, context):
-        mat = _material(context)
-        s = mat.essence
-        for i, e in enumerate(s.layers):
-            if e.uid == self.uid:
-                s.active_index = i  # the Add Mask menu works on the active entry
-                return {'FINISHED'}
-        return {'CANCELLED'}
-
-    def invoke(self, context, event):
-        if self.execute(context) == {'CANCELLED'}:
-            return {'CANCELLED'}
-        bpy.ops.wm.call_menu(name="ESSENCE_MT_add_mask")
-        return {'FINISHED'}
-
-
 class ESSENCE_OT_add_adjustment(_Base, bpy.types.Operator):
     bl_idname = "essence.add_adjustment"
     bl_label = "Add Adjustment"
@@ -1058,7 +1034,7 @@ class ESSENCE_MT_add_mask(bpy.types.Menu):
 classes = (
     ESSENCE_OT_add_layer, ESSENCE_OT_add_folder, ESSENCE_OT_remove_layer,
     ESSENCE_OT_move_layer, ESSENCE_OT_add_mask, ESSENCE_OT_add_adjustment, ESSENCE_OT_add_fill,
-    ESSENCE_OT_select_entry, ESSENCE_OT_add_mask_menu, ESSENCE_OT_add_filter,
+    ESSENCE_OT_select_entry, ESSENCE_OT_add_filter,
     ESSENCE_OT_rename_entry, ESSENCE_OT_add_paint, ESSENCE_OT_preview, ESSENCE_OT_preview_stop,
     ESSENCE_OT_id_color_add, ESSENCE_OT_id_color_sample, ESSENCE_OT_id_color_remove,
     ESSENCE_OT_show_map, ESSENCE_OT_light_gizmo,

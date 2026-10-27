@@ -5,7 +5,7 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-fill-folders`: the paint fill modes first (pulled forward from Sprint 8 by the user), then folders and materials. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 339/339 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-fill-folders`: the paint fill modes first (pulled forward from Sprint 8 by the user), then folders and materials. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 337/337 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
@@ -176,6 +176,7 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] Decided with the user: new folders are **Passthrough**, existing ones stay Normal.
 - [x] **Nested folders, Passthrough, folder opacity**: folders nest (moving in and out like layers, Add Folder inside the active folder), a Mode (Passthrough or Normal) and an Opacity in Layer Properties, folder group version 4 (Opacity input, Factor output). Passthrough scales each child's mask by the folder's Factor. Fixed on the way: new group sockets started at 0 on existing nodes (upgraded folders would have been invisible). [H] `tests/test_folders.py`; the user's file bakes identical before and after. [G] confirmed by the user (2026-10-27): Passthrough, folder opacity and nesting work.
 - [x] **The tree view is the only stack view** (the user's choice): the flat list, its toggle and the folder mode's info line (it read as confusing) are gone. [H]
+- [x] **Per-row buttons moved off the rows** (the user's request, to keep rows uncluttered): the preview toggle is on the stack bar and works on the selected layer or mask; the per-row Add Mask button is gone (the bar's mask menu does it). [H] `tests/test_preview.py`.
 - [ ] Smart materials (folder presets as assets, drop onto an object).
 - [ ] Duplicate / copy / paste of layers; Add menu grouping.
 
