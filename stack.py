@@ -3,7 +3,7 @@
 `material.essence.layers` is a flat list, stored bottom-to-top, because that is what a
 Blender UI list can show. Every entry has a `uid` and a `parent` (the uid of its owner):
 
-    folder   top level, owns layers and masks
+    folder   top level or inside a folder, owns layers, folders and masks
     layer    top level or inside a folder, owns masks
     mask     owned by a layer or a folder
     adjustment  owned by a layer or a mask: a step that transforms the owner's own content
@@ -52,7 +52,7 @@ class Tree:
         self.kind = {e.uid: e.kind for e in layers}
         self.parent = {}
         self.roots = []
-        self.kids = {}     # folder uid -> [layer uid], bottom-to-top
+        self.kids = {}     # folder uid -> [layer or folder uid], bottom-to-top
         self.masks = {}    # owner uid -> [mask uid], bottom-to-top
         self.adjs = {}     # layer or mask uid -> [adjustment uid], bottom-to-top
         self.orphans = []  # entries whose owner is missing; kept so nothing is lost
@@ -70,12 +70,32 @@ class Tree:
                 else:
                     self.orphans.append(e.uid)
                     continue
-            elif p and self.kind[p] == 'FOLDER' and e.kind == 'LAYER':
+            elif p and self.kind[p] == 'FOLDER' and e.kind in ('LAYER', 'FOLDER'):
                 self.kids.setdefault(p, []).append(e.uid)
             else:
                 p = ""
                 self.roots.append(e.uid)
             self.parent[e.uid] = p
+        self._break_cycles()
+
+    def _break_cycles(self):
+        """Folders that are their own ancestor (broken data) are not reachable from the top;
+        put them at the top level so nothing is lost."""
+        seen = set()
+
+        def walk(u):
+            seen.add(u)
+            for c in self.kids.get(u, ()):
+                walk(c)
+
+        for r in self.roots:
+            walk(r)
+        for u, k in list(self.kind.items()):
+            if k == 'FOLDER' and u in self.parent and u not in seen:
+                self.siblings(u).remove(u)
+                self.parent[u] = ""
+                self.roots.append(u)
+                walk(u)
 
     # -- queries ---------------------------------------------------------------------
 
@@ -101,17 +121,18 @@ class Tree:
         sib.insert(self.siblings(anchor).index(anchor) + 1, uid)
 
     def move(self, uid, up):
-        """One step up or down. Layers cross folder borders (up into a folder joins it as
-        its bottom child, down into one as its top child, past the end leaves it);
-        folders and masks only reorder among their siblings. False if it cannot move."""
+        """One step up or down. Layers and folders cross folder borders (up into a folder
+        joins it as its bottom child, down into one as its top child, past the end leaves it
+        to sit next to it), so folders nest; masks and items only reorder among their
+        siblings. False if it cannot move."""
         sib = self.siblings(uid)
         i = sib.index(uid)
         j = i + (1 if up else -1)
-        if self.kind[uid] == 'LAYER':
+        if self.kind[uid] in ('LAYER', 'FOLDER'):
             par = self.parent[uid]
             if 0 <= j < len(sib):
                 nb = sib[j]
-                if not par and self.kind[nb] == 'FOLDER':
+                if self.kind[nb] == 'FOLDER':
                     sib.pop(i)
                     kids = self.kids.setdefault(nb, [])
                     kids.insert(0 if up else len(kids), uid)
@@ -119,8 +140,9 @@ class Tree:
                     return True
             elif par:
                 sib.pop(i)
-                self.roots.insert(self.roots.index(par) + (1 if up else 0), uid)
-                self.parent[uid] = ""
+                outer = self.siblings(par)
+                outer.insert(outer.index(par) + (1 if up else 0), uid)
+                self.parent[uid] = self.parent[par]
                 return True
         if not 0 <= j < len(sib):
             return False
@@ -175,8 +197,8 @@ def adjustment_entries(layers, owner_uid):
 
 
 def remove_entries(layers, uid):
-    """Remove an entry and what it owns. A folder's layers are kept and moved to the top
-    level. Returns the removed entries' (node_name, mask_node_name) pairs so the caller can
+    """Remove an entry and what it owns. A folder's layers and folders are kept and move up
+    into the folder's own parent. Returns the removed entries' (node_name, mask_node_name) pairs so the caller can
     delete their nodes."""
     target = next(e for e in layers if e.uid == uid)
     doomed = {uid}
@@ -186,8 +208,8 @@ def remove_entries(layers, uid):
     doomed.update(e.uid for e in layers if e.kind in ITEM_KINDS and e.parent in doomed)
     if target.kind == 'FOLDER':
         for e in layers:
-            if e.kind == 'LAYER' and e.parent == uid:
-                e.parent = ""
+            if e.kind in ('LAYER', 'FOLDER') and e.parent == uid:
+                e.parent = target.parent
     nodes = []
     for i in range(len(layers) - 1, -1, -1):
         if layers[i].uid in doomed:

@@ -20,8 +20,11 @@ GROUP_VERSION = 5
 OPACITY = "Opacity"
 VISIBLE = "Visible"
 FOLDER_GROUP_NAME = "Essence Folder"
-# 3: Visible (eye toggle)
-FOLDER_GROUP_VERSION = 3
+# 3: Visible (eye toggle), 4: Opacity input and a Factor output (Passthrough folders)
+FOLDER_GROUP_VERSION = 4
+FACTOR = "Factor"
+# A Passthrough folder's child gets its mask multiplied by the folder's Factor in this node.
+FOLDER_FACTOR_PREFIX = "Essence Folder Factor "
 MASK_GROUP_NAME = "Essence Mask"
 MASK_GROUP_VERSION = 2
 VERSION_KEY = "essence_version"
@@ -81,7 +84,9 @@ def _build_group(ng, folder=False, key=None):
 
     The folder group has the same A/B/Mask interface but no Enable inputs,
     and lerps every channel (A = stack below the folder, B = result of the folder's
-    layers), so the folder mask limits the combined effect of everything inside."""
+    layers), so the folder mask limits the combined effect of everything inside. Its Factor
+    output (mask * visible * opacity) is what a Passthrough folder multiplies into the masks
+    of its children instead; the channels are then left unused."""
     key = key or default_key()
     active = [BY_ID[i] for i in key["ch"]]
     modes = key.get("modes", {})
@@ -99,8 +104,7 @@ def _build_group(ng, folder=False, key=None):
     mask.subtype = 'FACTOR'
     vis_in = iface.new_socket(VISIBLE, in_out='INPUT', socket_type='NodeSocketBool')
     vis_in.default_value = True
-    if not folder:
-        _opacity_socket(iface, OPACITY)
+    _opacity_socket(iface, OPACITY)
     for ch in active if not folder else ():
         _opacity_socket(iface, f"{ch.label} Opacity")
         en = iface.new_socket(f"{ch.label} Enable", in_out='INPUT',
@@ -108,6 +112,8 @@ def _build_group(ng, folder=False, key=None):
         en.default_value = True
     for ch in active:
         _new_socket(iface, ch.label, 'OUTPUT', ch)
+    if folder:
+        iface.new_socket(FACTOR, in_out='OUTPUT', socket_type='NodeSocketFloat')
 
     nodes, links = ng.nodes, ng.links
     n_in = nodes.new('NodeGroupInput')
@@ -125,15 +131,16 @@ def _build_group(ng, folder=False, key=None):
     links.new(mask_out, vis.inputs[0])
     links.new(n_in.outputs[VISIBLE], vis.inputs[1])
     mask_out = vis.outputs[0]
-    if not folder:
-        # Layer opacity scales the mask once for every channel.
-        lop = nodes.new('ShaderNodeMath')
-        lop.operation = 'MULTIPLY'
-        lop.label = "Layer Opacity"
-        lop.location = (-600, 150)
-        links.new(mask_out, lop.inputs[0])
-        links.new(n_in.outputs[OPACITY], lop.inputs[1])
-        mask_out = lop.outputs[0]
+    # Opacity scales the mask once for every channel.
+    lop = nodes.new('ShaderNodeMath')
+    lop.operation = 'MULTIPLY'
+    lop.label = "Folder Opacity" if folder else "Layer Opacity"
+    lop.location = (-600, 150)
+    links.new(mask_out, lop.inputs[0])
+    links.new(n_in.outputs[OPACITY], lop.inputs[1])
+    mask_out = lop.outputs[0]
+    if folder:
+        links.new(mask_out, n_out.inputs[FACTOR])
 
     for i, ch in enumerate(active):
         a = n_in.outputs[f"{ch.label} A"]
@@ -326,7 +333,7 @@ def _ensure_group(name, version, folder, key=None):
         _build_group(ng, folder, json.loads(canon))
         ng[KEY_PROP] = canon
     ng[VERSION_KEY] = version
-    _restore_values(saved)
+    _restore_values(saved, ng)
     _restore_links(saved_links)
     return ng
 
@@ -441,8 +448,13 @@ def _restore_links(saved):
             tree.links.new(out, inp)
 
 
-def _restore_values(saved):
+def _restore_values(saved, ng=None):
+    """Put the saved values back. Inputs a node did not have before get the group's default:
+    an existing node makes a new socket before the interface sets its default, so it would
+    start at 0 (a new Opacity of 0 hid every upgraded folder)."""
+    had = {}
     for mat_name, node_name, sock_name, value in saved:
+        had.setdefault((mat_name, node_name), set()).add(sock_name)
         mat = bpy.data.materials.get(mat_name)
         node = mat.node_tree.nodes.get(node_name) if mat and mat.node_tree else None
         sock = node.inputs.get(sock_name) if node else None
@@ -451,6 +463,19 @@ def _restore_values(saved):
                 sock.default_value = value
             except (TypeError, ValueError):
                 pass
+    if ng is None:
+        return
+    defaults = {i.name: i.default_value for i in ng.interface.items_tree
+                if getattr(i, "in_out", None) == 'INPUT' and hasattr(i, "default_value")}
+    for (mat_name, node_name), names in had.items():
+        mat = bpy.data.materials.get(mat_name)
+        node = mat.node_tree.nodes.get(node_name) if mat and mat.node_tree else None
+        for s in (node.inputs if node is not None else ()):
+            if s.name not in names and s.name in defaults and hasattr(s, "default_value"):
+                try:
+                    s.default_value = defaults[s.name]
+                except (TypeError, ValueError):
+                    pass
 
 
 # --------------------------------------------------------------------------
@@ -708,10 +733,10 @@ def _rebuild_stack(mat):
     px, py = bsdf.location.x, bsdf.location.y
     bump.location = (px - 250, py - 700)
 
-    # The list is bottom-to-top and a folder entry sits directly above its children.
-    # Children chain from the stack below the folder; the folder node then lerps
-    # between that stack (A) and the end of the children's chain (B).
-    def link_chain(node, a_src, b_src=None):
+    # Children chain from the stack below their folder. A Normal folder then lerps between
+    # that stack (A) and the end of its children's chain (B); a Passthrough folder leaves the
+    # chain to its children and scales their masks by its Factor (see _link_masks).
+    def link_chain(node, a_src, b_src=None, clear_b=False):
         for ch in active:
             a = node.inputs[f"{ch.label} A"]
             if a_src is not None:
@@ -720,33 +745,47 @@ def _rebuild_stack(mat):
                 _clear_links(tree, a)
             if b_src is not None:
                 _set_link(tree, node.inputs[f"{ch.label} B"], b_src.outputs[ch.label])
+            elif clear_b:
+                _clear_links(tree, node.inputs[f"{ch.label} B"])
 
-    _begin_links(tree)
-    prev = None
-    base = None        # chain tail below the folder currently being filled
-    open_uid = ""
     count = len(entries)
     for i, (e, node) in enumerate(entries):
         node.location = (px - 300 - (count - i) * 260, py)
-        if e.kind == 'FOLDER':
-            if open_uid == e.uid and e.uid:
-                link_chain(node, base, prev)
-            else:  # empty folder: passes the stack through
-                link_chain(node, prev, prev)
-            open_uid = ""
-        else:
-            if e.parent != open_uid:
-                open_uid = e.parent
-                base = prev
-            link_chain(node, prev)
-        prev = node
+    by_uid = {e.uid: (e, n) for e, n in entries}
+    shape = stack.Tree(layers)
+    through = {}       # child uid -> the group node of its Passthrough folder
+
+    def chain(uids, below):
+        prev = below
+        for u in uids:
+            if u not in by_uid:
+                continue
+            e, node = by_uid[u]
+            if e.kind != 'FOLDER':
+                link_chain(node, prev)
+                prev = node
+                continue
+            kids = shape.kids.get(u, [])
+            if e.folder_mode == 'PASSTHROUGH':
+                for k in kids:
+                    through[k] = node
+                link_chain(node, None, None, clear_b=True)
+                prev = chain(kids, prev)
+            else:
+                inner = chain(kids, prev)     # an empty folder passes the stack through
+                link_chain(node, prev, inner, clear_b=True)
+                prev = node
+        return prev
+
+    _begin_links(tree)
+    prev = chain(shape.roots, None)
 
     for ch in CHANNELS:
         kind, sock_name = ch.target
         if kind not in targets:
             continue
         dst = targets[kind].inputs[sock_name]
-        if ch.id in active_ids:
+        if ch.id in active_ids and prev is not None:
             _set_link(tree, dst, prev.outputs[ch.label])
         else:
             _clear_links(tree, dst)
@@ -771,11 +810,15 @@ def _rebuild_stack(mat):
     _begin_links(tree)
     try:
         for e, node in entries:
-            _link_masks(tree, layers, e, node, index, adjs)
+            _link_masks(tree, layers, e, node, index, adjs, through.get(e.uid))
             if e.kind == 'LAYER' and e.uid:
                 sources.layout(tree, e, node, index, adjs)
     finally:
         _end_links()
+    wanted = {FOLDER_FACTOR_PREFIX + u for u in through}
+    for n in [n for n in tree.nodes
+              if n.name.startswith(FOLDER_FACTOR_PREFIX) and n.name not in wanted]:
+        tree.nodes.remove(n)
 
 
 def refresh_all(mat, changed=()):
@@ -802,9 +845,11 @@ def refresh_all(mat, changed=()):
     rebuild_stack(mat)
 
 
-def _link_masks(tree, layers, owner, owner_node, index=None, adjs=()):
+def _link_masks(tree, layers, owner, owner_node, index=None, adjs=(), folder=None):
     """Wire the owner's mask node into its Mask input, and lay the mask and its source nodes
-    out in a column below the owner."""
+    out in a column below the owner. Inside a Passthrough folder (`folder`, its group node)
+    the mask is multiplied by the folder's Factor first; nested Passthrough folders compound,
+    because a folder's own Mask input gets its parent's Factor the same way."""
     dst = owner_node.inputs[MASK_SOCKET]
     prev = None
     x, y = owner_node.location.x, owner_node.location.y - 420
@@ -828,8 +873,26 @@ def _link_masks(tree, layers, owner, owner_node, index=None, adjs=()):
                 _clear_links(tree, value_in)
             y -= 650
         prev = node
-    if prev is not None:
-        _set_link(tree, dst, prev.outputs[MASK_SOCKET])
+    src = prev.outputs[MASK_SOCKET] if prev is not None else None
+    if folder is not None:
+        name = FOLDER_FACTOR_PREFIX + owner.uid
+        mul = tree.nodes.get(name)
+        if mul is None:
+            mul = tree.nodes.new('ShaderNodeMath')
+            mul.name = name
+            mul.operation = 'MULTIPLY'
+            mul.label = "Folder Factor"
+            mul.inputs[0].default_value = 1.0   # no mask of its own: the folder's alone
+            mul.hide = True
+        mul.location = (owner_node.location.x - 200, owner_node.location.y - 300)
+        if src is not None:
+            _set_link(tree, mul.inputs[0], src)
+        else:
+            _clear_links(tree, mul.inputs[0])
+        _set_link(tree, mul.inputs[1], folder.outputs[FACTOR])
+        src = mul.outputs[0]
+    if src is not None:
+        _set_link(tree, dst, src)
     else:
         _clear_links(tree, dst)
 

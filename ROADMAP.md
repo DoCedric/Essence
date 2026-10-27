@@ -5,11 +5,12 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-fill-folders`: the paint fill modes first (pulled forward from Sprint 8 by the user), then folders and materials. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 328/328 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-fill-folders`: the paint fill modes first (pulled forward from Sprint 8 by the user), then folders and materials. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 339/339 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks**: none (the fill modes were confirmed by the user on 2026-10-27).
+**Pending GUI checks** (one):
+- **Folders**: open an existing file: its folders look the same and show Mode Normal. Add a folder (it is Passthrough) with two layers in it and a mask on the folder; switch Mode between Passthrough and Normal and watch the result change where the layers overlap; drag the folder Opacity; with a folder active, Add Folder makes one inside it; move a layer and a folder in and out of the nested folders with the arrows; the tree view and the list view both show the nesting.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -173,7 +174,8 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] Decided with the user: the paint fill modes come first (moved here from Sprint 8); this answers Open Question 15 for now (the fill modes; a brush pack stays open).
 - [x] Spike (windowed Blender): the native Fill brush in the 3D view fills every selected face under face selection masking, faces hidden from the view included, and leaves the others; a script can activate the Fill brush asset and run a click with `paint.image_paint`.
 - [x] **Fill modes** (`fill.py`): a Fill box under Exit Paint Mode on masks and paint items: a fill color and a button per mode (Mesh, UV Island, Face, Full) that starts filling (redesigned after the first GUI check, where the user painted with Blender's own Fill brush because the separate Fill button was missed; a warning shows when that brush is active); filling turns the cursor into a brush, each click picks the face under it, selects the mode's faces of that material (hidden faces skipped), runs one click of Blender's Fill brush through face masking and puts back the face selection, masking, brush and unified color. [H] `tests/test_fill.py` (the faces of each mode, the ray through a Subdivision modifier and behind another object, the state put back also when the click fails, poll, panels); `tests/gui_fill_modes.py` with the real brush in a window (every mode on a two-part mesh, the hidden bottom face filled, grey 0.5 stored exactly; with `--enable-event-simulate` also the buttons and a real click through the modal operator). [G] confirmed by the user (2026-10-27), second version.
-- [ ] Nested folders, Passthrough, folder opacity.
+- [x] Decided with the user: new folders are **Passthrough**, existing ones stay Normal.
+- [x] **Nested folders, Passthrough, folder opacity**: folders nest (moving in and out like layers, Add Folder inside the active folder), a Mode (Passthrough or Normal) and an Opacity in Layer Properties, folder group version 4 (Opacity input, Factor output). Passthrough scales each child's mask by the folder's Factor. Fixed on the way: new group sockets started at 0 on existing nodes (upgraded folders would have been invisible). [H] `tests/test_folders.py`; the user's file bakes identical before and after. [G] pending: see Pending GUI checks.
 - [ ] Smart materials (folder presets as assets, drop onto an object).
 - [ ] Duplicate / copy / paste of layers; Add menu grouping.
 

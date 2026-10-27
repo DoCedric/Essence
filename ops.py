@@ -99,8 +99,9 @@ class ESSENCE_OT_add_layer(_Base, bpy.types.Operator):
 class ESSENCE_OT_add_folder(_Base, bpy.types.Operator):
     bl_idname = "essence.add_folder"
     bl_label = "Add Folder"
-    bl_description = ("Add an empty folder above the active entry. Move layers into it with "
-                      "the up/down arrows. The folder's mask limits everything inside")
+    bl_description = ("Add an empty folder above the active layer, or inside the active "
+                      "folder. Move layers and folders into it with the up/down arrows. The "
+                      "folder's mask, opacity and eye act on everything inside")
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -116,11 +117,16 @@ class ESSENCE_OT_add_folder(_Base, bpy.types.Operator):
         e.uid = uid = stack.new_uid()
         e.node_name = node.name
         e.name = name
+        # The same place a new layer goes: inside an active folder, else above the layer.
+        e.parent = owner.uid if owner is not None and owner.kind == 'FOLDER' else (
+            owner.parent if owner is not None else "")
         tree = stack.Tree(s.layers)
-        if owner is not None:
-            tree.insert_after(uid, owner.parent or owner.uid)  # above the whole folder
+        if owner is not None and owner.kind == 'LAYER':
+            tree.insert_after(uid, owner.uid)
         tree.apply()
-        nodes.rebuild_stack(mat)
+        e = s.layers[tree.index(uid)]
+        # Passthrough as in Substance, and cheaper (no extra mix); setting it rebuilds.
+        e.folder_mode = 'PASSTHROUGH'
         s.active_index = tree.index(uid)
         return {'FINISHED'}
 
@@ -128,8 +134,8 @@ class ESSENCE_OT_add_folder(_Base, bpy.types.Operator):
 class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
     bl_idname = "essence.remove_layer"
     bl_label = "Remove"
-    bl_description = ("Remove the active layer or mask. Removing a folder ungroups its "
-                      "layers. A layer or folder takes its masks with it")
+    bl_description = ("Remove the active layer or mask. Removing a folder ungroups what is "
+                      "inside it. A layer or folder takes its masks with it")
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -162,8 +168,8 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
 class ESSENCE_OT_move_layer(_Base, bpy.types.Operator):
     bl_idname = "essence.move_layer"
     bl_label = "Move"
-    bl_description = ("Move the active entry. Layers move in and out of folders, masks "
-                      "reorder within their layer")
+    bl_description = ("Move the active entry. Layers and folders move in and out of folders, "
+                      "masks reorder within their layer")
     bl_options = {'REGISTER', 'UNDO'}
 
     direction: EnumProperty(items=[('UP', "Up", ""), ('DOWN', "Down", "")])

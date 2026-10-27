@@ -109,6 +109,7 @@ def test_folder_lerp(addon):
     mat = ob.active_material
     _set(_node(mat, mat.essence.layers[-1]), (1, 0, 0, 1), 0.2, 0.0, 0.0)
     bpy.ops.essence.add_folder()
+    mat.essence.layers[mat.essence.active_index].folder_mode = 'NORMAL'   # reads the folder node
     bpy.ops.essence.add_layer()  # into the folder
     _set(_node(mat, mat.essence.layers[mat.essence.active_index]), (0, 0, 1, 1), 0.8, 0.0, 0.5)
     _select(mat, "Folder 1")

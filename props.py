@@ -27,6 +27,19 @@ def _blend_items(self, context):
 
 _NO_BLEND = [('MIX', "Normal", "", 'NONE', 0)]
 
+FOLDER_MODES = [
+    ('PASSTHROUGH', "Passthrough",
+     "The layers inside blend straight onto the stack below with their own blend modes; the "
+     "folder's mask, opacity and eye scale each of them"),
+    ('NORMAL', "Normal",
+     "The layers inside are combined first, then the result is mixed over the stack below by "
+     "the folder's mask and opacity"),
+]
+
+
+def _folder_mode_update(self, context):
+    nodes.rebuild_stack(self.id_data)
+
 
 def _blend_update(self, context):
     """The blend mode of a channel changed: the layer needs another group variant."""
@@ -144,7 +157,7 @@ class EssenceLayer(bpy.types.PropertyGroup):
     """Thin index into the node tree. Values live on the group node's sockets.
 
     The list is stored bottom-to-top. A folder entry sits directly above its children,
-    which point at it through `parent` (the folder's `uid`). Folders do not nest.
+    which point at it through `parent` (the folder's `uid`). Folders nest.
     Masks (kind MASK) point at the layer or folder that owns them; their `node_name` is the
     mask group node and `mask_node_name` the image node. See stack.py."""
     name: StringProperty(name="Name", update=_name_update)
@@ -180,6 +193,10 @@ class EssenceLayer(bpy.types.PropertyGroup):
     # A paint item is a fill whose image you paint: its alpha is how much of it shows.
     fill_paint: BoolProperty(name="Paint", default=False, update=_adj_update,
                              description="Paint onto the mask at this point of its stack")
+    # Folders only. The default is Normal so folders from before modes existed keep their look;
+    # Add Folder makes new ones Passthrough.
+    folder_mode: EnumProperty(name="Mode", items=FOLDER_MODES, default='NORMAL',
+                              update=_folder_mode_update)
 
 
 def _active_update(self, context):

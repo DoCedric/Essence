@@ -24,12 +24,12 @@ def _active(mat):
 
 
 def _depth(layers, item):
-    """Indent level of a list row: folders 0, their layers 1, masks one more than the
-    owner."""
-    if item.kind in ('MASK', 'ADJUSTMENT', 'FILL', 'FILTER'):
-        owner = next((e for e in layers if e.uid == item.parent), None)
-        return (_depth(layers, owner) if owner is not None else 0) + 1
-    return 1 if item.parent else 0
+    """Indent level of a list row: one per folder around it, and masks and items one more
+    than their owner."""
+    owner = next((e for e in layers if e.uid == item.parent), None) if item.parent else None
+    if owner is None or owner is item:
+        return 0
+    return _depth(layers, owner) + 1
 
 
 class ESSENCE_UL_layers(bpy.types.UIList):
@@ -262,7 +262,7 @@ def _tree(layout, mat):
             items.setdefault(e.parent, []).append(e)
         elif e.kind == 'MASK':
             masks.setdefault(e.parent, []).append(e)
-        elif e.kind == 'LAYER' and e.parent:
+        elif e.kind in ('LAYER', 'FOLDER') and e.parent:
             kids.setdefault(e.parent, []).append(e)
         else:
             roots.append(e)
@@ -314,7 +314,7 @@ def _tree(layout, mat):
         for child in ([] if e.collapsed else reversed(kids.get(e.uid, []))):
             row = box.split(factor=0.04)
             row.label(text="")
-            draw_layer(row.column(), child)
+            (draw_folder if child.kind == 'FOLDER' else draw_layer)(row.column(), child)
 
     for e in reversed(roots):
         (draw_folder if e.kind == 'FOLDER' else draw_layer)(layout, e)
@@ -647,7 +647,13 @@ def _props(self, context):
         return
     layout.prop(e, "name", text="Name")
     if e.kind == 'FOLDER':
-        layout.label(text="The folder's masks limit all layers inside", icon='INFO')
+        layout.prop(e, "folder_mode", expand=True)
+        opacity = node.inputs.get(nodes.OPACITY)
+        if opacity is not None:
+            layout.prop(opacity, "default_value", text="Opacity", slider=True)
+        layout.label(text="Mask, opacity and eye scale each layer inside"
+                     if e.folder_mode == 'PASSTHROUGH' else
+                     "The layers inside are mixed over the stack as one", icon='INFO')
     else:
         layout.prop(node.inputs[nodes.OPACITY], "default_value", text="Opacity", slider=True)
         for ch in active_channels(mat):

@@ -241,6 +241,7 @@ def test_folder_visibility_toggle(addon):
     mat.node_tree.nodes[mat.essence.layers[-1].node_name].inputs['Roughness B'] \
         .default_value = 0.2
     bpy.ops.essence.add_folder()
+    mat.essence.layers[mat.essence.active_index].folder_mode = 'NORMAL'   # reads the folder node
     bpy.ops.essence.add_layer()
     mat.node_tree.nodes[mat.essence.layers[mat.essence.active_index].node_name] \
         .inputs['Roughness B'].default_value = 0.8

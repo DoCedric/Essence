@@ -371,13 +371,15 @@ Float channels (roughness, metallic, height) use the same modes through the Mix 
 | Feature | Status | Pri |
 |---|---|---|
 | One-level folder with mask stack and normal (lerp) blend | ✅ | |
-| **Nested folders** (tree helpers already use `parent`; the chain builder and UI must recurse) | ⬜ | P1 |
-| Folder **Passthrough** mode (inner layers blend straight onto the stack, with the folder mask multiplied into each inner layer's mask: cheaper and what Substance does by default) | ⬜ | P1 |
-| Folder opacity | ⬜ | P1 |
-| Folder blend mode (Normal vs Passthrough only; arbitrary blend modes per folder are P3) | ⬜ | P1 / P3 |
+| **Nested folders**: folders hold layers and folders at any depth; up/down moves layers and folders into a neighbouring folder and out past the end; Add Layer and Add Folder go inside the active folder; removing a folder moves its content into the folder's parent | ✅ verified headless | |
+| Folder **Passthrough** mode (inner layers blend straight onto the stack, with the folder mask multiplied into each inner layer's mask: cheaper and what Substance does by default) | ✅ verified headless (the default for new folders) | |
+| Folder opacity (an Opacity input on the folder group, version 4) | ✅ verified headless | |
+| Folder blend mode (Normal vs Passthrough only; arbitrary blend modes per folder are P3) | ✅ Normal and Passthrough; other blend modes per folder stay P3 | P3 |
 | Per-channel enable on folders | ⬜ | P3 |
 | Folder collapse / expand in the tree view (a triangle on entries that have something under them; a folder hides its layers, a layer hides its own and its mask's items; stored per entry, defaults to expanded) | ✅ | |
 | **Smart material** = a folder (with its masks and layers) saved as an asset and dropped onto an object | Node-group-based assets + Asset Browser; operator to instantiate | O | ⬜ | P1 |
+
+**Folder modes** ✅ *(verified headless, and pixel-identical on the user's file after the upgrade)*. A folder has a **Mode**: **Passthrough** (new folders, decided with the user 2026-10-27; what Substance does) or **Normal** (folders from before modes existed read as Normal, so a file looks the same). Normal: the children chain from the stack below the folder and the folder node lerps between that stack (A) and the children's result (B) by mask * visible * opacity. Passthrough: the folder node leaves the channel chain (its A and B are unlinked) and each child's Mask input is its own mask times the folder's **Factor** output (mask * visible * opacity), through a hidden Math node `Essence Folder Factor <child uid>`; a sub-folder is a child too, so nested Passthrough folders compound, and a Normal folder inside a Passthrough one lerps by its mask times the outer Factor. The two modes differ when several layers overlap inside a partly masked folder (Passthrough: each layer blends by mask * factor; Normal: the layers combine first). Folder group version 4 adds Opacity and Factor. Found on the way: a group that gains a socket gave existing nodes that socket at 0, not at its default (an upgraded folder would have had Opacity 0 and vanished); `_restore_values` now sets inputs a node did not have to the group's default, for every group upgrade. Tests: `tests/test_folders.py` (both modes, layer masks inside, opacity and eye, four nestings of the two modes, moving through two levels, removal, a broken parent cycle, the upgrade, save and reload, panels); the user's `mailrobo_essence2.blend` baked Base Color and Roughness identical before and after.
 
 ### B6. Generators, procedurals and the asset library
 
@@ -600,7 +602,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 11. **Mask generators and asset library**: noise, gradient, grunge, edge wear, dirt, curvature wear, height gradient, position gradient, as node group assets in catalogs. 🟡 generators built (live and map-reading), bundled grunge images; the asset library is the last sprint (Sprint 11)
 12. **More baked maps**: Curvature, Position, Thickness, Material/Object/Color ID, Height from mesh. 🟡 all but Height from mesh (deferred to the export sprint: nothing reads it before a height export)
 13. **ID and Color Selection masks.** ✅ (ID Select)
-14. **Nested folders; Passthrough folder mode; folder opacity.** ⬜
+14. **Nested folders; Passthrough folder mode; folder opacity.** ✅
 15. **Smart materials**: folder presets as assets, drop onto an object. ⬜
 16. **Paint layers** (direct per-channel painting). ⬜ (paint items on masks are built)
 17. **Viewport channel/mask/layer solo.** ✅ (preview buttons)
