@@ -106,16 +106,12 @@ def test_draw_mask_with_every_source(addon):
     _draw(ui._mask, ob)
 
 
-def test_draw_folder_and_list_rows(addon):
+def test_draw_folder_rows(addon):
     from essence import ui
     ob, mat = _setup(addon)
     bpy.ops.essence.add_folder()
     _draw(ui._props, ob)
     _draw(ui._stack, ob)
-    # list rows
-    for item in mat.essence.layers:
-        ui.ESSENCE_UL_layers.draw_item(None, _ctx(ob), Rec(), mat.essence, item, 0,
-                                       mat.essence, "active_index", 0)
 
 
 def test_material_panel_lists_channels(addon):
@@ -189,14 +185,10 @@ def test_draw_adjustments_every_type(addon):
         _draw(fn, ob)
     rows = [e for e in mat.essence.layers if e.kind == 'ADJUSTMENT']
     check(len(rows) == 2 * len(addon.adjustments.TYPES), "expected an adjustment per type per owner")
-    # List rows draw for adjustments too, indented under their owner.
-    for e in rows:
-        item_log = []
-        panel = SimpleNamespace(layout=Rec(item_log))
-        ui.ESSENCE_UL_layers.draw_item(panel, bpy.context, panel.layout, mat.essence, e, 0,
-                                       mat.essence, "active_index", 0)
-        check(any(c[0] == "prop" and c[1][1] == "adj_enabled" for c in item_log),
-              "adjustment row should show its eye toggle")
+    # Every adjustment row has its eye toggle.
+    log = _draw(ui._stack, ob)
+    eyes = [c for c in log if c[0] == "prop" and c[1][1] == "adj_enabled"]
+    check(len(eyes) == len(rows), f"{len(eyes)} eye toggles for {len(rows)} adjustment rows")
 
 
 def test_adjustment_panel_shows_every_parameter(addon):
@@ -224,13 +216,8 @@ def test_draw_fills_every_source(addon):
         log = _draw(ui._adjustment, ob)
         check(any(c[0] == "prop" and c[1][1] == "fill_blend" for c in log),
               f"{kind} fill: blend mode not drawn")
-        _draw(ui._stack, ob)
-        item_log = []
-        panel = SimpleNamespace(layout=Rec(item_log))
-        fill = mat.essence.layers[mat.essence.active_index]
-        ui.ESSENCE_UL_layers.draw_item(panel, bpy.context, panel.layout, mat.essence, fill, 0,
-                                       mat.essence, "active_index", 0)
-        check(any(c[0] == "prop" and c[1][1] == "adj_enabled" for c in item_log),
+        log = _draw(ui._stack, ob)
+        check(any(c[0] == "prop" and c[1][1] == "adj_enabled" for c in log),
               "fill row should show its eye toggle")
     _select(mat, mask)
     _draw(ui._mask, ob)
