@@ -36,9 +36,9 @@ class ESSENCE_UL_layers(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_prop, index):
         tree = item.id_data.node_tree
         row = layout.row(align=True)
-        depth = _depth(data.layers, item)
-        if depth:
-            row.separator(factor=2.0 * depth)
+        # one blank icon per level: a wide separator also grows the row's height
+        for _ in range(_depth(data.layers, item)):
+            row.label(text="", icon='BLANK1')
         node = tree.nodes.get(item.node_name) if tree is not None else None
 
         if item.kind == 'FILTER':
