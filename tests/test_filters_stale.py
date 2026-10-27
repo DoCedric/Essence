@@ -95,7 +95,12 @@ def test_panel_row_and_button_show_the_state(addon):
         return next(c for c in log if c[0] == "operator" and c[1][0] == "essence.filter_apply")
 
     def row_icon():
-        return [c[2].get("icon") for c in _draw(ui._stack, ob) if c[0] == "label"]
+        from test_ui import Rec
+        log = []
+        for e in mat.essence.layers:
+            ui.ESSENCE_UL_layers.draw_item(None, bpy.context, Rec(log), mat.essence, e,
+                                           0, mat.essence, "active_index", 0)
+        return [c[2].get("icon") for c in log if c[0] == "label"]
 
     check(button()[2].get("icon") == 'STRIP_COLOR_01', "not applied: red dot")
     check('STRIP_COLOR_01' in row_icon(), "not applied: the row shows a red dot")

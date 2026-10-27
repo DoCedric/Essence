@@ -214,9 +214,6 @@ def test_paint_item_panels_draw(addon):
           "no Paint button on a paint item")
     check(not any(c[0] == "prop" and c[1][1] == "kind" for c in log),
           "a paint item has no source dropdown")
-    for tree_view in (True, False):
-        mat.essence.use_tree = tree_view
-        _draw(ui._stack, ob)
     bpy.ops.essence.paint_mask()
     log = _draw(ui._adjustment, ob)
     check(any(c[0] == "operator" and c[1][0] == "essence.exit_paint" for c in log),

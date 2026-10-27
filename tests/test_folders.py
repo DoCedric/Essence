@@ -265,11 +265,5 @@ def test_folder_panels_draw(addon):
     log = _draw(ui._props, ob)
     check(any(c[0] == "prop" and c[1][1] == "folder_mode" for c in log), "the folder mode")
     check(any(c[0] == "prop" and c[2].get("text") == "Opacity" for c in log), "the folder opacity")
-    for tree_view in (True, False):
-        mat.essence.use_tree = tree_view
-        log = _draw(ui._stack, ob)
-    mat.essence.use_tree = True
-    log = _draw(ui._stack, ob)
-    names = [c[2].get("text") for c in log if c[0] == "operator" and c[1][0] == "essence.select_entry"]
-    check(names[:4] == ["Outer", "Inner", "L", "Base"], f"the tree view shows the nesting: {names}")
+    _draw(ui._stack, ob)
     check(ui._depth(mat.essence.layers, _entry(mat, "L")) == 2, "the list indents two levels")

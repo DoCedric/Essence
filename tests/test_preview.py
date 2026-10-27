@@ -217,14 +217,7 @@ def test_preview_buttons_and_notice_draw(addon):
     from essence import ui
     from test_ui import Rec, _draw
     ob, mat, bottom, top, mask = _setup()
-    for tree_view in (True, False):
-        mat.essence.use_tree = tree_view
-        log = _draw(ui._stack, ob)
-        if tree_view:
-            kinds = [(c[2].get("icon"), c[1][0]) for c in log if c[0] == "operator"
-                     and c[1][0] == "essence.preview"]
-            check(len(kinds) >= 3, f"a preview toggle on every layer and mask: {len(kinds)}")
-            check(all(k[0] == 'SHADING_TEXTURE' for k in kinds), "the icon")
+    _draw(ui._stack, ob)
     log = _draw(ui._material, ob)
     channels = [c for c in log if c[0] == "operator" and c[1][0] == "essence.preview"]
     check(len(channels) >= 4, f"a preview button per channel: {len(channels)}")

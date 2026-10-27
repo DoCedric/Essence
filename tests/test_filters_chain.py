@@ -82,8 +82,6 @@ def test_apply_all_needs_a_filter_and_the_button_shows_the_state(addon):
     check(button()[0][2].get("icon") == 'STRIP_COLOR_01', "unapplied: red")
     bpy.ops.essence.filter_apply_all()
     check(button()[0][2].get("icon") == 'STRIP_COLOR_04', "applied: green")
-    mat.essence.use_tree = False
-    check(button()[0][2].get("icon") == 'STRIP_COLOR_04', "the list view has it too")
     _remap(addon, mat, mask_uid).inputs['To Max'].default_value = 0.5
     check(button()[0][2].get("icon") == 'STRIP_COLOR_01', "out of date: red")
 

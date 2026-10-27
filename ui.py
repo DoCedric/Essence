@@ -203,123 +203,6 @@ def _previewing(mat, kind, ident):
     return preview.active(mat) == (kind, ident)
 
 
-def _entry_row(layout, mat, item, active, add_mask=False, foldable=False):
-    """One entry of the tree view: a fold triangle when something hangs under it, its icon, a
-    button that selects it (pressed while it is the active one) and its eye toggle."""
-    tree = mat.node_tree
-    node = tree.nodes.get(item.node_name) if tree is not None else None
-    row = layout.row(align=True)
-    if foldable:
-        row.prop(item, "collapsed", text="", emboss=False,
-                 icon='TRIA_RIGHT' if item.collapsed else 'TRIA_DOWN')
-    toggle = None
-    if item.kind == 'LAYER':
-        color = node.inputs.get("Color B") if node is not None else None
-        if color is not None and not color.is_linked:
-            sub = row.row(align=True)
-            sub.ui_units_x = 1.3
-            sub.prop(color, "default_value", text="")
-        else:
-            row.label(text="", icon='NODETREE')
-        toggle = node.inputs.get(nodes.VISIBLE) if node is not None else None
-    elif item.kind == 'FOLDER':
-        row.label(text="", icon='FILE_FOLDER')
-        toggle = node.inputs.get(nodes.VISIBLE) if node is not None else None
-    elif item.kind in ('MASK', 'FILL'):
-        icon_id = _thumb(tree, item)
-        if icon_id:
-            row.label(text="", icon_value=icon_id)
-        else:
-            row.label(text="", icon='MOD_MASK' if item.kind == 'MASK'
-                      else 'BRUSH_DATA' if item.fill_paint else 'IMAGE_DATA')
-        if item.kind == 'MASK':
-            toggle = node.inputs.get(nodes.MASK_ENABLE) if node is not None else None
-    elif item.kind == 'FILTER':
-        row.label(text="", icon=_filter_icon(mat, item))
-    else:
-        row.label(text="", icon='MODIFIER')
-    row.operator("essence.select_entry", text=item.name, depress=active).uid = item.uid
-    if item.kind in ('ADJUSTMENT', 'FILL', 'FILTER'):
-        row.prop(item, "adj_enabled", text="", emboss=False,
-                 icon='HIDE_OFF' if item.adj_enabled else 'HIDE_ON')
-    elif toggle is not None:
-        row.prop(toggle, "default_value", text="", emboss=False,
-                 icon='HIDE_OFF' if toggle.default_value else 'HIDE_ON')
-    if item.kind in ('LAYER', 'MASK'):
-        _preview_button(row, mat, item.kind, item.uid)
-    if add_mask:  # a layer or folder without a mask: a button for a white or black one
-        row.operator("essence.add_mask_menu", text="", icon='MOD_MASK').uid = item.uid
-
-
-def _tree(layout, mat):
-    """The stack as boxes, top of the stack first. A layer's box has the layer and its
-    adjustments on the left and its masks, each with its fills and adjustments, on the right."""
-    s = mat.essence
-    active = s.layers[s.active_index].uid if 0 <= s.active_index < len(s.layers) else ""
-    items, masks, kids, roots = {}, {}, {}, []
-    for e in s.layers:  # stored bottom-to-top
-        if e.kind in ('ADJUSTMENT', 'FILL', 'FILTER'):
-            items.setdefault(e.parent, []).append(e)
-        elif e.kind == 'MASK':
-            masks.setdefault(e.parent, []).append(e)
-        elif e.kind in ('LAYER', 'FOLDER') and e.parent:
-            kids.setdefault(e.parent, []).append(e)
-        else:
-            roots.append(e)
-
-    def draw_items(col, owner, hidden=False):
-        if hidden:
-            return
-        for it in reversed(items.get(owner.uid, [])):
-            row = col.row()
-            row.separator(factor=1.5)
-            _entry_row(row, mat, it, it.uid == active)
-
-    def draw_masks(col, owner, hidden=False):
-        for m in reversed(masks.get(owner.uid, [])):
-            _entry_row(col, mat, m, m.uid == active)
-            draw_items(col, m, hidden)
-
-    def mask_items(owner):
-        return any(items.get(m.uid) for m in masks.get(owner.uid, []))
-
-    def foldable(e):
-        """Something hangs under it that the triangle can hide."""
-        if e.kind == 'FOLDER':
-            return bool(kids.get(e.uid)) or mask_items(e)
-        return bool(items.get(e.uid)) or mask_items(e)
-
-    def draw_layer(col, e):
-        box = col.box()
-        if masks.get(e.uid):
-            split = box.split(factor=0.5)
-            left, right = split.column(align=True), split.column(align=True)
-        else:
-            left, right = box.column(align=True), None
-        _entry_row(left, mat, e, e.uid == active, add_mask=right is None, foldable=foldable(e))
-        draw_items(left, e, e.collapsed)
-        if right is not None:
-            draw_masks(right, e, e.collapsed)
-
-    def draw_folder(col, e):
-        box = col.box()
-        if masks.get(e.uid):  # like a layer: the folder on the left, its masks on the right
-            split = box.split(factor=0.5)
-            left, right = split.column(align=True), split.column(align=True)
-            draw_masks(right, e, e.collapsed)
-        else:
-            left = box.column(align=True)
-        _entry_row(left, mat, e, e.uid == active, add_mask=not masks.get(e.uid),
-                   foldable=foldable(e))
-        for child in ([] if e.collapsed else reversed(kids.get(e.uid, []))):
-            row = box.split(factor=0.04)
-            row.label(text="")
-            (draw_folder if child.kind == 'FOLDER' else draw_layer)(row.column(), child)
-
-    for e in reversed(roots):
-        (draw_folder if e.kind == 'FOLDER' else draw_layer)(layout, e)
-
-
 def _apply_all_button(layout, mat):
     """Apply All under the stack when the material has filters: red while any filter needs
     applying, a green dot when all are current."""
@@ -346,22 +229,6 @@ def _stack(self, context):
         return
     s = mat.essence
     _preview_notice(layout, mat, context)
-    if s.use_tree:
-        bar = layout.row(align=True)
-        bar.operator("essence.add_layer", icon='ADD', text="")
-        bar.operator("essence.add_folder", icon='NEWFOLDER', text="")
-        bar.menu("ESSENCE_MT_add_mask", icon='MOD_MASK', text="")
-        bar.menu("ESSENCE_MT_add_adjustment", icon='MODIFIER', text="")
-        bar.operator("essence.remove_layer", icon='REMOVE', text="")
-        bar.separator()
-        bar.operator("essence.move_layer", icon='TRIA_UP', text="").direction = 'UP'
-        bar.operator("essence.move_layer", icon='TRIA_DOWN', text="").direction = 'DOWN'
-        bar.separator()
-        bar.operator("essence.rebuild", icon='FILE_REFRESH', text="")
-        bar.prop(s, "use_tree", text="", icon='OUTLINER')
-        _tree(layout, mat)
-        _apply_all_button(layout, mat)
-        return
     row = layout.row()
     row.template_list("ESSENCE_UL_layers", "", s, "layers", s, "active_index",
                       rows=8, sort_reverse=True, sort_lock=True)
@@ -376,7 +243,6 @@ def _stack(self, context):
     col.operator("essence.move_layer", icon='TRIA_DOWN', text="").direction = 'DOWN'
     col.separator()
     col.operator("essence.rebuild", icon='FILE_REFRESH', text="")
-    col.prop(s, "use_tree", text="", icon='OUTLINER')
     _apply_all_button(layout, mat)
 
 
@@ -651,9 +517,6 @@ def _props(self, context):
         opacity = node.inputs.get(nodes.OPACITY)
         if opacity is not None:
             layout.prop(opacity, "default_value", text="Opacity", slider=True)
-        layout.label(text="Mask, opacity and eye scale each layer inside"
-                     if e.folder_mode == 'PASSTHROUGH' else
-                     "The layers inside are mixed over the stack as one", icon='INFO')
     else:
         layout.prop(node.inputs[nodes.OPACITY], "default_value", text="Opacity", slider=True)
         for ch in active_channels(mat):

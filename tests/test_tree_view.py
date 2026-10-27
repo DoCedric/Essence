@@ -22,31 +22,13 @@ def _build(addon):
     return ob, mat
 
 
-def test_tree_view_draws_every_kind_in_both_modes(addon):
+def test_stack_draws_the_list_with_every_kind(addon):
     from essence import ui
     ob, mat = _build(addon)
     kinds = {e.kind for e in mat.essence.layers}
     check(kinds == {'LAYER', 'FOLDER', 'MASK', 'FILL', 'ADJUSTMENT'}, f"setup kinds {kinds}")
-    for tree in (True, False):
-        mat.essence.use_tree = tree
-        log = _draw(ui._stack, ob)
-        check(any(c[0] == "operator" for c in log), "stack draws nothing")
-    mat.essence.use_tree = True
     log = _draw(ui._stack, ob)
-    selects = [c for c in log if c[0] == "operator" and c[1][0] == "essence.select_entry"]
-    check(len(selects) == len(mat.essence.layers), f"{len(selects)} rows for "
-          f"{len(mat.essence.layers)} entries")
-    pressed = [c for c in selects if c[2].get("depress")]
-    check(len(pressed) == 1, "exactly the active entry is drawn pressed")
-
-
-def test_select_entry_changes_the_active_entry(addon):
-    ob, mat = _build(addon)
-    target = mat.essence.layers[0]
-    uid, name = target.uid, target.name
-    check(bpy.ops.essence.select_entry(uid=uid) == {'FINISHED'}, "select failed")
-    check(mat.essence.layers[mat.essence.active_index].uid == uid, f"active is not {name}")
-    check(bpy.ops.essence.select_entry(uid="nope") == {'CANCELLED'}, "unknown uid")
+    check(any(c[0] == "template_list" for c in log), "the stack draws its list")
 
 
 def test_default_adjustment_name_follows_the_type(addon):

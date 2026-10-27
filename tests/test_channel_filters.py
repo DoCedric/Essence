@@ -219,6 +219,4 @@ def test_layer_filter_panel_and_rows_draw(addon):
         check(any(c[0] == "operator" and c[1][0] == "essence.filter_apply" for c in log),
               f"{t.id}: no Apply button")
         _draw(ui._stack, ob)
-    for tree_view in (True, False):   # both views draw the rows
-        mat.essence.use_tree = tree_view
-        _draw(ui._stack, ob)
+    _draw(ui._stack, ob)
