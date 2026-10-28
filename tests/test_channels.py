@@ -130,7 +130,7 @@ def test_export_alpha_and_emission(addon):
         sc.essence_export_format = 'OPEN_EXR'
         sc.essence_export_size = '512'
         sc.essence_export_dir = folder
-        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export failed")
+        check(bpy.ops.essence.export() == {'FINISHED'}, "export failed")
         stem = bpy.path.clean_name(mat.name)
 
         def load(suffix):
@@ -163,6 +163,6 @@ def test_export_still_works_without_metallic(addon):
         sc.essence_export_format = 'OPEN_EXR'
         sc.essence_export_size = '512'
         sc.essence_export_dir = folder
-        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export failed without metallic")
+        check(bpy.ops.essence.export() == {'FINISHED'}, "export failed without metallic")
     finally:
         shutil.rmtree(folder, ignore_errors=True)

@@ -261,16 +261,22 @@ It took 0.07 s on a 1024 px bake of a hard-surface high poly, and about a second
 
 While a Normal (Tangent) bake runs, the BSDF's Normal input is temporarily unlinked, so the bake does not capture the material's own bump or normal map. A low-poly-only tangent bake is therefore flat.
 
-### Export ✅
-v1 exports for **Unity HDRP** only, from the active object's active material, baked from every object of its texture set (needs at least one layer and a UV map). Settings: Format (PNG, TGA, EXR), Resolution (512 to 4096), Folder (default `//Export/`).
+### Export ✅ *(verified headless; Unity check pending)*
+Decided with the user (2026-10-28): export works on **the selected material** (the active object's active material, baked from every object of its texture set; one material per press, in the Essence context), at **one export resolution** (512 to 8192, not the material's Bake Size), with **infinite dilation by default**. The **flattened Blender material** is a new material, not assigned. Settings in the Export panel: **Preset**, the files it writes for this material (listed), **Format** (PNG, TGA, TIFF, JPEG, EXR), **Bit Depth** (8, 16, 32; a format without it uses the nearest it has, and the panel says so: TGA and JPEG are 8, PNG and TIFF 8 or 16, EXR 16 half or 32), **Resolution**, **Dilation** (Infinite, or Pixels with a width), **Folder** (default `//Export/`). Buttons: **Export Textures** (`essence.export`) and **Create Baked Material** (`essence.bake_material`).
 
-| File | Content |
+**Presets are data** (`export.PRESETS`): a list of files, each a name suffix (`<Material>_<suffix>`) and either a color source with an optional alpha, or a grey source per R/G/B/A (a grey file when only R is set), an sRGB flag, and an optional channel the file needs. Sources: a channel (the top layer's output, its default when the channel is off), Smoothness (1 - roughness), AO (the AO slot, white without one), Normal OpenGL or DirectX (green flipped), White. An alpha from a switched-off channel is dropped (an RGB file).
+
+| Preset | Files |
 |---|---|
-| `<Material>_BaseMap` | Top layer's color. sRGB (Non-Color for EXR). |
-| `<Material>_MaskMap` | R Metallic, G Ambient Occlusion, B Detail Mask (white), A Smoothness (`1 - roughness`). Non-Color. |
-| `<Material>_Normal` | Tangent space, OpenGL (+Y). A real bake of the whole material, so the baked normal map and the layer bump are combined. |
+| PBR Maps (asked for by the user) | Color, Roughness, Metallic, Normal (OpenGL), Height (the Bump channel), Opacity, Emission, AO: one file per channel, each only when its channel is on (AO: when the AO slot has an image) |
+| Unity HDRP | BaseMap (RGB color, A opacity when on), MaskMap (R metallic, G AO, B detail = white, A smoothness), Normal (OpenGL), Emission |
+| Unity URP | BaseMap, MetallicSmoothness (RGB metallic, A smoothness), Normal (OpenGL), Occlusion (with AO), Emission |
+| Unreal Engine | BaseColor, OcclusionRoughnessMetallic (R AO, G roughness, B metallic), Normal (DirectX), Emissive |
+| glTF | BaseColor, OcclusionRoughnessMetallic (glTF reads R occlusion, G roughness, B metallic), Normal (OpenGL), Emissive |
 
-Values are baked from the top layer node's outputs with the Emission trick, so they are exact and unlit. AO comes from the AO slot's image, else an existing `<material>_AO` bake (scaled to the export resolution), and is white if there is neither. Temporary images and nodes are removed afterwards.
+**How a file is made.** Every source a preset needs is baked once, from the top layer node's outputs with the Emission trick (exact and unlit, 4 samples so procedurals are anti-aliased), into a float Non-Color image; the normal is a real tangent-space bake of the whole material (baked normal map and layer bump combined). All are baked **without a margin**, then dilated from one coverage bake of the texture set with the compositor's Inpaint node (`filters.dilate`; a width of the image size fills every texel: 2.7 s per map at 2048). The files are put together in numpy: color is **sRGB encoded** except in EXR (EXR stays linear), values clipped to 0..1 except in EXR. Saving goes through a throwaway scene's output settings (Standard view, no look, no dither) so format, depth and color mode (BW, RGB, RGBA) are exact. **Alpha:** 8 bits are written from a byte image, which Blender saves as it is; Blender takes a float image written to PNG as premultiplied and divides its color by the alpha (measured: TIFF and EXR are not touched), which would ruin a packed alpha, so a 16-bit PNG is multiplied by its alpha first (where it is not 0, which Blender leaves alone). Temporary images, nodes and the scene are removed afterwards.
+
+**Create Baked Material** bakes the channels a Principled BSDF takes (Color, Roughness, Metallic, Opacity, Emission when on, and the Normal) at the export resolution, dilated the same way, into **packed 8-bit images** (`<Material> Baked_Color` and so on; color sRGB, the rest Non-Color) and builds **`<Material> Baked`**: Principled BSDF, an Image Texture per channel, a Normal Map node, emission strength 1. It is not assigned, has a fake user so it survives a save, and baking again updates it in place (same material, its old images replaced), so where the user assigned it stays.
 
 ---
 
@@ -519,18 +525,18 @@ Painting is Blender's Texture Paint. Essence only chooses the target image and c
 
 | Feature | Status | Pri |
 |---|---|---|
-| Unity HDRP (BaseMap, MaskMap, Normal) | ✅ | |
-| **Export preset engine**: a preset is data: a list of files, each with a name pattern, channel sources per R/G/B/A, color space, bit depth, invert flags | ⬜ | **P1** |
-| Presets: Unity URP (RGB metallic + A smoothness), Unreal (ORM), glTF (ORM + emissive + normal), generic PBR metal/rough, spec/gloss, Godot, Blender (round trip) | ⬜ | P1 (URP, Unreal, glTF), P3 (rest) |
-| Export all channels (emission, opacity, height, AO, specular, coat, user channels) | ⬜ | P1 (follows B1) |
-| Bit depth (8 / 16 / 32) and formats (PNG, TGA, EXR, TIFF, JPEG) | 🟡 PNG/TGA/EXR 8-bit | P1 |
-| Dilation (padding) on export | ⬜ | P1 |
+| Unity HDRP (BaseMap, MaskMap, Normal) | ✅ (a preset now) | |
+| **Export preset engine**: a preset is data: a list of files, each with a name pattern, channel sources per R/G/B/A, color space, bit depth, invert flags | ✅ verified headless (see Export) | |
+| Presets: Unity URP (RGB metallic + A smoothness), Unreal (ORM), glTF (ORM + emissive + normal), generic PBR metal/rough, spec/gloss, Godot, Blender (round trip) | 🟡 URP, Unreal, glTF, PBR Maps built; spec/gloss, Godot not | P3 (rest) |
+| Export all channels (emission, opacity, height, AO, specular, coat, user channels) | 🟡 every channel Essence has (color, roughness, metallic, height, opacity, emission, AO, normal); specular, coat, user channels follow B1 | P2 |
+| Bit depth (8 / 16 / 32) and formats (PNG, TGA, EXR, TIFF, JPEG) | ✅ verified headless | |
+| Dilation (padding) on export | ✅ infinite or pixels, verified headless | |
 | Export bakes AO itself | ⬜ | P2 |
-| Export all materials / all objects / selection | ⬜ | P1 |
+| Export all materials / all objects / selection | dropped: the selected material only, by design (user, 2026-10-28) | |
 | UDIM export | ⬜ | P2 |
 | Re-export on save, "live link" to the engine folder | Save handler | ⬜ | P3 |
 | Export directly through Blender's glTF exporter with the material wired for it | Native exporter | ⬜ | P2 |
-| Export a Blender-native packed material (flatten the whole stack to a simple image-based Principled material) | Bake + node build | ⬜ | **P1** |
+| Export a Blender-native packed material (flatten the whole stack to a simple image-based Principled material) | Bake + node build | ✅ verified headless (Create Baked Material) | |
 
 ### B11. Layer stack UI
 
@@ -614,8 +620,8 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 15. **Smart materials**: folder presets as assets, drop onto an object. ✅ (`smart.py`; thumbnails and more catalogs with the asset library, Sprint 11)
 16. **Paint layers** (direct per-channel painting). ✅ (Paint channels, one channel per stroke)
 17. **Viewport channel/mask/layer solo.** ✅ (preview buttons)
-18. **Export preset engine** with URP, Unreal, glTF, all channels, bit depth, dilation, export all materials. ⬜
-19. **Export as a flattened Blender material** (stack baked into a simple image-based Principled material). ⬜
+18. **Export preset engine** with URP, Unreal, glTF, all channels, bit depth, dilation. ✅ (plus PBR Maps; the selected material only, by design)
+19. **Export as a flattened Blender material** (stack baked into a simple image-based Principled material). ✅
 20. **Remaining blend modes** (contrast, dodge/burn, compare). ⬜
 21. **Freeze to image** for layers, folders and the whole stack (performance step for procedural-heavy stacks; do late in P1, once real stacks show the need). ⬜ (a first version was removed again, see B12)
 22. **Baking groups; multi-object bake into one image.** ✅ (texture sets)
@@ -675,6 +681,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 - Group version upgrade keeps socket values.
 - Bake: AO, World Gradient (cube and zero-height plane), Normal (world, tangent), settings restored afterwards, tangent bake wires Normal Map into Bump into BSDF, high-to-low normal bake with a High Poly collection (tilted plane leaves the expected mark, high-poly is not a target).
 - Export (Unity HDRP, EXR): BaseMap, MaskMap (R metallic, G white without AO, B white, A smoothness) and Normal values, temp images and nodes cleaned up, and the exported normal equals the baked normal when layer height is zero.
+- Export presets (`tests/test_export.py`): the files of every preset (with and without AO and the optional channels), 8-bit sRGB-encoded color and raw data read back from PNG, 16-bit PNG, grey/RGB/RGBA color modes, opacity in the base map alpha only when on, a 16-bit packed MaskMap keeps its color under any alpha (also 0), TGA, JPEG and TIFF values, linear EXR, DirectX green, infinite and pixel dilation on half-used UVs, the baked material (values, packed, color spaces, not assigned, updated in place), the panel.
 
 - Cage: a high-poly 0.5 above a low-poly is missed with the automatic extrusion and captured (correct tilted world normal) once a cage plane sits above it; bake settings are restored. Float buffers: bakes and new paint masks are float, switching the Float toggle keeps the image name and its users.
 

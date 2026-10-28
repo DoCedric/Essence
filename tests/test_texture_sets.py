@@ -221,7 +221,7 @@ def test_export_bakes_every_object_of_the_material(addon):
         sc.essence_export_format = 'OPEN_EXR'
         sc.essence_export_size = '512'
         sc.essence_export_dir = folder
-        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export failed")
+        check(bpy.ops.essence.export() == {'FINISHED'}, "export failed")
         out = bpy.data.images.load(os.path.join(folder, "Shared_MaskMap.exr"))
         out.colorspace_settings.name = 'Non-Color'
         close(_px(out, 0.25, 0.5)[3], 0.8, 0.03, "A's smoothness")

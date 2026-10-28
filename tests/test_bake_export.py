@@ -131,7 +131,7 @@ def test_export_unity_exr(addon):
         sc.essence_export_size = '512'
         sc.essence_export_dir = folder
         sc.essence_bake_margin = 0
-        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export did not finish")
+        check(bpy.ops.essence.export() == {'FINISHED'}, "export did not finish")
         files = sorted(os.listdir(folder))
         check(len(files) == 3, f"expected 3 files, got {files}")
 
@@ -189,7 +189,7 @@ def test_export_normal_keeps_baked_normal(addon):
         for o in bpy.context.view_layer.objects:
             o.select_set(o is low)
         bpy.context.view_layer.objects.active = low
-        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export failed")
+        check(bpy.ops.essence.export() == {'FINISHED'}, "export failed")
         mat = low.active_material
         p = os.path.join(folder, f"{bpy.path.clean_name(mat.name)}_Normal.exr")
         img = bpy.data.images.load(p)

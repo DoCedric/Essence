@@ -71,7 +71,7 @@ def test_export_reads_the_ao_slot(addon):
         sc.essence_export_format = 'OPEN_EXR'
         sc.essence_export_size = '512'
         sc.essence_export_dir = folder
-        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export failed")
+        check(bpy.ops.essence.export() == {'FINISHED'}, "export failed")
         p = os.path.join(folder, f"{bpy.path.clean_name(mat.name)}_MaskMap.exr")
         out = bpy.data.images.load(p)
         out.colorspace_settings.name = 'Non-Color'
@@ -190,7 +190,7 @@ def test_export_ignores_the_ao_overlay(addon):
         sc.essence_export_format = 'OPEN_EXR'
         sc.essence_export_size = '512'
         sc.essence_export_dir = folder
-        check(bpy.ops.essence.export_unity() == {'FINISHED'}, "export failed")
+        check(bpy.ops.essence.export() == {'FINISHED'}, "export failed")
         out = bpy.data.images.load(os.path.join(folder, f"{bpy.path.clean_name(mat.name)}_BaseMap.exr"))
         w, h = out.size
         i = ((h // 2) * w + w // 2) * 4

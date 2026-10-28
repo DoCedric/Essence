@@ -777,18 +777,36 @@ def _bake(self, context):
 
 
 def _export(self, context):
+    from . import export
     layout = self.layout
     scene = context.scene
-    col = layout.column(align=True)
-    col.prop(scene, "essence_export_format", text="Format")
-    col.prop(scene, "essence_export_size", text="Resolution")
-    layout.prop(scene, "essence_export_dir", text="Folder")
+    ob = context.active_object
+    mat = ob.active_material if ob is not None else None
+    layout.prop(scene, "essence_export_preset", text="Preset")
     box = layout.box()
     col = box.column(align=True)
-    col.label(text="Unity (HDRP)")
-    col.label(text="BaseMap, MaskMap, Normal")
-    col.label(text="MaskMap: R Metal, G AO, A Smooth")
-    layout.operator("essence.export_unity", icon='EXPORT')
+    preset = export.BY_PRESET[scene.essence_export_preset]
+    files = (export.plan(preset, mat) if mat is not None
+             else [(f, f.a) for f in preset.files if f.needs is None])
+    for f, _alpha in files:
+        col.label(text=f"{mat.name if mat else '<Material>'}_{f.suffix}", icon='IMAGE_DATA')
+    col = layout.column(align=True)
+    col.prop(scene, "essence_export_format", text="Format")
+    row = col.row(align=True)
+    row.prop(scene, "essence_export_depth", text="Bit Depth")
+    depth = export.file_depth(scene.essence_export_format, scene.essence_export_depth)
+    col.prop(scene, "essence_export_size", text="Resolution")
+    if depth != scene.essence_export_depth:
+        layout.label(text=f"{scene.essence_export_format.replace('_', ' ')} is written at "
+                     f"{depth} bits", icon='INFO')
+    col = layout.column(align=True)
+    col.prop(scene, "essence_export_dilation", text="Dilation")
+    if scene.essence_export_dilation == 'PIXELS':
+        col.prop(scene, "essence_export_padding", text="Pixels")
+    layout.prop(scene, "essence_export_dir", text="Folder")
+    layout.operator("essence.export", icon='EXPORT')
+    layout.separator()
+    layout.operator("essence.bake_material", icon='MATERIAL')
 
 
 _PANELS = (

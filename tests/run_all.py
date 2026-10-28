@@ -16,7 +16,7 @@ for path in sorted(glob.glob(os.path.join(HERE, "test_*.py"))):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     for attr in dir(mod):
-        if attr.startswith("test_") and flt in attr:
+        if attr.startswith("test_") and flt in f"{mod.__name__}.{attr}":
             tests.append((f"{mod.__name__}.{attr}", getattr(mod, attr)))
 
 failed = harness.run(tests)

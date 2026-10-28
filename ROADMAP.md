@@ -5,11 +5,12 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-28)
-Sprints 0 to 8 are done and merged into `main`. Sprint 9 (export) is on `sprint-9-export`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 362/362 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 8 are done and merged into `main`. Sprint 9 (export) is on `sprint-9-export`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 369/369 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks**: none (Face fill overlays confirmed 2026-10-28).
+**Pending GUI checks** (one):
+- **Export**: in the Export panel pick each preset and see its file list change. Export with Unity URP or HDRP as PNG 8-bit and drop the files in Unity: the base color matches Blender's (not lighter or darker), metallic and smoothness behave, the normal map bumps the right way (OpenGL), and there are no dark seams at UV borders when the camera is far away (infinite dilation). Optional: Unreal (DirectX normal). Then Create Baked Material, assign `<Material> Baked` to a copy of the object: it looks like the Essence material in Material Preview.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -196,8 +197,16 @@ Decided with the user (2026-10-28): a paint layer is a layer whose channels use 
 - [x] [G] Face fill with the overlays off (confirmed 2026-10-28).
 - [-] ~~Texture set settings: a list of the texture sets (materials) with their resolution.~~ Dropped by the user (2026-10-28): the user manages texture sets in the material settings (each material's Essence panel already has its Bake Size).
 
+## Sprint 9: Export (`sprint-9-export`)
+Decided with the user (2026-10-28): export the **selected material** only (the Essence context); **one export resolution**; **infinite dilation** by default; the flattened material is a **new material, not assigned**; and a **PBR Maps** preset with every channel in its own file. Height from mesh moved to Future updates.
+- [x] **Preset engine** (`export.PRESETS`, files as data: color or per-channel grey sources, alpha, sRGB, needed channel), presets PBR Maps, Unity HDRP, Unity URP, Unreal (DirectX normal), glTF. [H] `tests/test_export.py`
+- [x] **Formats and bit depths**: PNG 8/16, TGA 8, TIFF 8/16, JPEG 8, EXR 16/32; color sRGB encoded (EXR linear); exact through a throwaway scene's output settings; packed alpha survives a 16-bit PNG. [H]
+- [x] **Dilation**: every map baked without margin and dilated from one coverage bake, Infinite or Pixels (`filters.dilate`). [H]
+- [x] **Create Baked Material** (`essence.bake_material`): `<Material> Baked`, packed images, not assigned, updated in place. [H]
+- [x] Export panel: preset, its files, format, depth (with the nearest-depth note), resolution, dilation, folder, both buttons. [H] draws
+- [ ] [G] Export in Unity (URP or HDRP) and look at the baked material in Blender (see Pending GUI checks).
+
 ## Later sprints (outline, to be detailed)
-- **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material; tested in Unity.
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
 - **Sprint 11, Essence asset library (last):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).
 

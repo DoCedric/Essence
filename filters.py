@@ -358,11 +358,20 @@ def add_margin(context, obj, mat, image, margin, black_is_hole=False):
         finally:
             bpy.data.images.remove(coverage)
         return
+    try:
+        dilate(image, coverage, margin)
+    finally:
+        bpy.data.images.remove(coverage)
+
+
+def dilate(image, coverage, margin):
+    """Continue the islands of `image` (white in `coverage`, an image of the same size)
+    outwards by `margin` pixels, in place; black beyond. A margin of the image's width fills
+    every texel (the export's infinite dilation)."""
     ng = _margin_group(margin)
     try:
         result = run_compositor_group(ng, image, {"Coverage": coverage})
     finally:
-        bpy.data.images.remove(coverage)
         bpy.data.node_groups.remove(ng)
     try:
         px = np.empty(len(result.pixels), dtype=np.float32)
