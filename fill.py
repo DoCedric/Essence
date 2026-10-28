@@ -205,7 +205,7 @@ class ESSENCE_OT_fill(bpy.types.Operator):
             return {'FINISHED'}
         context.scene.essence_fill_mode = self.mode
         self.stop = False
-        self.wire = None            # [(3D view space, its Wireframe overlay before)] in Face mode
+        self.wire = None            # [(3D view space, its overlay switches before)] in Face mode
         self.drag = None            # (last mouse x, y, faces filled) while dragging in Face mode
         _running = self
         self.sync_wireframe(context)
@@ -217,19 +217,21 @@ class ESSENCE_OT_fill(bpy.types.Operator):
 
     def sync_wireframe(self, context):
         """Face mode shows the wireframe in every 3D view, so the faces can be seen; any other
-        mode, or the end of filling, puts each view's own setting back."""
+        mode, or the end of filling, puts each view's own settings back. The overlays switch
+        is turned on too: with the overlays off the wireframe would not show."""
         on = _running is self and context.scene.essence_fill_mode == 'FACE'
         if on and self.wire is None:
             self.wire = []
             for area in context.window.screen.areas:
                 if area.type == 'VIEW_3D':
                     overlay = area.spaces.active.overlay
-                    self.wire.append((area.spaces.active, overlay.show_wireframes))
-                    overlay.show_wireframes = True
+                    self.wire.append((area.spaces.active,
+                                      (overlay.show_overlays, overlay.show_wireframes)))
+                    overlay.show_overlays = overlay.show_wireframes = True
         elif not on and self.wire is not None:
             for space, before in self.wire:
                 try:
-                    space.overlay.show_wireframes = before
+                    space.overlay.show_overlays, space.overlay.show_wireframes = before
                 except ReferenceError:      # the view was closed meanwhile
                     pass
             self.wire = None

@@ -186,7 +186,7 @@ def modal_case(ob, win, area, region):
         addon_fill.paint_color(bpy.context.tool_settings.image_paint).color = (1.0, 1.0, 1.0)
         rv3d = area.spaces.active.region_3d
         overlay = area.spaces.active.overlay
-        overlay.show_wireframes = False
+        overlay.show_overlays = overlay.show_wireframes = False
         face, center = top_of(ob, 1)
         co = view3d_utils.location_3d_to_region_2d(region, rv3d, ob.matrix_world @ center)
         x, y = int(region.x + co.x), int(region.y + co.y)
@@ -202,7 +202,7 @@ def modal_case(ob, win, area, region):
             check(res == {'FINISHED'} and fill.running() is not None
                   and bpy.context.scene.essence_fill_mode == 'FACE',
                   "modal: the Face button while filling switches the mode, no second operator")
-            check(overlay.show_wireframes, "modal: Face mode turns the wireframe on")
+            check(overlay.show_overlays and overlay.show_wireframes, "modal: Face mode turns the overlays and the wireframe on")
         # Press on A's top, drag across the gap to B's top (fast: two moves), release.
         win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=xa, y=ya)
         win.event_simulate(type='LEFTMOUSE', value='PRESS', x=xa, y=ya)
@@ -233,9 +233,9 @@ def modal_check(ob, win, faces, x, y):
         sidebar = next((r for r in area.regions if r.type == 'UI'), None)
         with bpy.context.temp_override(window=win, area=area, region=sidebar):
             bpy.ops.essence.fill('INVOKE_DEFAULT', mode='MESH')
-            check(not overlay.show_wireframes, "modal: another mode puts the wireframe back off")
+            check(not overlay.show_overlays and not overlay.show_wireframes, "modal: another mode puts both back off")
             bpy.ops.essence.fill('INVOKE_DEFAULT', mode='FACE')
-            check(overlay.show_wireframes, "modal: Face again turns it on")
+            check(overlay.show_overlays and overlay.show_wireframes, "modal: Face again turns both on")
             bpy.ops.essence.exit_paint()
         win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=x + 1, y=y)
         bpy.app.timers.register(lambda: stopped_check(win, fill, overlay), first_interval=0.3)
@@ -249,7 +249,7 @@ def modal_check(ob, win, faces, x, y):
 def stopped_check(win, fill, overlay):
     try:
         check(fill.running() is None, "modal: leaving Texture Paint stops filling")
-        check(not overlay.show_wireframes, "modal: and puts the wireframe back off")
+        check(not overlay.show_overlays and not overlay.show_wireframes, "modal: and puts both back off")
     except Exception:
         lines.append("FAIL stop check\n" + traceback.format_exc())
         failed.append("stop check")
