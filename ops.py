@@ -726,7 +726,7 @@ class ESSENCE_OT_id_color_sample(_Base, bpy.types.Operator):
         mat = _material(context)
         node = mat.node_tree.nodes.get(nodes.map_slot_name('ID')) if mat is not None else None
         if node is None or node.image is None:
-            self.report({'WARNING'}, "Bake or pick an ID map first (Mesh Maps)")
+            self.report({'WARNING'}, "Bake or pick an ID map first (Material tab > Essence Mesh Maps)")
             return {'CANCELLED'}
         if _id_select_node(context, self.uid, self.channel) is None:
             return {'CANCELLED'}

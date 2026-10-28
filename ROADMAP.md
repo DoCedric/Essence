@@ -5,11 +5,12 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-28)
-Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (12). `tests/run_all.py`: 383/383 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (12). `tests/run_all.py`: 384/384 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks**: none (the row menu and folder delete confirmed 2026-10-28).
+**Pending GUI checks** (one):
+- **Panel placement**: the N sidebar's Essence tab has Layers and the selection's properties only. The Properties editor's Material tab has Essence Mesh Maps, Essence Channels, Essence Bake and Essence Export below Blender's panels; they collapse, drag into another order, and follow the active object's material slot. Baking, exporting, the channel list and the Show on Mesh buttons work from there.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -219,8 +220,12 @@ Decided with the user (2026-10-28): the P1 blend modes plus the Mix node's color
 - [x] **Deleting a folder deletes its content** (user request); **Ungroup** in the folder's menu keeps the old behaviour (`essence.ungroup`). [H] `tests/test_folders.py`
 - [x] [G] the row menu and folder delete in the GUI (confirmed 2026-10-28).
 
+## Sprint 11: Panel placement (`sprint-11-panels`, branched from `sprint-10-blend-channels`)
+Decided with the user (2026-10-28): plain option A. Blender has no add-on editor types and no add-on tabs in the Properties editor, so the texture set's panels move to the Material tab; the stack and the selection stay in the N sidebar.
+- [x] Essence Mesh Maps, Essence Channels, Essence Bake and Essence Export as panels in the Properties editor's Material tab; Layers, Layer, Mask and Adjustment Properties stay in the sidebars. Messages that point at a panel say where it is now. [H] `tests/test_panels.py`
+- [ ] [G] the panels in the Material tab (see Pending GUI checks).
+
 ## Later sprints (outline, to be detailed)
-- **Sprint 11, panel placement:** move the panels out of the N sidebar where Blender allows it (proposal under discussion with the user, 2026-10-28; Layers and Layer Properties stay in the sidebar).
 - **Sprint 12, Essence asset library (last; content and research, moved from Sprint 11 by the user, 2026-10-28):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).
 
 ## Future updates (not scheduled)

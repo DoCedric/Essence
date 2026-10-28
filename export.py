@@ -417,7 +417,7 @@ class ESSENCE_OT_export(bpy.types.Operator):
                 bpy.data.scenes.remove(out_scene)
         notes = []
         if 'AO' in {s for f, _a in files for s in (f.r, f.g)} and not has_ao(mat):
-            notes.append("no AO in the Mesh Maps or the AO channel, AO is white")
+            notes.append("no AO in Essence Mesh Maps or the AO channel, AO is white")
         msg = f"Exported {', '.join(written)} to {folder}"
         if notes:
             msg += f" ({'; '.join(notes)})"

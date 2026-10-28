@@ -628,7 +628,7 @@ def apply_entry(context, ob, mat, entry):
     if ch_id != 'MASK' and ch_id not in {c.id for c in sources.active_channels(mat)}:
         # Checked first: the item's nodes from before the channel was switched are stale.
         raise RuntimeError(f"the {sources.SOURCE_BY_ID[ch_id].label} channel is switched off "
-                           "in the Material panel")
+                           "in Essence Channels (Material tab)")
     node_in = sources.source_nodes(tree, entry.uid, "ADJ").get('IN')
     if node_in is None:
         raise RuntimeError("filter nodes missing, press Rebuild Links")

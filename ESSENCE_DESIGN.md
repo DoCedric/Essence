@@ -205,7 +205,7 @@ A folder holds layers and has its own mask (with the same fills and adjustments)
 
 ### User Interface
 - All Essence UI lives in the sidebar (N panel) using standard Blender panels, UI lists and properties, in both the 3D Viewport and the UV/Image Editor.
-- Panel order: Layers, then Layer Properties, Mask Properties or Adjustment Properties depending on selection, then Mesh Maps (Normal, AO, Position, Curvature, ID and Thickness slots), Material (channels, Emission Strength, Bump Strength and Distance, whole-stack previews), Bake, Export.
+- **Panel placement** (Sprint 11, decided with the user 2026-10-28): the **N sidebar** (3D View and Image Editor, tab Essence) has the stack and the selection: Layers, then Layer Properties, Mask Properties or Adjustment Properties. The texture set's settings are panels in the **Properties editor's Material tab**, below Blender's own material panels, each collapsible and draggable: **Essence Mesh Maps** (Normal, AO, Position, Curvature, ID and Thickness slots), **Essence Channels** (the channel list, Emission Strength, Bump Strength and Distance, whole-stack previews), **Essence Bake**, **Essence Export**. They show for the active object's material. Considered and not chosen: new editor types (an add-on cannot register one; a custom node tree type gives an Editor Type entry but an empty node canvas), new tabs in the Properties editor's tab bar (a fixed list in Blender), an icon switcher inside one panel.
 - No custom workspace, no custom drawn UI. A left-hand panel layout is not pursued because addons may not be able to place panels there.
 
 ### Painting
