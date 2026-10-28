@@ -4,8 +4,8 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
-## Status (2026-10-27)
-Sprints 0 to 7 are done and merged into `main`. Sprint 8 is done on `sprint-8-paint-layers` (paint layers, fill improvements; texture set settings dropped), waiting for the merge. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 362/362 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+## Status (2026-10-28)
+Sprints 0 to 8 are done and merged into `main`. Sprint 9 (export) is on `sprint-9-export`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 362/362 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
@@ -198,13 +198,17 @@ Decided with the user (2026-10-28): a paint layer is a layer whose channels use 
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material; tested in Unity.
-  - [ ] Nice-to-have, **Height from mesh** (designed, see "Height from mesh" in the design doc; three decisions are open, Open Question 12). A new Mesh Maps slot `HEIGHT`, a bake entry with a thumbnail, a Range setting. Plan:
-    - [ ] Decide with the user: method (position delta, recommended, or Ray Length), Range (automatic by default, recommended), and that the slot does not feed the Bump node (recommended). [ask]
-    - [ ] Optional spike: is Light Path Ray Length readable in a bake, and does it equal the distance to the high poly with the extrusion subtracted? (It does not work with a cage, so it can only ever be a fast path.)
-    - [ ] Bake pieces: the high Position (exists), a hit mask (white emission), the low poly's own Position and object-space Normal, all float, on the same size as the set and through the baking groups (floaters and cage included). [H]
-    - [ ] Combine in numpy: `dot(P_high - P_low, N_low)` with the Generated coordinates scaled back by the dimensions, divided by the Range, 0.5 + 0.5 * h / range, 0.5 where nothing was hit; written to `<material>_Height` (float, Non-Color, packed, stamped, `essence_height_range` on the image). [H]
-    - [ ] Bake panel: a Range field for this map (0 = automatic), the map in the picker with a thumbnail; the slot in Mesh Maps with Show on Mesh. [H] draws
-    - [ ] Tests (headless): a flat plane at +0.1 and at -0.1, a tilted plane (distance along the normal), a scaled and rotated low poly gives the same distances, a sphere pair, floaters, a cage, automatic range, a miss is 0.5, a texture set of two objects, save and reload, an old file without the slot. [H]
-    - [ ] [G] the look and the Show on Mesh preview on a real high and low poly.
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
 - **Sprint 11, Essence asset library (last):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).
+
+## Future updates (not scheduled)
+Features moved out of the sprints by the user. They wait here until a user asks for one; the most requested goes first.
+
+- [ ] **Height from mesh** (designed, see "Height from mesh" in the design doc; three decisions are open, Open Question 12). A new Mesh Maps slot `HEIGHT`, a bake entry with a thumbnail, a Range setting. Plan:
+  - [ ] Decide with the user: method (position delta, recommended, or Ray Length), Range (automatic by default, recommended), and that the slot does not feed the Bump node (recommended). [ask]
+  - [ ] Optional spike: is Light Path Ray Length readable in a bake, and does it equal the distance to the high poly with the extrusion subtracted? (It does not work with a cage, so it can only ever be a fast path.)
+  - [ ] Bake pieces: the high Position (exists), a hit mask (white emission), the low poly's own Position and object-space Normal, all float, on the same size as the set and through the baking groups (floaters and cage included). [H]
+  - [ ] Combine in numpy: `dot(P_high - P_low, N_low)` with the Generated coordinates scaled back by the dimensions, divided by the Range, 0.5 + 0.5 * h / range, 0.5 where nothing was hit; written to `<material>_Height` (float, Non-Color, packed, stamped, `essence_height_range` on the image). [H]
+  - [ ] Bake panel: a Range field for this map (0 = automatic), the map in the picker with a thumbnail; the slot in Mesh Maps with Show on Mesh. [H] draws
+  - [ ] Tests (headless): a flat plane at +0.1 and at -0.1, a tilted plane (distance along the normal), a scaled and rotated low poly gives the same distances, a sphere pair, floaters, a cage, automatic range, a miss is 0.5, a texture set of two objects, save and reload, an old file without the slot. [H]
+  - [ ] [G] the look and the Show on Mesh preview on a real high and low poly.
