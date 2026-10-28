@@ -10,7 +10,7 @@ Sprints 0 to 8 are done and merged into `main`. Sprint 9 (export) is on `sprint-
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
 **Pending GUI checks** (one):
-- **Export**: in the Export panel pick each preset and see its file list change. Export with Unity URP or HDRP as PNG 8-bit and drop the files in Unity: the base color matches Blender's (not lighter or darker), metallic and smoothness behave, the normal map bumps the right way (OpenGL), and there are no dark seams at UV borders when the camera is far away (infinite dilation). Optional: Unreal (DirectX normal). Then Create Baked Material, assign `<Material> Baked` to a copy of the object: it looks like the Essence material in Material Preview.
+- **Create Baked Material**: press it, assign `<Material> Baked` to a copy of the object: it looks like the Essence material in Material Preview. (The Unity export was confirmed 2026-10-28.)
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -206,7 +206,8 @@ Decided with the user (2026-10-28): export the **selected material** only (the E
 - [x] Export panel: preset, its files, format, depth (with the nearest-depth note), resolution, dilation, folder, both buttons. [H] draws
 - [x] **Overwrite** checkbox (user request): off refuses an export that would replace a file (checked before baking), the file list marks existing files. [H]
 - [x] Fix (user's Unity check): the export read the last stored entry, a folder in the user's file, so color and MaskMap came out as the channel defaults; it reads the chain's top node now (`nodes.stack_top`). [H] `test_export_reads_the_stack_top_with_a_folder_last`, and checked on a copy of the user's file.
-- [ ] [G] Export in Unity (URP or HDRP) and look at the baked material in Blender (see Pending GUI checks).
+- [x] [G] Export in Unity (confirmed by the user, 2026-10-28, after the stack-top fix).
+- [ ] [G] The baked material in Blender (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
