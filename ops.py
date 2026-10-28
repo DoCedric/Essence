@@ -24,6 +24,60 @@ def _active(mat):
     return s.layers[s.active_index] if 0 <= s.active_index < len(s.layers) else None
 
 
+# A row's right-click menu sets its entry as this context pointer on its layout, so the menus
+# and operators opened from it work on that row instead of the active one (see `focus`).
+ENTRY_POINTER = "essence_entry"
+
+
+# Above zero while an operator from such a menu runs: the row is selected by then, and the
+# operators it calls (Add Generator calls Add Mask or Add Fill) work on the active entry.
+_running = 0
+
+
+def _pointer(context, mat):
+    if _running:
+        return None
+    e = getattr(context, ENTRY_POINTER, None)
+    try:
+        return e if e is not None and e.id_data == mat and e.uid else None
+    except ReferenceError:
+        return None
+
+
+def _target(context, mat):
+    """The entry a poll or menu is about: the right-clicked row, else the active entry."""
+    return _pointer(context, mat) or _active(mat)
+
+
+def focus(context):
+    """Select the right-clicked row before an operator from its menu runs, so the operator
+    (which works on the active entry) works on that row."""
+    mat = _material(context)
+    e = _pointer(context, mat) if mat is not None else None
+    if e is None:
+        return
+    s = mat.essence
+    i = next((i for i, x in enumerate(s.layers) if x.uid == e.uid), -1)
+    if i >= 0 and s.active_index != i:
+        s.active_index = i
+
+
+class focused:
+    """Run an operator from a row's menu: select the row, then ignore the pointer inside."""
+
+    def __init__(self, context):
+        self.context = context
+
+    def __enter__(self):
+        global _running
+        focus(self.context)
+        _running += 1
+
+    def __exit__(self, *exc):
+        global _running
+        _running -= 1
+
+
 def _active_mask(context):
     """The active entry when it has an image to paint: a mask, or a paint item."""
     mat = _material(context)
@@ -64,6 +118,10 @@ class _Base:
     def poll(cls, context):
         ob = context.active_object
         return ob is not None and ob.type == 'MESH'
+
+    def invoke(self, context, event):
+        with focused(context):
+            return self.execute(context)
 
 
 class ESSENCE_OT_add_layer(_Base, bpy.types.Operator):
@@ -221,7 +279,7 @@ class ESSENCE_OT_add_mask(_Base, bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        cur = _active(mat) if mat is not None else None
+        cur = _target(context, mat) if mat is not None else None
         owner = _owner(mat, cur) if cur is not None else None
         return owner is not None and not any(
             x.kind == 'MASK' and x.parent == owner.uid for x in mat.essence.layers)
@@ -333,7 +391,7 @@ class ESSENCE_OT_add_adjustment(_Base, bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        return mat is not None and _adjustment_owner(mat, _active(mat)) is not None
+        return mat is not None and _adjustment_owner(mat, _target(context, mat)) is not None
 
     def execute(self, context):
         mat = _material(context)
@@ -373,7 +431,7 @@ class ESSENCE_OT_add_paint(_Base, bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
+        owner = _adjustment_owner(mat, _target(context, mat)) if mat is not None else None
         return owner is not None and owner.kind == 'MASK'
 
     def execute(self, context):
@@ -423,7 +481,7 @@ class ESSENCE_OT_add_fill(_Base, bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
+        owner = _adjustment_owner(mat, _target(context, mat)) if mat is not None else None
         return owner is not None and owner.kind == 'MASK'
 
     def execute(self, context):
@@ -473,7 +531,7 @@ class ESSENCE_OT_add_filter(_Base, bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        return mat is not None and _adjustment_owner(mat, _active(mat)) is not None
+        return mat is not None and _adjustment_owner(mat, _target(context, mat)) is not None
 
     def execute(self, context):
         mat = _material(context)
@@ -892,7 +950,7 @@ class ESSENCE_OT_add_generator(_Base, bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         mat = _material(context)
-        return mat is not None and _active(mat) is not None
+        return mat is not None and _target(context, mat) is not None
 
     def execute(self, context):
         mat = _material(context)
@@ -924,7 +982,7 @@ class ESSENCE_MT_add_to(bpy.types.Menu):
     def draw(self, context):
         layout = self.layout
         mat = _material(context)
-        owner = _adjustment_owner(mat, _active(mat)) if mat is not None else None
+        owner = _adjustment_owner(mat, _target(context, mat)) if mat is not None else None
         _sub_menu(layout, "ESSENCE_MT_add_mask", "Mask", 'MOD_MASK',
                   ESSENCE_OT_add_mask.poll(context))
         layout.separator()

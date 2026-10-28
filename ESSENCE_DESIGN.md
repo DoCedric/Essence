@@ -549,6 +549,7 @@ All Blender UIList and panel features only.
 | **Per-row eye toggle for layers and folders** | ✅ | |
 | **Blend mode and opacity visible on the active layer** | ✅ opacity and the blend mode per channel in Layer Properties | |
 | Duplicate, copy/paste across materials (stack bar buttons; a row's menu by right-click or Shift+click: Rename, Duplicate, Copy, Paste, Delete) | ✅ verified headless and in the GUI | |
+| **Row menu with everything** (right-click a row's name, its color swatch or its eye; Shift+click): Rename, Duplicate, Copy, Paste, Save as Smart Material, the whole Add to Selected menu (Mask, Fill, Paint, Generator, Filters, Adjustments) for that row, New Layer / Paint Layer / Folder Above, Show on Mesh, Visible, Move Up / Down, Delete. Asked for by the user (2026-10-28). The menu sets its entry as the `essence_entry` context pointer, so the shared menus and polls ask about that row, and a menu item's `invoke` (`ops._Base`) selects the row before running; operators it calls inside (Add Generator calls Add Mask or Add Fill) see the active entry again. Replaces the separate Add White/Black Mask items | ✅ verified headless (the operators' focus step; menu items run invoke, which headless Blender skips), GUI check pending | |
 | Drag to reorder | ⬜ (UIList has no drag reorder in the API; arrows only) | P4 |
 | Multi-select | ⬜ (native UIList has none) | 🚫 |
 | Search/filter by name | native UIList filter | ⬜ | P3 |

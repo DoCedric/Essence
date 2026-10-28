@@ -10,7 +10,7 @@ Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and chann
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
 **Pending GUI checks** (one):
-- **Blend modes and channels**: on a layer over another, try a few new modes in a channel's blend dropdown (Overlay, Screen, Color Dodge on Color; Pin Light, Darken on Roughness): the result looks like the mode's name, and Hue/Saturation/Color/Value only appear on color channels. In the Material panel's Channels list switch on Specular, Specular Tint and Ambient Occlusion: each gets a row in Layer Properties. Paint or fill a dark Ambient Occlusion on a layer: the viewport darkens there (with or without a baked AO), the AO Strength slider fades it, and the channel's preview button shows it. Export PBR Maps: Specular, SpecularTint and AO files appear.
+- **Row menu**: select one layer, then right-click another layer's name: the menu has Mask, Fill, Paint, Generator, Filters, Adjustments, New Layer/Paint Layer/Folder Above, Show on Mesh, Visible, Move Up/Down. Pick Mask > Black Mask: the mask goes on the right-clicked layer (not the selected one). Right-click a mask: Generator > Edge Wear lands in that mask; Adjustments > Levels too. Right-click a layer's color swatch and its eye: the same menu appears under Blender's own items. Move Up from the menu moves that row.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -215,7 +215,9 @@ Decided with the user (2026-10-28): the P1 blend modes plus the Mix node's color
 - [x] **Specular** and **Specular Tint** channels (BSDF Specular IOR Level and Tint, off by default), in PBR Maps and the baked material. [H] `tests/test_specular_ao.py`
 - [x] **Ambient Occlusion** channel (off by default, white): times the AO mesh map, drives the overlay (also without a baked AO), exported as AO (PBR Maps, MaskMap green, ORM red), previewable. [H]
 - [x] Layer, Paint Layer, Folder and Smart Material as separate icon buttons on the bar again, the Add menu removed (user request). [H] `tests/test_add_menus.py`
-- [ ] [G] the new modes and channels in the GUI (see Pending GUI checks).
+- [x] [G] the new modes and channels in the GUI (confirmed 2026-10-28).
+- [x] **Row menu with everything** (user request): right-click a row's name, color swatch or eye for the Add to Selected items on that row, new entries above it, Show on Mesh, Visible, Move, plus the old items (`essence_entry` context pointer, `ops.focused`). [H] `tests/test_clipboard.py`
+- [ ] [G] the row menu in the GUI (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 11, Essence asset library (last):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).

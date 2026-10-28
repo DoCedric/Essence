@@ -251,26 +251,111 @@ def test_remove_entry_by_uid(addon):
     check(bpy.ops.essence.remove_entry(uid="nope") == {'CANCELLED'}, "unknown uid")
 
 
-def test_row_menu_adds_a_mask(addon):
+def _row_ops(addon, mat, e):
     from test_ui import Rec
+    log = []
+    addon.clipboard.draw_entry_menu(Rec(log), mat, e)
+    return log
+
+
+def test_row_menu_has_the_add_to_menu_for_that_row(addon):
     ob, mat = _rich_layer()
     base = next(e for e in mat.essence.layers if e.kind == 'LAYER' and e.name != "Rust")
+    for e in list(mat.essence.layers):
+        log = _row_ops(addon, mat, e)
+        check(("context_pointer_set", ("essence_entry", e), {}) in log,
+              f"{e.kind}: the menu points at its row")
+        check(any(c[0] == "menu_contents" and c[1][0] == "ESSENCE_MT_add_to" for c in log),
+              f"{e.kind}: the Add to Selected items")
+        ops_ = [c[1][0] for c in log if c[0] == "operator"]
+        check("essence.move_layer" in ops_ and "essence.remove_entry" in ops_,
+              f"{e.kind}: move and delete")
+        check(("essence.add_layer" in ops_) == (e.kind in ('LAYER', 'FOLDER')),
+              f"{e.kind}: new entries above layers and folders")
+        check(("essence.preview" in ops_) == (e.kind in ('LAYER', 'MASK')),
+              f"{e.kind}: Show on Mesh on layers and masks")
+        check(any(c[0] == "prop" and c[2].get("text") == "Visible" for c in log),
+              f"{e.kind}: the eye")
     uid = base.uid
-    log = []
-    addon.clipboard.draw_entry_menu(Rec(log), mat, base)
-    check(any(c[0] == "operator" and c[1][0] == "essence.add_mask_to" for c in log),
-          "a layer without a mask offers Add Mask")
-    log = []
-    addon.clipboard.draw_entry_menu(Rec(log), mat, _entry(mat, "Rust"))
-    check(not any(c[0] == "operator" and c[1][0] == "essence.add_mask_to" for c in log),
-          "a layer with a mask does not")
-    _select(mat, "Rust")                # another row is active: the menu's row gets the mask
-    check(bpy.ops.essence.add_mask_to(uid=uid, fill='BLACK') == {'FINISHED'}, "add failed")
+    rust_uid = _entry(mat, "Rust").uid
+    _select(mat, "Rust")                # another row is active: the menu's row gets the adds
+    ops = addon.ops
+
+    def from_menu_of(entry_uid):
+        e = next(x for x in mat.essence.layers if x.uid == entry_uid)
+        return bpy.context.temp_override(essence_entry=e)
+
+    # A menu item runs the operator's invoke, which first selects the menu's row. Headless
+    # Blender has no window and skips invoke, so the test runs the same two steps.
+    for cls in (ops.ESSENCE_OT_add_mask, ops.ESSENCE_OT_add_fill, ops.ESSENCE_OT_add_paint,
+                ops.ESSENCE_OT_add_generator, ops.ESSENCE_OT_add_filter,
+                ops.ESSENCE_OT_add_adjustment, ops.ESSENCE_OT_move_layer,
+                ops.ESSENCE_OT_add_layer, ops.ESSENCE_OT_add_folder,
+                ops.ESSENCE_OT_add_paint_layer, ops.ESSENCE_OT_preview):
+        check(cls.invoke is ops._Base.invoke, f"{cls.__name__} selects the menu's row first")
+
+    def run(op, **kw):
+        with ops.focused(bpy.context):
+            return op(**kw)
+
+    with from_menu_of(uid):
+        check(ops.ESSENCE_OT_add_mask.poll(bpy.context), "the poll asks about the base row")
+        check(run(bpy.ops.essence.add_mask, source='PAINT', fill='BLACK') == {'FINISHED'},
+              "add mask failed")
     masks = [e for e in mat.essence.layers if e.kind == 'MASK' and e.parent == uid]
     check(len(masks) == 1, f"one mask on the base layer: {len(masks)}")
-    check(mat.essence.layers[mat.essence.active_index].uid == masks[0].uid, "the mask is selected")
-    check(bpy.ops.essence.add_mask_to(uid=uid) == {'CANCELLED'}, "no second mask")
-    check(bpy.ops.essence.add_mask_to(uid="nope") == {'CANCELLED'}, "unknown uid")
+    rust_mask = next(e for e in mat.essence.layers if e.kind == 'MASK' and e.parent == rust_uid)
+    n_rust = sum(1 for e in mat.essence.layers if e.parent == rust_mask.uid)
+    with from_menu_of(uid):
+        check(not ops.ESSENCE_OT_add_mask.poll(bpy.context), "no second mask on that row")
+    # A generator from the Rust layer's menu goes onto Rust's mask, the base row selected.
+    mat.essence.active_index = [e.uid for e in mat.essence.layers].index(uid)
+    with from_menu_of(rust_uid):
+        gen = next(iter(addon.generators.GENERATORS))
+        check(run(bpy.ops.essence.add_generator, generator=gen) == {'FINISHED'},
+              "add generator failed")
+    rust_mask = next(e for e in mat.essence.layers if e.kind == 'MASK' and e.parent == rust_uid)
+    check(sum(1 for e in mat.essence.layers if e.parent == rust_mask.uid) == n_rust + 1,
+          "the generator is on the right-clicked layer's mask")
+    # An adjustment from the base layer's menu.
+    with from_menu_of(uid):
+        check(run(bpy.ops.essence.add_adjustment, adj_type='LEVELS') == {'FINISHED'},
+              "add adjustment failed")
+    check(any(e.kind == 'ADJUSTMENT' and e.parent == uid for e in mat.essence.layers),
+          "the adjustment is on the base layer")
+    # Move Up from the base layer's menu moves the base layer.
+    order = [e.uid for e in mat.essence.layers if not e.parent]
+    with from_menu_of(uid):
+        run(bpy.ops.essence.move_layer, direction='UP')
+    after = [e.uid for e in mat.essence.layers if not e.parent]
+    check(after.index(uid) > order.index(uid), "the right-clicked layer moved up")
+
+
+def test_right_click_on_a_rows_swatch_and_eye(addon):
+    from test_ui import Rec
+    ob, mat = _rich_layer()
+    clip = addon.clipboard
+    rust = _entry(mat, "Rust")
+    node = mat.node_tree.nodes[_entry(mat, "Rust").node_name]
+    base = next(e for e in mat.essence.layers if e.kind == 'LAYER' and e.name != "Rust")
+    base_node = mat.node_tree.nodes[base.node_name]
+    cases = (
+        (base_node.inputs["Color B"], "default_value", base.uid),
+        (node.inputs[addon.nodes.VISIBLE], "default_value", rust.uid),
+        (node.inputs["Roughness B"], "default_value", None),        # not a row button
+    )
+    for ptr, prop, want in cases:
+        ctx = SimpleNamespace(active_object=ob, button_operator=None, button_pointer=ptr,
+                              button_prop=ptr.bl_rna.properties[prop])
+        got = clip._row_entry(ctx, mat)
+        check((got.uid if got is not None else None) == want, f"{ptr.name}: {got}")
+        log = []
+        clip._button_menu(SimpleNamespace(layout=Rec(log)), ctx)
+        check(bool(log) == (want is not None), f"{ptr.name}: menu shown {bool(log)}")
+    item = next(e for e in mat.essence.layers if e.kind == 'ADJUSTMENT')
+    ctx = SimpleNamespace(active_object=ob, button_operator=None, button_pointer=item,
+                          button_prop=item.bl_rna.properties["adj_enabled"])
+    check(clip._row_entry(ctx, mat) == item, "an item's eye")
 
 
 def test_row_menus_draw(addon):

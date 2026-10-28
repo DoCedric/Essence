@@ -15,9 +15,10 @@ as it is at that moment.
 """
 
 import bpy
-from bpy.props import EnumProperty, StringProperty
+from bpy.props import StringProperty
 
 from . import filters, nodes, sources, stack
+from .ops import ENTRY_POINTER
 from .persist import PAINT_KEY
 from .sources import SRC_KEY
 
@@ -380,46 +381,51 @@ class ESSENCE_OT_remove_entry(_EntryOp, bpy.types.Operator):
         return bpy.ops.essence.remove_layer()
 
 
-class ESSENCE_OT_add_mask_to(_EntryOp, bpy.types.Operator):
-    bl_idname = "essence.add_mask_to"
-    bl_label = "Add Mask"
-    bl_description = "Add a mask to this layer or folder"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    fill: EnumProperty(
-        name="Fill",
-        items=[('WHITE', "White (reveals)", "Layer is fully visible until erased"),
-               ('BLACK', "Black (hides)", "Hides the layer until painted")],
-        default='WHITE')
-
-    def execute(self, context):
-        s = _material(context).essence
-        i = next((i for i, e in enumerate(s.layers) if e.uid == self.uid), -1)
-        if i < 0:
-            return {'CANCELLED'}
-        s.active_index = i
-        if not bpy.ops.essence.add_mask.poll():
-            return {'CANCELLED'}
-        return bpy.ops.essence.add_mask(source='PAINT', fill=self.fill)
+def _visible_toggle(mat, e):
+    """(data, property) of the row's eye, or None."""
+    if e.kind in ('ADJUSTMENT', 'FILL', 'FILTER'):
+        return e, "adj_enabled"
+    node = mat.node_tree.nodes.get(e.node_name) if mat.node_tree is not None else None
+    if node is None:
+        return None
+    sock = node.inputs.get(nodes.MASK_ENABLE if e.kind == 'MASK' else nodes.VISIBLE)
+    return (sock, "default_value") if sock is not None else None
 
 
 def draw_entry_menu(layout, mat, e):
-    """What the right-click and Shift+click menu of a row offers for entry `e`."""
+    """What the right-click and Shift+click menu of a row offers for entry `e`: everything
+    the stack bar and the Add to Selected menu do, on this row. The entry is set as a context
+    pointer, so the Add to Selected items (shared with the bar's menu) and the operators
+    work on this row even when another one is selected (see `ops.focus`)."""
+    layout.context_pointer_set(ENTRY_POINTER, e)
     layout.operator_context = 'INVOKE_DEFAULT'
     layout.operator("essence.rename_entry", icon='GREASEPENCIL').uid = e.uid
     if e.kind in OWNER_KINDS:
         layout.operator("essence.duplicate", icon='DUPLICATE').uid = e.uid
         layout.operator("essence.copy", icon='COPYDOWN').uid = e.uid
     layout.operator("essence.paste", icon='PASTEDOWN').uid = e.uid
-    if e.kind in OWNER_KINDS and not any(
-            x.kind == 'MASK' and x.parent == e.uid for x in mat.essence.layers):
-        layout.separator()
-        for fill, text, icon in (('WHITE', "Add White Mask", 'IMAGE_ALPHA'),
-                                 ('BLACK', "Add Black Mask", 'MOD_MASK')):
-            op = layout.operator("essence.add_mask_to", text=text, icon=icon)
-            op.uid, op.fill = e.uid, fill
     if e.kind in OWNER_KINDS:
         layout.operator("essence.save_smart_material", icon='ASSET_MANAGER').uid = e.uid
+    layout.separator()
+    layout.menu_contents("ESSENCE_MT_add_to")
+    if e.kind in OWNER_KINDS:
+        layout.separator()
+        layout.operator("essence.add_layer", text="New Layer Above", icon='ADD')
+        layout.operator("essence.add_paint_layer", text="New Paint Layer Above",
+                        icon='BRUSH_DATA')
+        layout.operator("essence.add_folder", text="New Folder Above", icon='NEWFOLDER')
+    layout.separator()
+    if e.kind in ('LAYER', 'MASK'):
+        from . import preview
+        on = preview.active(mat) == (e.kind, e.uid)
+        op = layout.operator("essence.preview", text="Stop Showing" if on else "Show on Mesh",
+                             icon='SHADING_TEXTURE')
+        op.kind, op.ident = e.kind, e.uid
+    toggle = _visible_toggle(mat, e)
+    if toggle is not None:
+        layout.prop(*toggle, text="Visible")
+    layout.operator("essence.move_layer", text="Move Up", icon='TRIA_UP').direction = 'UP'
+    layout.operator("essence.move_layer", text="Move Down", icon='TRIA_DOWN').direction = 'DOWN'
     layout.separator()
     layout.operator("essence.remove_entry", icon='X').uid = e.uid
 
@@ -436,13 +442,30 @@ class ESSENCE_MT_entry(bpy.types.Menu):
         draw_entry_menu(self.layout, mat, s.layers[s.active_index])
 
 
-def _button_menu(self, context):
-    """Blender's right-click menu of a button: the row's own options on a stack row."""
+def _row_entry(context, mat):
+    """The stack entry whose row has the right-clicked button: its name (the select button),
+    its color swatch or its eye, or None for any other button."""
     op = getattr(context, "button_operator", None)
-    if op is None or op.bl_rna.identifier != "ESSENCE_OT_select_entry":
-        return
+    if op is not None:
+        return _entry(mat, op.uid) if op.bl_rna.identifier == "ESSENCE_OT_select_entry" else None
+    ptr = getattr(context, "button_pointer", None)
+    prop = getattr(context, "button_prop", None)
+    if ptr is None or prop is None:
+        return None
+    if isinstance(ptr, bpy.types.PropertyGroup) and ptr.id_data == mat:
+        # An item's eye or a row's fold triangle: the entry itself.
+        return ptr if prop.identifier in ("adj_enabled", "collapsed") else None
+    if isinstance(ptr, bpy.types.NodeSocket) and ptr.id_data == mat.node_tree and (
+            ptr.name in ("Color B", nodes.VISIBLE, nodes.MASK_ENABLE)):
+        return next((e for e in mat.essence.layers if e.node_name == ptr.node.name), None)
+    return None
+
+
+def _button_menu(self, context):
+    """Blender's right-click menu of a button: the row's own options on a stack row (its
+    name, its color swatch or its eye)."""
     mat = _material(context)
-    e = _entry(mat, op.uid)
+    e = _row_entry(context, mat) if mat is not None and mat.node_tree is not None else None
     if e is None:
         return
     self.layout.separator()
@@ -450,7 +473,7 @@ def _button_menu(self, context):
 
 
 classes = (ESSENCE_OT_duplicate, ESSENCE_OT_copy, ESSENCE_OT_paste, ESSENCE_OT_remove_entry,
-           ESSENCE_OT_add_mask_to, ESSENCE_MT_entry)
+           ESSENCE_MT_entry)
 
 
 def register():
