@@ -8,7 +8,7 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
-from harness import check, make_plane
+from harness import check, close, make_plane
 
 
 def _strip():
@@ -169,4 +169,13 @@ def test_fill_controls_draw_while_painting(addon):
     bpy.ops.essence.paint_mask()
     log = _draw(ui._adjustment, ob)
     check(any(c[0] == "operator" and c[1][0] == "essence.fill" for c in log), "Fill on a paint item")
-    check(any(c[0] == "prop" and c[1][1] == "essence_fill_color" for c in log), "and the color")
+    check(any(c[0] == "prop" and c[1][1] == "color" for c in log), "and the brush color")
+    paint = bpy.context.tool_settings.image_paint
+    ups = paint.unified_paint_settings
+    for unified in (False, True):
+        ups.use_unified_color = unified
+        owner = addon.fill.paint_color(paint)
+        check(owner == (ups if unified else paint.brush), f"unified {unified}: {owner}")
+        owner.color = (0.25, 0.5, 0.75)
+        want = ups.color if unified else paint.brush.color
+        close(want[1], 0.5, 1e-6, "Fill's color is the brush's first color")

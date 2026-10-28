@@ -182,7 +182,8 @@ def modal_case(ob, win, area, region):
     try:
         img = mask_image(ob)
         reset(img)
-        bpy.context.scene.essence_fill_color = (1.0, 1.0, 1.0)
+        addon_fill = sys.modules["essence.fill"]
+        addon_fill.paint_color(bpy.context.tool_settings.image_paint).color = (1.0, 1.0, 1.0)
         rv3d = area.spaces.active.region_3d
         face, center = top_of(ob, 1)
         co = view3d_utils.location_3d_to_region_2d(region, rv3d, ob.matrix_world @ center)

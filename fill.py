@@ -1,6 +1,6 @@
 """Fill modes for Texture Paint: click a part of the model and Blender's own Fill tool fills
 the whole connected piece (Mesh), the UV island, the single face, or every face of the
-material (Full) with one color.
+material (Full) with the brush color (its first color, the one in the header).
 
 Essence never fills pixels itself. It selects the faces of the mode, turns on Blender's face
 selection masking and runs one click of the native Fill brush at the mouse; the Fill tool in
@@ -12,7 +12,7 @@ was clicked: in Material paint mode every face paints into its own material's ac
 
 import bpy
 import numpy as np
-from bpy.props import EnumProperty, FloatVectorProperty
+from bpy.props import EnumProperty
 from mathutils.bvhtree import BVHTree
 
 from . import bake
@@ -102,6 +102,13 @@ def activate_brush(library_type, library_id, relative):
                                  relative_asset_identifier=relative)
 
 
+def paint_color(paint):
+    """What holds the color the brush paints with (its first color): the unified color when
+    it is on, else the active brush. Fill paints that color, so the two never disagree."""
+    ups = paint.unified_paint_settings
+    return ups if ups.use_unified_color or paint.brush is None else paint.brush
+
+
 def fill(context, ob, faces, coord, color):
     """Fill `faces` (a bool array over the polygons) with `color` by one click of the native
     Fill brush at `coord` (pixels in the 3D view region of `context`), and put back what the
@@ -164,7 +171,7 @@ def running():
 class ESSENCE_OT_fill(bpy.types.Operator):
     bl_idname = "essence.fill"
     bl_label = "Fill"
-    bl_description = ("Click parts of the model to fill them with the fill color: the connected "
+    bl_description = ("Click parts of the model to fill them with the brush color: the connected "
                       "mesh, the UV island, the face or every face. Press the lit mode again, "
                       "right-click or Esc to stop")
     # No UNDO: every click is a stroke of Blender's paint operator, which is its own undo step.
@@ -234,7 +241,8 @@ class ESSENCE_OT_fill(bpy.types.Operator):
         scene = context.scene
         faces = faces_for_mode(ob.data, face, scene.essence_fill_mode)
         with context.temp_override(area=area, region=region):
-            fill(bpy.context, ob, faces, coord, scene.essence_fill_color)
+            fill(bpy.context, ob, faces, coord,
+                 tuple(paint_color(scene.tool_settings.image_paint).color))
         return {'RUNNING_MODAL'}
 
 
@@ -251,7 +259,8 @@ def draw(layout, context):
     on = running() is not None
     box.label(text="Fill: click a mode, then the model" if not on else
               "Filling: click parts of the model", icon='BRUSH_DATA')
-    box.prop(context.scene, "essence_fill_color", text="Color")
+    # The brush's own color, the one in the header: Fill paints with it.
+    box.prop(paint_color(context.scene.tool_settings.image_paint), "color", text="Brush Color")
     row = box.row(align=True)
     for mode, name, _desc in FILL_MODES:
         row.operator("essence.fill", text=name,
@@ -265,14 +274,9 @@ def register():
     S = bpy.types.Scene
     S.essence_fill_mode = EnumProperty(name="Fill Mode", items=FILL_MODES, default='MESH',
                                        description="What a click of Fill covers (the last mode used)")
-    S.essence_fill_color = FloatVectorProperty(
-        name="Fill Color", subtype='COLOR_GAMMA', size=3, min=0.0, max=1.0,
-        default=(1.0, 1.0, 1.0),
-        description="The color Fill paints (on a mask or paint item: white reveals, black hides)")
     bpy.utils.register_class(ESSENCE_OT_fill)
 
 
 def unregister():
     bpy.utils.unregister_class(ESSENCE_OT_fill)
-    del bpy.types.Scene.essence_fill_color
     del bpy.types.Scene.essence_fill_mode

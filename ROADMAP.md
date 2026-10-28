@@ -9,8 +9,7 @@ Sprints 0 to 7 are done and merged into `main`. Sprint 8 is on `sprint-8-paint-l
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks** (one):
-- **Paint layers**: Add > Paint Layer over a colored layer: nothing changes until painted, the row has a brush icon. In its panel, the Paint box: click Color, paint red with a soft brush: red appears only where painted, soft edges blend into the layer below with no light or dark fringe, and the red looks like the brush color (not lighter or darker). Click Roughness: the Color button goes dark and Roughness lights; paint grey 0.9 and the reflections blur only there. Fill modes in the box (UV Island, Face) fill the lit channel. Exit Paint Mode. Save, reopen: the paint is there.
+**Pending GUI checks**: none (paint layers confirmed 2026-10-28).
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -190,7 +189,8 @@ Decided with the user (2026-10-28): a paint layer is a layer whose channels use 
 - [x] **Add > Paint Layer** (`essence.add_paint_layer`), brush icon on the row, Paint box with Exit and the fill modes in the layer panel. [H] draws
 - [x] Fix: copying an entry whose source remembers no image crashed after a reload (an unset pointer reads as `{}`), and nested pointers were turned into dicts (`clipboard._plain`). [H]
 - [x] **Add White/Black Mask in a row's right-click menu** (`essence.add_mask_to`), on layers and folders without a mask. [H] `tests/test_clipboard.py`
-- [ ] [G] paint layers in the GUI (see Pending GUI checks).
+- [x] [G] paint layers in the GUI (confirmed 2026-10-28).
+- [x] **Fill paints the brush color** (its first color), shown in the Fill box; the separate fill color is gone (user request after the GUI check). [H] `tests/test_fill.py`
 - [ ] Texture set settings: a list of the texture sets (materials) with their resolution.
 
 ## Later sprints (outline, to be detailed)
