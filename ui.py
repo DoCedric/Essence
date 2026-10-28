@@ -1,3 +1,5 @@
+import os
+
 import bpy
 
 from .channels import BY_ID, CHANNELS, MASK_SOURCE, active_channels
@@ -789,7 +791,11 @@ def _export(self, context):
     files = (export.plan(preset, mat) if mat is not None
              else [(f, f.a) for f in preset.files if f.needs is None])
     for f, _alpha in files:
-        col.label(text=f"{mat.name if mat else '<Material>'}_{f.suffix}", icon='IMAGE_DATA')
+        # A file that is there already: replaced with Overwrite, else the export is refused.
+        there = mat is not None and os.path.exists(export.file_path(scene, mat, f))
+        col.label(text=f"{mat.name if mat else '<Material>'}_{f.suffix}"
+                  + (" (exists)" if there else ""), icon='ERROR' if there and not
+                  scene.essence_export_overwrite else 'IMAGE_DATA')
     col = layout.column(align=True)
     col.prop(scene, "essence_export_format", text="Format")
     row = col.row(align=True)
@@ -804,6 +810,7 @@ def _export(self, context):
     if scene.essence_export_dilation == 'PIXELS':
         col.prop(scene, "essence_export_padding", text="Pixels")
     layout.prop(scene, "essence_export_dir", text="Folder")
+    layout.prop(scene, "essence_export_overwrite")
     layout.operator("essence.export", icon='EXPORT')
     layout.separator()
     layout.operator("essence.bake_material", icon='MATERIAL')

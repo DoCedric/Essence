@@ -22,8 +22,10 @@ def _setup(color=(0.2, 0.4, 0.6, 1.0), rough=0.3, metal=0.8):
     return ob, mat, node
 
 
-def _export(folder, preset, fmt='PNG', depth='8', dilation='INFINITE', padding=4):
+def _export(folder, preset, fmt='PNG', depth='8', dilation='INFINITE', padding=4,
+            overwrite=True):
     sc = bpy.context.scene
+    sc.essence_export_overwrite = overwrite
     sc.essence_export_preset = preset
     sc.essence_export_format = fmt
     sc.essence_export_depth = depth
@@ -233,6 +235,39 @@ def test_baked_material(addon):
     check(len([m for m in bpy.data.materials if m.name.startswith(f"{mat.name} Baked")]) == 1,
           "one baked material")
     check(len(bpy.data.images) == n_images, f"no extra images: {len(bpy.data.images)} vs {n_images}")
+
+
+def test_overwrite(addon):
+    from test_ui import _draw
+    from essence import ui
+    ob, mat, node = _setup()
+    stem = bpy.path.clean_name(mat.name)
+    folder = tempfile.mkdtemp(prefix="essence_export_")
+    try:
+        check(_export(folder, 'UNITY_HDRP', overwrite=False) == {'FINISHED'},
+              "a first export needs no Overwrite")
+        rough = os.path.join(folder, f"{stem}_MaskMap.png")
+        stamp = os.path.getmtime(rough)
+        node.inputs["Metallic B"].default_value = 0.1
+        log = _draw(ui._export, ob)
+        check(any(c[0] == "label" and c[2].get("icon") == 'ERROR' and "(exists)" in
+                  c[2].get("text", "") for c in log), "the panel marks the files that exist")
+        check(any(c[0] == "prop" and c[1][1] == "essence_export_overwrite" for c in log),
+              "the Overwrite checkbox")
+        try:
+            res = _export(folder, 'UNITY_HDRP', overwrite=False)
+        except RuntimeError as e:           # background mode raises on an ERROR report
+            res = str(e)
+        check(res != {'FINISHED'} and "Overwrite" in str(res), f"refused: {res}")
+        check(os.path.getmtime(rough) == stamp, "the file is untouched")
+        close(_load(rough)[256, 256, 0], 0.8, 0.003, "still the old metal")
+        check(_export(folder, 'UNITY_HDRP', overwrite=True) == {'FINISHED'}, "overwrite")
+        close(_load(rough)[256, 256, 0], 0.1, 0.003, "replaced: the new metal")
+        log = _draw(ui._export, ob)
+        check(not any(c[0] == "label" and c[2].get("icon") == 'ERROR' for c in log),
+              "with Overwrite on, existing files are no warning")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def test_export_panel_draws(addon):

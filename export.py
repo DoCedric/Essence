@@ -15,7 +15,7 @@ from collections import namedtuple
 
 import bpy
 import numpy as np
-from bpy.props import EnumProperty, IntProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
 from .bake import _emission_override, other_targets, set_if_changed, temp_target, texture_set
 from . import filters, nodes
@@ -314,6 +314,13 @@ def output_scene():
     return scene
 
 
+def file_path(scene, mat, f):
+    """Where file `f` of `mat` is written with the scene's export settings."""
+    return os.path.join(bpy.path.abspath(scene.essence_export_dir),
+                        f"{bpy.path.clean_name(mat.name)}_{f.suffix}"
+                        f".{_fmt(scene.essence_export_format)[3]}")
+
+
 def _objects(context, mat):
     """The texture set's objects with a UV map, the active object first, or an error."""
     obj = context.active_object
@@ -360,8 +367,14 @@ class ESSENCE_OT_export(bpy.types.Operator):
         except OSError as e:
             self.report({'ERROR'}, f"Cannot create export folder: {e}")
             return {'CANCELLED'}
-        stem = bpy.path.clean_name(mat.name)
         files = plan(preset, mat)
+        existing = [os.path.basename(file_path(scene, mat, f)) for f, _a in files
+                    if os.path.exists(file_path(scene, mat, f))]
+        if existing and not scene.essence_export_overwrite:
+            # Checked before baking, so nothing is spent on an export that is refused.
+            self.report({'ERROR'}, f"{', '.join(existing)} already exist: tick Overwrite to "
+                        "replace them")
+            return {'CANCELLED'}
         baker = Baker(context, mat, size, _dilation(scene))
         out_scene = None
         written = []
@@ -370,7 +383,7 @@ class ESSENCE_OT_export(bpy.types.Operator):
             out_scene = output_scene()
             for f, alpha in files:
                 px, mode = compose(baker, f, alpha, encode_srgb=fmt != 'OPEN_EXR')
-                path = os.path.join(folder, f"{stem}_{f.suffix}.{_fmt(fmt)[3]}")
+                path = file_path(scene, mat, f)
                 save(out_scene, px, size, path, fmt, depth, mode)
                 written.append(os.path.basename(path))
         except Exception as e:  # noqa: BLE001
@@ -531,6 +544,10 @@ def register():
     S.essence_export_padding = IntProperty(
         name="Pixels", default=16, min=1, max=256, subtype='PIXEL',
         description="How far the islands are continued")
+    S.essence_export_overwrite = BoolProperty(
+        name="Overwrite", default=False,
+        description="Replace files that already exist. Off: an export that would replace a "
+                    "file is refused")
     S.essence_export_dir = StringProperty(
         name="Folder", subtype='DIR_PATH', default="//Export/",
         description="Where the textures are written. // is relative to the .blend file")
@@ -544,5 +561,5 @@ def unregister():
     S = bpy.types.Scene
     for p in ("essence_export_preset", "essence_export_format", "essence_export_depth",
               "essence_export_size", "essence_export_dilation", "essence_export_padding",
-              "essence_export_dir"):
+              "essence_export_overwrite", "essence_export_dir"):
         delattr(S, p)

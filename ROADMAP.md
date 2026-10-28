@@ -5,7 +5,7 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-28)
-Sprints 0 to 8 are done and merged into `main`. Sprint 9 (export) is on `sprint-9-export`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 369/369 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 8 are done and merged into `main`. Sprint 9 (export) is on `sprint-9-export`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 370/370 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
@@ -204,6 +204,7 @@ Decided with the user (2026-10-28): export the **selected material** only (the E
 - [x] **Dilation**: every map baked without margin and dilated from one coverage bake, Infinite or Pixels (`filters.dilate`). [H]
 - [x] **Create Baked Material** (`essence.bake_material`): `<Material> Baked`, packed images, not assigned, updated in place. [H]
 - [x] Export panel: preset, its files, format, depth (with the nearest-depth note), resolution, dilation, folder, both buttons. [H] draws
+- [x] **Overwrite** checkbox (user request): off refuses an export that would replace a file (checked before baking), the file list marks existing files. [H]
 - [ ] [G] Export in Unity (URP or HDRP) and look at the baked material in Blender (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)
