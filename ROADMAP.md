@@ -5,12 +5,11 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-28)
-Sprints 0 to 8 are done and merged into `main`. Sprint 9 (export) is on `sprint-9-export`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 371/371 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 371/371 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks** (one):
-- **Create Baked Material**: press it, assign `<Material> Baked` to a copy of the object: it looks like the Essence material in Material Preview. (The Unity export was confirmed 2026-10-28.)
+**Pending GUI checks**: none (the baked material confirmed 2026-10-28).
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -207,7 +206,7 @@ Decided with the user (2026-10-28): export the **selected material** only (the E
 - [x] **Overwrite** checkbox (user request): off refuses an export that would replace a file (checked before baking), the file list marks existing files. [H]
 - [x] Fix (user's Unity check): the export read the last stored entry, a folder in the user's file, so color and MaskMap came out as the channel defaults; it reads the chain's top node now (`nodes.stack_top`). [H] `test_export_reads_the_stack_top_with_a_folder_last`, and checked on a copy of the user's file.
 - [x] [G] Export in Unity (confirmed by the user, 2026-10-28, after the stack-top fix).
-- [ ] [G] The baked material in Blender (see Pending GUI checks).
+- [x] [G] The baked material in Blender (confirmed 2026-10-28; the reflections were not exactly the same, see Future updates: baked normal check).
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
@@ -215,6 +214,8 @@ Decided with the user (2026-10-28): export the **selected material** only (the E
 
 ## Future updates (not scheduled)
 Features moved out of the sprints by the user. They wait here until a user asks for one; the most requested goes first.
+
+- [ ] **Baked normal check** (user, 2026-10-28): the reflections of `<Material> Baked` were not exactly the same as the Essence material's. Compare the exported/baked normal with the live one (tangent space and UV map used by the Normal Map node, the bump strength and distance baked into it, 8-bit precision of the normal image, Non-Color) and the roughness.
 
 - [ ] **Height from mesh** (designed, see "Height from mesh" in the design doc; three decisions are open, Open Question 12). A new Mesh Maps slot `HEIGHT`, a bake entry with a thumbnail, a Range setting. Plan:
   - [ ] Decide with the user: method (position delta, recommended, or Ray Length), Range (automatic by default, recommended), and that the slot does not feed the Bump node (recommended). [ask]
