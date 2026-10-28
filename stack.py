@@ -196,20 +196,26 @@ def adjustment_entries(layers, owner_uid):
     return [e for e in layers if e.kind in ITEM_KINDS and e.parent == owner_uid]
 
 
-def remove_entries(layers, uid):
-    """Remove an entry and what it owns. A folder's layers and folders are kept and move up
-    into the folder's own parent. Returns the removed entries' (node_name, mask_node_name) pairs so the caller can
-    delete their nodes."""
+def remove_entries(layers, uid, ungroup=False):
+    """Remove an entry and everything under it: a layer's masks and items, a folder's whole
+    content. With `ungroup`, a folder's layers and folders are kept instead and move up into
+    the folder's own parent. Returns the removed entries' (node_name, mask_node_name) pairs
+    so the caller can delete their nodes."""
     target = next(e for e in layers if e.uid == uid)
     doomed = {uid}
-    if target.kind in ('LAYER', 'FOLDER'):
+    if target.kind == 'FOLDER' and ungroup:
         doomed.update(e.uid for e in layers if e.kind == 'MASK' and e.parent == uid)
-    # What the doomed layers and masks own: their adjustments.
-    doomed.update(e.uid for e in layers if e.kind in ITEM_KINDS and e.parent in doomed)
-    if target.kind == 'FOLDER':
+        doomed.update(e.uid for e in layers if e.kind in ITEM_KINDS and e.parent in doomed)
         for e in layers:
             if e.kind in ('LAYER', 'FOLDER') and e.parent == uid:
                 e.parent = target.parent
+    else:
+        # Every descendant, through any depth of folders, masks and items.
+        grew = True
+        while grew:
+            more = {e.uid for e in layers if e.parent in doomed} - doomed
+            doomed |= more
+            grew = bool(more)
     nodes = []
     for i in range(len(layers) - 1, -1, -1):
         if layers[i].uid in doomed:

@@ -67,7 +67,7 @@ def test_folder_and_moves(addon):
     bpy.ops.essence.move_layer(direction='UP')
     _validate(addon, mat)
     _select(mat, "Folder 1")
-    bpy.ops.essence.remove_layer()
+    bpy.ops.essence.remove_layer(ungroup=True)
     _validate(addon, mat)
     check(all(e.parent == "" for e in layers), "layers not ungrouped")
     check(sum(1 for e in layers if e.kind == 'FOLDER') == 0, "folder not removed")

@@ -10,7 +10,7 @@ Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and chann
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
 **Pending GUI checks** (one):
-- **Row menu**: select one layer, then right-click another layer's name: the menu has Mask, Fill, Paint, Generator, Filters, Adjustments, New Layer/Paint Layer/Folder Above, Show on Mesh, Visible, Move Up/Down. Pick Mask > Black Mask: the mask goes on the right-clicked layer (not the selected one). Right-click a mask: Generator > Edge Wear lands in that mask; Adjustments > Levels too. Right-click a layer's color swatch and its eye: the same menu appears under Blender's own items. Move Up from the menu moves that row.
+- **Row menu**: select one layer, then right-click another layer's name: the menu has Mask, Fill, Paint, Generator, Filters, Adjustments, New Layer/Paint Layer/Folder Above, Show on Mesh, Visible, Move Up/Down. Pick Mask > Black Mask: the mask goes on the right-clicked layer (not the selected one). Right-click a mask: Generator > Edge Wear lands in that mask; Adjustments > Levels too. Right-click a layer's color swatch and its eye: the same menu appears under Blender's own items. Move Up from the menu moves that row. Delete a folder: its layers go with it (Ctrl+Z brings them back); Ungroup on a folder keeps them.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -217,6 +217,7 @@ Decided with the user (2026-10-28): the P1 blend modes plus the Mix node's color
 - [x] Layer, Paint Layer, Folder and Smart Material as separate icon buttons on the bar again, the Add menu removed (user request). [H] `tests/test_add_menus.py`
 - [x] [G] the new modes and channels in the GUI (confirmed 2026-10-28).
 - [x] **Row menu with everything** (user request): right-click a row's name, color swatch or eye for the Add to Selected items on that row, new entries above it, Show on Mesh, Visible, Move, plus the old items (`essence_entry` context pointer, `ops.focused`). [H] `tests/test_clipboard.py`
+- [x] **Deleting a folder deletes its content** (user request); **Ungroup** in the folder's menu keeps the old behaviour (`essence.ungroup`). [H] `tests/test_folders.py`
 - [ ] [G] the row menu in the GUI (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)

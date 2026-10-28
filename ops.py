@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import EnumProperty, IntProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
 from . import (adjustments, curvature, filters, generators, gizmo, nodes, preview, sources,
                stack)
@@ -192,9 +192,11 @@ class ESSENCE_OT_add_folder(_Base, bpy.types.Operator):
 class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
     bl_idname = "essence.remove_layer"
     bl_label = "Remove"
-    bl_description = ("Remove the active layer or mask. Removing a folder ungroups what is "
-                      "inside it. A layer or folder takes its masks with it")
+    bl_description = ("Remove the active entry with everything in it: a layer's masks, a "
+                      "folder's layers and folders. (Ungroup in a folder's menu keeps them)")
     bl_options = {'REGISTER', 'UNDO'}
+
+    ungroup: BoolProperty(options={'HIDDEN', 'SKIP_SAVE'})  # a folder: keep its content
 
     @classmethod
     def poll(cls, context):
@@ -210,7 +212,7 @@ class ESSENCE_OT_remove_layer(_Base, bpy.types.Operator):
             return {'CANCELLED'}
         tree = mat.node_tree
         adjusted = e.parent if e.kind in stack.ITEM_KINDS else ""
-        for names in stack.remove_entries(s.layers, e.uid):
+        for names in stack.remove_entries(s.layers, e.uid, ungroup=self.ungroup):
             for n in names:
                 node = tree.nodes.get(n) if n else None
                 if node is not None:

@@ -367,8 +367,8 @@ def paste_target(context, uid=""):
 class ESSENCE_OT_remove_entry(_EntryOp, bpy.types.Operator):
     bl_idname = "essence.remove_entry"
     bl_label = "Delete"
-    bl_description = ("Remove this entry. Removing a folder ungroups what is inside it; a "
-                      "layer or folder takes its masks with it")
+    bl_description = ("Remove this entry with everything in it: a layer's masks, a "
+                      "folder's layers and folders")
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -379,6 +379,24 @@ class ESSENCE_OT_remove_entry(_EntryOp, bpy.types.Operator):
             return {'CANCELLED'}
         s.active_index = i
         return bpy.ops.essence.remove_layer()
+
+
+class ESSENCE_OT_ungroup(_EntryOp, bpy.types.Operator):
+    bl_idname = "essence.ungroup"
+    bl_label = "Ungroup"
+    bl_description = ("Remove this folder and its mask but keep its layers and folders, moved "
+                      "up into its place")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        mat = _material(context)
+        s = mat.essence
+        i = next((i for i, e in enumerate(s.layers)
+                  if e.uid == self.uid and e.kind == 'FOLDER'), -1)
+        if i < 0:
+            return {'CANCELLED'}
+        s.active_index = i
+        return bpy.ops.essence.remove_layer(ungroup=True)
 
 
 def _visible_toggle(mat, e):
@@ -427,6 +445,8 @@ def draw_entry_menu(layout, mat, e):
     layout.operator("essence.move_layer", text="Move Up", icon='TRIA_UP').direction = 'UP'
     layout.operator("essence.move_layer", text="Move Down", icon='TRIA_DOWN').direction = 'DOWN'
     layout.separator()
+    if e.kind == 'FOLDER':
+        layout.operator("essence.ungroup", icon='FILE_FOLDER').uid = e.uid
     layout.operator("essence.remove_entry", icon='X').uid = e.uid
 
 
@@ -473,7 +493,7 @@ def _button_menu(self, context):
 
 
 classes = (ESSENCE_OT_duplicate, ESSENCE_OT_copy, ESSENCE_OT_paste, ESSENCE_OT_remove_entry,
-           ESSENCE_MT_entry)
+           ESSENCE_OT_ungroup, ESSENCE_MT_entry)
 
 
 def register():

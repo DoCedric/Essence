@@ -183,15 +183,32 @@ def test_folders_move_in_and_out_of_folders(addon):
     check(_entry(mat, "Base").parent == "", f"and back out: {_order(mat)}")
 
 
-def test_removing_a_nested_folder_keeps_its_content_in_the_parent(addon):
+def test_ungrouping_a_nested_folder_keeps_its_content_in_the_parent(addon):
     ob, mat = _base()
     _folder(mat, "Outer")
     _folder(mat, "Inner", inside="Outer")
     _layer(mat, 0.8, "L")
-    _select(mat, "Inner")
-    bpy.ops.essence.remove_layer()
+    check(bpy.ops.essence.ungroup(uid=_entry(mat, "Inner").uid) == {'FINISHED'}, "ungroup")
     check(_entry(mat, "L").parent == _entry(mat, "Outer").uid, f"L is in Outer: {_order(mat)}")
     close(_rough(ob, mat), 0.8, 0.02, "and still shows")
+    check(bpy.ops.essence.ungroup(uid=_entry(mat, "L").uid) == {'CANCELLED'},
+          "only folders ungroup")
+
+
+def test_deleting_a_folder_deletes_everything_in_it(addon):
+    ob, mat = _base()                                   # Base, roughness 0.2
+    _folder(mat, "Outer")
+    _mask(mat, 0.5)
+    _folder(mat, "Inner", inside="Outer")
+    _layer(mat, 0.8, "L")
+    _mask(mat, 1.0)
+    bpy.ops.essence.add_adjustment(adj_type='LEVELS')
+    names = {e.node_name for e in mat.essence.layers if e.name != "Base" and e.node_name}
+    check(bpy.ops.essence.remove_entry(uid=_entry(mat, "Outer").uid) == {'FINISHED'}, "delete")
+    left = [(e.kind, e.name) for e in mat.essence.layers]
+    check(left == [('LAYER', "Base")], f"only Base is left: {left}")
+    check(not any(n in mat.node_tree.nodes for n in names), "their nodes are gone")
+    close(_rough(ob, mat), 0.2, 0.02, "the base shows again")
 
 
 def test_broken_folder_cycles_are_recovered(addon):
