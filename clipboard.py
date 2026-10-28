@@ -15,7 +15,7 @@ as it is at that moment.
 """
 
 import bpy
-from bpy.props import StringProperty
+from bpy.props import EnumProperty, StringProperty
 
 from . import filters, nodes, sources, stack
 from .persist import PAINT_KEY
@@ -380,6 +380,29 @@ class ESSENCE_OT_remove_entry(_EntryOp, bpy.types.Operator):
         return bpy.ops.essence.remove_layer()
 
 
+class ESSENCE_OT_add_mask_to(_EntryOp, bpy.types.Operator):
+    bl_idname = "essence.add_mask_to"
+    bl_label = "Add Mask"
+    bl_description = "Add a mask to this layer or folder"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    fill: EnumProperty(
+        name="Fill",
+        items=[('WHITE', "White (reveals)", "Layer is fully visible until erased"),
+               ('BLACK', "Black (hides)", "Hides the layer until painted")],
+        default='WHITE')
+
+    def execute(self, context):
+        s = _material(context).essence
+        i = next((i for i, e in enumerate(s.layers) if e.uid == self.uid), -1)
+        if i < 0:
+            return {'CANCELLED'}
+        s.active_index = i
+        if not bpy.ops.essence.add_mask.poll():
+            return {'CANCELLED'}
+        return bpy.ops.essence.add_mask(source='PAINT', fill=self.fill)
+
+
 def draw_entry_menu(layout, mat, e):
     """What the right-click and Shift+click menu of a row offers for entry `e`."""
     layout.operator_context = 'INVOKE_DEFAULT'
@@ -388,6 +411,13 @@ def draw_entry_menu(layout, mat, e):
         layout.operator("essence.duplicate", icon='DUPLICATE').uid = e.uid
         layout.operator("essence.copy", icon='COPYDOWN').uid = e.uid
     layout.operator("essence.paste", icon='PASTEDOWN').uid = e.uid
+    if e.kind in OWNER_KINDS and not any(
+            x.kind == 'MASK' and x.parent == e.uid for x in mat.essence.layers):
+        layout.separator()
+        for fill, text, icon in (('WHITE', "Add White Mask", 'IMAGE_ALPHA'),
+                                 ('BLACK', "Add Black Mask", 'MOD_MASK')):
+            op = layout.operator("essence.add_mask_to", text=text, icon=icon)
+            op.uid, op.fill = e.uid, fill
     if e.kind in OWNER_KINDS:
         layout.operator("essence.save_smart_material", icon='ASSET_MANAGER').uid = e.uid
     layout.separator()
@@ -420,7 +450,7 @@ def _button_menu(self, context):
 
 
 classes = (ESSENCE_OT_duplicate, ESSENCE_OT_copy, ESSENCE_OT_paste, ESSENCE_OT_remove_entry,
-           ESSENCE_MT_entry)
+           ESSENCE_OT_add_mask_to, ESSENCE_MT_entry)
 
 
 def register():

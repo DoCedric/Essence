@@ -5,7 +5,7 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 7 are done and merged into `main`. Sprint 8 is on `sprint-8-paint-layers`: paint layers, then texture set settings. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 361/361 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 7 are done and merged into `main`. Sprint 8 is on `sprint-8-paint-layers`: paint layers, then texture set settings. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 362/362 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
@@ -189,6 +189,7 @@ Decided with the user (2026-10-28): a paint layer is a layer whose channels use 
 - [x] **Paint button per channel** (`essence.paint_channel`): makes the image at the texture set's size (color channels scene linear, others Non-Color), targets it, enters Texture Paint. [H]
 - [x] **Add > Paint Layer** (`essence.add_paint_layer`), brush icon on the row, Paint box with Exit and the fill modes in the layer panel. [H] draws
 - [x] Fix: copying an entry whose source remembers no image crashed after a reload (an unset pointer reads as `{}`), and nested pointers were turned into dicts (`clipboard._plain`). [H]
+- [x] **Add White/Black Mask in a row's right-click menu** (`essence.add_mask_to`), on layers and folders without a mask. [H] `tests/test_clipboard.py`
 - [ ] [G] paint layers in the GUI (see Pending GUI checks).
 - [ ] Texture set settings: a list of the texture sets (materials) with their resolution.
 

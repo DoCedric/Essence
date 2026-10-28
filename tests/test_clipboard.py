@@ -251,6 +251,28 @@ def test_remove_entry_by_uid(addon):
     check(bpy.ops.essence.remove_entry(uid="nope") == {'CANCELLED'}, "unknown uid")
 
 
+def test_row_menu_adds_a_mask(addon):
+    from test_ui import Rec
+    ob, mat = _rich_layer()
+    base = next(e for e in mat.essence.layers if e.kind == 'LAYER' and e.name != "Rust")
+    uid = base.uid
+    log = []
+    addon.clipboard.draw_entry_menu(Rec(log), mat, base)
+    check(any(c[0] == "operator" and c[1][0] == "essence.add_mask_to" for c in log),
+          "a layer without a mask offers Add Mask")
+    log = []
+    addon.clipboard.draw_entry_menu(Rec(log), mat, _entry(mat, "Rust"))
+    check(not any(c[0] == "operator" and c[1][0] == "essence.add_mask_to" for c in log),
+          "a layer with a mask does not")
+    _select(mat, "Rust")                # another row is active: the menu's row gets the mask
+    check(bpy.ops.essence.add_mask_to(uid=uid, fill='BLACK') == {'FINISHED'}, "add failed")
+    masks = [e for e in mat.essence.layers if e.kind == 'MASK' and e.parent == uid]
+    check(len(masks) == 1, f"one mask on the base layer: {len(masks)}")
+    check(mat.essence.layers[mat.essence.active_index].uid == masks[0].uid, "the mask is selected")
+    check(bpy.ops.essence.add_mask_to(uid=uid) == {'CANCELLED'}, "no second mask")
+    check(bpy.ops.essence.add_mask_to(uid="nope") == {'CANCELLED'}, "unknown uid")
+
+
 def test_row_menus_draw(addon):
     from test_ui import Rec, _ctx
     ob, mat = _rich_layer()
