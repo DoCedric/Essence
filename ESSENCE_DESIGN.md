@@ -620,7 +620,7 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 21. **Freeze to image** for layers, folders and the whole stack (performance step for procedural-heavy stacks; do late in P1, once real stacks show the need). ⬜ (a first version was removed again, see B12)
 22. **Baking groups; multi-object bake into one image.** ✅ (texture sets)
 23. **Mask stack blend modes; levels/curves on masks; layer duplicate/copy/paste; Add menu grouping.** ✅ (fills, adjustments, `clipboard.py`, the two Add menus)
-24. **Specular, AO channels; texture set settings (resolution, channels, export preset).** ⬜ (AO is a mesh map overlay, not a channel)
+24. **Specular, AO channels; texture set settings (resolution, channels, export preset).** ⬜ (AO is a mesh map overlay, not a channel; a separate texture set settings list is dropped (user, 2026-10-28): texture sets are managed in each material's settings)
 
 ### P2 Important
 25. Compositor-based baked filters (blur, sharpen, edge, dilate/erode, slope blur). 🟡 blur, sharpen, Kuwahara, dilate/erode on masks and layer channels; edge and slope blur ⬜

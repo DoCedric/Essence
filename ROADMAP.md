@@ -5,7 +5,7 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 7 are done and merged into `main`. Sprint 8 is on `sprint-8-paint-layers`: paint layers, then texture set settings. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 362/362 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 7 are done and merged into `main`. Sprint 8 is done on `sprint-8-paint-layers` (paint layers, fill improvements; texture set settings dropped), waiting for the merge. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 362/362 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
@@ -181,7 +181,7 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **Duplicate / copy / paste of layers and folders** (`clipboard.py`): with masks, items, contents, copied paint images and filter groups, across materials; buttons on the stack bar and a row menu (right-click or Shift+click: Rename, Duplicate, Copy, Paste, Delete). [H] `tests/test_clipboard.py`. [G] confirmed by the user (2026-10-27).
 - [x] **Add menu grouping**: two menus on the stack bar, Add (Layer, Folder) and Add to Selected (Mask, Fill, Paint, Generator, Filters, Adjustments); Generator adds straight to the mask (`essence.add_generator`). [H] `tests/test_add_menus.py`. [G] confirmed by the user (2026-10-27).
 
-## Sprint 8: Paint layers, then texture set settings (`sprint-8-paint-layers`)
+## Sprint 8: Paint layers (`sprint-8-paint-layers`)
 Decided with the user (2026-10-28): a paint layer is a layer whose channels use a Paint source; a channel's image is made on its first paint.
 - [x] **Paint source** for layer channels (`sources.py`): no nodes until painted; then image, unpremultiply, remap, adjustments. Masks do not offer it. [H] `tests/test_paint_layers.py`
 - [x] **Layer group variant** with a `<Channel> Alpha` input per Paint channel in the channel's factor (`nodes.py`, key `paint`; other layers keep their groups). [H]
@@ -194,7 +194,7 @@ Decided with the user (2026-10-28): a paint layer is a layer whose channels use 
 - [x] **Face fill: wireframe and drag** (user request): Face mode turns the Wireframe overlay on (back off on another mode, stop or leaving Texture Paint); click and drag fills every face passed. Windowed `tests/gui_fill_modes.py` passes.
 - [x] [G] Face fill wireframe and drag in the GUI (confirmed 2026-10-28); fixed after it: Face mode turns the overlays on too, not only the wireframe.
 - [x] [G] Face fill with the overlays off (confirmed 2026-10-28).
-- [ ] Texture set settings: a list of the texture sets (materials) with their resolution.
+- [-] ~~Texture set settings: a list of the texture sets (materials) with their resolution.~~ Dropped by the user (2026-10-28): the user manages texture sets in the material settings (each material's Essence panel already has its Bake Size).
 
 ## Later sprints (outline, to be detailed)
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material; tested in Unity.
