@@ -297,8 +297,8 @@ Channels are data (`channels.py`). The Principled BSDF already exposes nearly ev
 | Normal | Not a layer channel: one normal map per material, see Mesh maps. Layer detail goes through Bump | | 🚫 as a channel (decided; avoids a per-layer normal blend cost) | |
 | Opacity / Alpha | BSDF Alpha | Mix + blend modes | ✅ BaseMap alpha on export | |
 | Emission (color + strength) | BSDF Emission Color; strength set to 1 when the channel is switched on | Mix + blend modes | ✅ own file on export | |
-| Ambient Occlusion | not a BSDF input: a layer channel (off by default, white) multiplied with the AO mesh map; the product drives the viewport overlay (Base Color and Specular, Strength slider) and is what export writes as AO (decided with the user, 2026-10-28) | Mix + blend modes | ✅ verified headless (Sprint 10) | |
-| Specular level / Specular tint | BSDF Specular IOR Level / Tint (off by default; the AO overlay lowers the stack's specular when both are on) | Mix + blend modes | ✅ verified headless (Sprint 10), exported by PBR Maps and the baked material | |
+| Ambient Occlusion | not a BSDF input: a layer channel (off by default, white) multiplied with the AO mesh map; the product drives the viewport overlay (Base Color and Specular, Strength slider) and is what export writes as AO (decided with the user, 2026-10-28) | Mix + blend modes | ✅ verified headless and in the GUI (Sprint 10) | |
+| Specular level / Specular tint | BSDF Specular IOR Level / Tint (off by default; the AO overlay lowers the stack's specular when both are on) | Mix + blend modes | ✅ verified headless and in the GUI (Sprint 10), exported by PBR Maps and the baked material | |
 | Coat (weight, roughness, tint, normal) | BSDF Coat inputs | Mix | ⬜ | P2 |
 | Sheen (weight, roughness, tint) | BSDF Sheen inputs | Mix | ⬜ | P2 |
 | Anisotropy (level, rotation) | BSDF Anisotropic / Rotation | Mix | ⬜ | P2 |
@@ -341,10 +341,10 @@ Substance blend modes map almost one to one onto the Mix node (Color type), whic
 | Group | Modes | Status | Pri |
 |---|---|---|---|
 | Basic | Normal (Mix), Multiply, Divide, Add (Linear Dodge), Subtract, Difference, Exclusion | ✅ | |
-| Contrast | Overlay, Soft Light, Hard Light, Linear Light, Pin Light | ✅ verified headless (Sprint 10) | |
-| Dodge/burn | Color Dodge, Color Burn, Linear Burn, Screen | ✅ verified headless (Sprint 10) | |
-| Compare | Darken, Lighten | ✅ verified headless (Sprint 10) | |
-| Color | Hue, Saturation, Color, Value (the Mix node's own, color channels only); Tint not built | 🟡 verified headless (Sprint 10), Tint ⬜ | P2 (Tint) |
+| Contrast | Overlay, Soft Light, Hard Light, Linear Light, Pin Light | ✅ verified headless and in the GUI (Sprint 10) | |
+| Dodge/burn | Color Dodge, Color Burn, Linear Burn, Screen | ✅ verified headless and in the GUI (Sprint 10) | |
+| Compare | Darken, Lighten | ✅ verified headless and in the GUI (Sprint 10) | |
+| Color | Hue, Saturation, Color, Value (the Mix node's own, color channels only); Tint not built | 🟡 verified headless and in the GUI (Sprint 10), Tint ⬜ | P2 (Tint) |
 | Special | Replace (ignores layers below), Passthrough (folder), Inverse Divide, Hard Mix | ⬜ | P2 |
 | Normal blends (Whiteout, Detail RNM) | Dropped together with the Normal channel. A normal map combine node can come back if a use appears | | 🚫 | |
 
@@ -549,7 +549,7 @@ All Blender UIList and panel features only.
 | **Per-row eye toggle for layers and folders** | ✅ | |
 | **Blend mode and opacity visible on the active layer** | ✅ opacity and the blend mode per channel in Layer Properties | |
 | Duplicate, copy/paste across materials (stack bar buttons; a row's menu by right-click or Shift+click: Rename, Duplicate, Copy, Paste, Delete) | ✅ verified headless and in the GUI | |
-| **Row menu with everything** (right-click a row's name, its color swatch or its eye; Shift+click): Rename, Duplicate, Copy, Paste, Save as Smart Material, the whole Add to Selected menu (Mask, Fill, Paint, Generator, Filters, Adjustments) for that row, New Layer / Paint Layer / Folder Above, Show on Mesh, Visible, Move Up / Down, Delete. Asked for by the user (2026-10-28). The menu sets its entry as the `essence_entry` context pointer, so the shared menus and polls ask about that row, and a menu item's `invoke` (`ops._Base`) selects the row before running; operators it calls inside (Add Generator calls Add Mask or Add Fill) see the active entry again. Replaces the separate Add White/Black Mask items | ✅ verified headless (the operators' focus step; menu items run invoke, which headless Blender skips), GUI check pending | |
+| **Row menu with everything** (right-click a row's name, its color swatch or its eye; Shift+click): Rename, Duplicate, Copy, Paste, Save as Smart Material, the whole Add to Selected menu (Mask, Fill, Paint, Generator, Filters, Adjustments) for that row, New Layer / Paint Layer / Folder Above, Show on Mesh, Visible, Move Up / Down, Delete. Asked for by the user (2026-10-28). The menu sets its entry as the `essence_entry` context pointer, so the shared menus and polls ask about that row, and a menu item's `invoke` (`ops._Base`) selects the row before running; operators it calls inside (Add Generator calls Add Mask or Add Fill) see the active entry again. Replaces the separate Add White/Black Mask items | ✅ verified headless (the operators' focus step) and in the GUI | |
 | Drag to reorder | ⬜ (UIList has no drag reorder in the API; arrows only) | P4 |
 | Multi-select | ⬜ (native UIList has none) | 🚫 |
 | Search/filter by name | native UIList filter | ⬜ | P3 |
