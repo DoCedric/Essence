@@ -9,7 +9,8 @@ Sprints 0 to 7 are done and merged into `main`. Sprint 8 is on `sprint-8-paint-l
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks**: none (paint layers confirmed 2026-10-28).
+**Pending GUI checks** (one):
+- **Face fill**: in Texture Paint, press Face in the Fill box: the wireframe shows. Drag over several faces: each fills with the brush color, fast drags skip none, releasing stops. Press Mesh: the wireframe goes (unless it was on before). Face again, then Exit Paint Mode: the wireframe goes and filling ends.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -191,6 +192,8 @@ Decided with the user (2026-10-28): a paint layer is a layer whose channels use 
 - [x] **Add White/Black Mask in a row's right-click menu** (`essence.add_mask_to`), on layers and folders without a mask. [H] `tests/test_clipboard.py`
 - [x] [G] paint layers in the GUI (confirmed 2026-10-28).
 - [x] **Fill paints the brush color** (its first color), shown in the Fill box; the separate fill color is gone (user request after the GUI check). [H] `tests/test_fill.py`
+- [x] **Face fill: wireframe and drag** (user request): Face mode turns the Wireframe overlay on (back off on another mode, stop or leaving Texture Paint); click and drag fills every face passed. Windowed `tests/gui_fill_modes.py` passes.
+- [ ] [G] Face fill wireframe and drag in the GUI (see Pending GUI checks).
 - [ ] Texture set settings: a list of the texture sets (materials) with their resolution.
 
 ## Later sprints (outline, to be detailed)

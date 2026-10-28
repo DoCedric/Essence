@@ -185,9 +185,14 @@ def modal_case(ob, win, area, region):
         addon_fill = sys.modules["essence.fill"]
         addon_fill.paint_color(bpy.context.tool_settings.image_paint).color = (1.0, 1.0, 1.0)
         rv3d = area.spaces.active.region_3d
+        overlay = area.spaces.active.overlay
+        overlay.show_wireframes = False
         face, center = top_of(ob, 1)
         co = view3d_utils.location_3d_to_region_2d(region, rv3d, ob.matrix_world @ center)
         x, y = int(region.x + co.x), int(region.y + co.y)
+        face_a, center_a = top_of(ob, 0)
+        co_a = view3d_utils.location_3d_to_region_2d(region, rv3d, ob.matrix_world @ center_a)
+        xa, ya = int(region.x + co_a.x), int(region.y + co_a.y)
         sidebar = next((r for r in area.regions if r.type == 'UI'), region)
         fill = sys.modules["essence.fill"]
         with bpy.context.temp_override(window=win, area=area, region=sidebar):
@@ -197,10 +202,16 @@ def modal_case(ob, win, area, region):
             check(res == {'FINISHED'} and fill.running() is not None
                   and bpy.context.scene.essence_fill_mode == 'FACE',
                   "modal: the Face button while filling switches the mode, no second operator")
+            check(overlay.show_wireframes, "modal: Face mode turns the wireframe on")
+        # Press on A's top, drag across the gap to B's top (fast: two moves), release.
+        win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=xa, y=ya)
+        win.event_simulate(type='LEFTMOUSE', value='PRESS', x=xa, y=ya)
+        win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=(xa + x) // 2, y=(ya + y) // 2)
         win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=x, y=y)
-        win.event_simulate(type='LEFTMOUSE', value='PRESS', x=x, y=y)
         win.event_simulate(type='LEFTMOUSE', value='RELEASE', x=x, y=y)
-        bpy.app.timers.register(lambda: modal_check(ob, win, face, x, y), first_interval=0.5)
+        win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=x, y=y + 40)   # released: no fill
+        bpy.app.timers.register(lambda: modal_check(ob, win, (face_a, face), x, y),
+                                first_interval=0.5)
         return
     except Exception:
         lines.append("FAIL modal\n" + traceback.format_exc())
@@ -208,20 +219,26 @@ def modal_case(ob, win, area, region):
     finish()
 
 
-def modal_check(ob, win, face, x, y):
+def modal_check(ob, win, faces, x, y):
     try:
         img = mask_image(ob)
         img.update()
         v = face_values(img)
-        check(v[face] > 0.99 and np.all(np.delete(v, face) < 0.01),
-              f"modal FACE click fills only that face: {np.round(v, 2).tolist()}")
+        faces = list(faces)
+        check(np.all(v[faces] > 0.99) and np.all(np.delete(v, faces) < 0.01),
+              f"modal FACE drag fills both tops it crossed, nothing else: {np.round(v, 2).tolist()}")
         fill = sys.modules["essence.fill"]
         area = next(a for a in win.screen.areas if a.type == 'VIEW_3D')
+        overlay = area.spaces.active.overlay
         sidebar = next((r for r in area.regions if r.type == 'UI'), None)
         with bpy.context.temp_override(window=win, area=area, region=sidebar):
+            bpy.ops.essence.fill('INVOKE_DEFAULT', mode='MESH')
+            check(not overlay.show_wireframes, "modal: another mode puts the wireframe back off")
             bpy.ops.essence.fill('INVOKE_DEFAULT', mode='FACE')
+            check(overlay.show_wireframes, "modal: Face again turns it on")
+            bpy.ops.essence.exit_paint()
         win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=x + 1, y=y)
-        bpy.app.timers.register(lambda: stopped_check(win, fill), first_interval=0.3)
+        bpy.app.timers.register(lambda: stopped_check(win, fill, overlay), first_interval=0.3)
         return
     except Exception:
         lines.append("FAIL modal check\n" + traceback.format_exc())
@@ -229,9 +246,10 @@ def modal_check(ob, win, face, x, y):
     finish()
 
 
-def stopped_check(win, fill):
+def stopped_check(win, fill, overlay):
     try:
-        check(fill.running() is None, "modal: pressing the lit mode again stops filling")
+        check(fill.running() is None, "modal: leaving Texture Paint stops filling")
+        check(not overlay.show_wireframes, "modal: and puts the wireframe back off")
     except Exception:
         lines.append("FAIL stop check\n" + traceback.format_exc())
         failed.append("stop check")

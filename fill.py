@@ -172,8 +172,8 @@ class ESSENCE_OT_fill(bpy.types.Operator):
     bl_idname = "essence.fill"
     bl_label = "Fill"
     bl_description = ("Click parts of the model to fill them with the brush color: the connected "
-                      "mesh, the UV island, the face or every face. Press the lit mode again, "
-                      "right-click or Esc to stop")
+                      "mesh, the UV island, the face or every face (Face also by dragging). Press "
+                      "the lit mode again, right-click or Esc to stop")
     # No UNDO: every click is a stroke of Blender's paint operator, which is its own undo step.
     bl_options = {'REGISTER'}
 
@@ -188,8 +188,9 @@ class ESSENCE_OT_fill(bpy.types.Operator):
     @classmethod
     def description(cls, context, props):
         return dict((m[0], m[2]) for m in FILL_MODES)[props.mode] + (
-            ". Then click parts of the model to fill them; press it again, right-click or Esc "
-            "to stop")
+            ". Then click parts of the model to fill them" +
+            (", or drag over faces" if props.mode == 'FACE' else "") +
+            "; press it again, right-click or Esc to stop")
 
     def invoke(self, context, event):
         global _running
@@ -199,20 +200,44 @@ class ESSENCE_OT_fill(bpy.types.Operator):
             if context.scene.essence_fill_mode == self.mode:
                 op.stop = True
             context.scene.essence_fill_mode = self.mode
+            op.sync_wireframe(context)
             _redraw(context)
             return {'FINISHED'}
         context.scene.essence_fill_mode = self.mode
         self.stop = False
+        self.wire = None            # [(3D view space, its Wireframe overlay before)] in Face mode
+        self.drag = None            # (last mouse x, y, faces filled) while dragging in Face mode
         _running = self
+        self.sync_wireframe(context)
         context.window.cursor_modal_set('PAINT_BRUSH')
         context.workspace.status_text_set("Click a part to fill it   |   Right-click or Esc: done")
         context.window_manager.modal_handler_add(self)
         _redraw(context)
         return {'RUNNING_MODAL'}
 
+    def sync_wireframe(self, context):
+        """Face mode shows the wireframe in every 3D view, so the faces can be seen; any other
+        mode, or the end of filling, puts each view's own setting back."""
+        on = _running is self and context.scene.essence_fill_mode == 'FACE'
+        if on and self.wire is None:
+            self.wire = []
+            for area in context.window.screen.areas:
+                if area.type == 'VIEW_3D':
+                    overlay = area.spaces.active.overlay
+                    self.wire.append((area.spaces.active, overlay.show_wireframes))
+                    overlay.show_wireframes = True
+        elif not on and self.wire is not None:
+            for space, before in self.wire:
+                try:
+                    space.overlay.show_wireframes = before
+                except ReferenceError:      # the view was closed meanwhile
+                    pass
+            self.wire = None
+
     def _finish(self, context):
         global _running
         _running = None
+        self.sync_wireframe(context)
         context.window.cursor_modal_restore()
         context.workspace.status_text_set(None)
         _redraw(context)
@@ -221,29 +246,76 @@ class ESSENCE_OT_fill(bpy.types.Operator):
         if self.stop or (event.type in {'RIGHTMOUSE', 'ESC'} and event.value == 'PRESS'):
             self._finish(context)
             return {'FINISHED'}
+        ob = context.active_object
+        if ob is None or ob.mode != 'TEXTURE_PAINT':
+            # Left Texture Paint (Exit Paint Mode, the mode menu): filling ends with it.
+            self._finish(context)
+            return {'CANCELLED'}
+        self.sync_wireframe(context)
+        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE' and self.drag is not None:
+            self.drag = None
+            return {'RUNNING_MODAL'}
+        if event.type == 'MOUSEMOVE' and self.drag is not None:
+            return self._drag_to(context, ob, event)
         if event.type != 'LEFTMOUSE' or event.value != 'PRESS':
             return {'PASS_THROUGH'}
         area, region = _view(context, event)
         if region is None:
             return {'PASS_THROUGH'}         # the sidebar and the other editors keep working
-        ob = context.active_object
-        if ob is None or ob.mode != 'TEXTURE_PAINT':
-            self._finish(context)
-            return {'CANCELLED'}
-        from bpy_extras import view3d_utils
-        rv3d = area.spaces.active.region_3d
         coord = (event.mouse_x - region.x, event.mouse_y - region.y)
-        face = pick_face(context, ob, view3d_utils.region_2d_to_origin_3d(region, rv3d, coord),
-                         view3d_utils.region_2d_to_vector_3d(region, rv3d, coord))
+        face = _face_at(context, ob, area, region, coord)
         if face is None:
             self.report({'INFO'}, f"Nothing of {ob.name} under the cursor")
             return {'RUNNING_MODAL'}
-        scene = context.scene
-        faces = faces_for_mode(ob.data, face, scene.essence_fill_mode)
+        mode = context.scene.essence_fill_mode
+        self._fill(context, ob, area, region, faces_for_mode(ob.data, face, mode), coord)
+        if mode == 'FACE':
+            self.drag = (event.mouse_x, event.mouse_y, {face})
+        return {'RUNNING_MODAL'}
+
+    def _drag_to(self, context, ob, event):
+        """Face mode, mouse held: fill the faces passed since the last move. The path is
+        sampled every few pixels so a fast drag skips no face, and the new faces of one
+        material go in one click of the Fill brush (one undo step per move)."""
+        x0, y0, done = self.drag
+        self.drag = (event.mouse_x, event.mouse_y, done)
+        area, region = _view(context, event)
+        if region is None:
+            return {'RUNNING_MODAL'}
+        dx, dy = event.mouse_x - x0, event.mouse_y - y0
+        steps = max(1, int(max(abs(dx), abs(dy)) / 3))
+        hits = {}                   # face: where it was hit
+        for i in range(1, steps + 1):
+            coord = (x0 + dx * i / steps - region.x, y0 + dy * i / steps - region.y)
+            face = _face_at(context, ob, area, region, coord)
+            if face is not None and face not in done:
+                hits.setdefault(face, coord)
+        # One click paints into one material's image, so a click per material.
+        by_material = {}
+        for face, coord in hits.items():
+            by_material.setdefault(ob.data.polygons[face].material_index, []).append((face, coord))
+        for group in by_material.values():
+            faces = np.zeros(len(ob.data.polygons), dtype=bool)
+            for face, _coord in group:
+                faces |= faces_for_mode(ob.data, face, 'FACE')
+            self._fill(context, ob, area, region, faces, group[-1][1])
+        done.update(hits)
+        return {'RUNNING_MODAL'}
+
+    def _fill(self, context, ob, area, region, faces, coord):
+        if not faces.any():
+            return
         with context.temp_override(area=area, region=region):
             fill(bpy.context, ob, faces, coord,
-                 tuple(paint_color(scene.tool_settings.image_paint).color))
-        return {'RUNNING_MODAL'}
+                 tuple(paint_color(context.scene.tool_settings.image_paint).color))
+
+
+def _face_at(context, ob, area, region, coord):
+    """The polygon of `ob` under `coord` (pixels in `region`), or None."""
+    from bpy_extras import view3d_utils
+    rv3d = area.spaces.active.region_3d
+    return pick_face(context, ob, view3d_utils.region_2d_to_origin_3d(region, rv3d, coord),
+                     view3d_utils.region_2d_to_vector_3d(region, rv3d, coord))
 
 
 def _redraw(context):
