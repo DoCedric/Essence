@@ -48,6 +48,16 @@ CHANNELS = (
             (0.0, 0.0, 0.0, 1.0), target=('BSDF', 'Emission Color'), colorspace='sRGB',
             ramp_color=(1.0, 1.0, 1.0, 1.0), default_enabled=False,
             enable_values=(('Emission Strength', 1.0, 0.0),)),
+    Channel('SPECULAR', 'Specular', 'NodeSocketFloat', 'MIX',
+            0.5, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Specular IOR Level'),
+            default_enabled=False),
+    Channel('SPECULAR_TINT', 'Specular Tint', 'NodeSocketColor', 'MIX',
+            (1.0, 1.0, 1.0, 1.0), target=('BSDF', 'Specular Tint'), colorspace='sRGB',
+            ramp_color=(1.0, 1.0, 1.0, 1.0), default_enabled=False),
+    # Painted or filled occlusion, multiplied with the AO mesh map: the product drives the AO
+    # overlay and is what export writes as AO (see nodes.apply_ao).
+    Channel('AO', 'Ambient Occlusion', 'NodeSocketFloat', 'MIX',
+            1.0, 0.0, 1.0, 'FACTOR', target=('AO', ''), default_enabled=False),
 )
 
 BY_ID = {c.id: c for c in CHANNELS}

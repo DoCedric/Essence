@@ -164,6 +164,8 @@ def _resolve(mat, kind, ident):
         if ch is None:
             return None
         where, name = ch.target
+        if where == 'AO':       # no shader input: the stack's own output
+            return nodes.ao_channel_output(mat)
         owner = (nodes.find_principled(tree) if where == 'BSDF'
                  else tree.nodes.get(nodes.BUMP_NODE_NAME))
         sock = owner.inputs.get(name) if owner is not None else None

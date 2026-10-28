@@ -34,11 +34,12 @@ _SIZES = tuple((str(s), f"{s} x {s}", "") for s in (512, 1024, 2048, 4096, 8192)
 # One exported file. `rgb` is a color source (or None) with `a` an optional grey source in
 # its alpha; else `r`, `g`, `b`, `a` are grey sources (a grey file when only `r` is set).
 # `srgb`: the RGB is color, sRGB encoded except in EXR. `needs`: the file is only written
-# when that channel is switched on ('AO': when the material has an AO image).
+# when that channel is switched on ('AO': when the material has an AO image or channel).
 File = namedtuple("File", "suffix rgb r g b a srgb needs", defaults=(None,) * 6 + (False, None))
 
 # Sources: a channel id (the stack's output, or its default when switched off), SMOOTHNESS
-# (1 - roughness), AO (the AO slot, white without one), NORMAL_GL / NORMAL_DX (tangent space,
+# (1 - roughness), AO (the AO slot times the AO channel, white without either; the same AO
+# the viewport overlay uses), NORMAL_GL / NORMAL_DX (tangent space,
 # +Y and -Y), WHITE. A channel id in an alpha that is switched off drops the alpha.
 Preset = namedtuple("Preset", "id name description files")
 
@@ -51,6 +52,8 @@ PRESETS = (
         File("Height", r='BUMP', needs='BUMP'),
         File("Opacity", r='ALPHA', needs='ALPHA'),
         File("Emission", rgb='EMISSION', srgb=True, needs='EMISSION'),
+        File("Specular", r='SPECULAR', needs='SPECULAR'),
+        File("SpecularTint", rgb='SPECULAR_TINT', srgb=True, needs='SPECULAR_TINT'),
         File("AO", r='AO', needs='AO'),
     )),
     Preset('UNITY_HDRP', "Unity HDRP", "BaseMap, MaskMap (R metal, G AO, B detail, A smooth), "
@@ -114,13 +117,18 @@ def ao_image(mat):
     return getattr(node, "image", None) or bpy.data.images.get(f"{mat.name}_AO")
 
 
+def has_ao(mat):
+    """Whether the material has any AO: a baked one in the slot or the AO channel."""
+    return ao_image(mat) is not None or 'AO' in {c.id for c in active_channels(mat)}
+
+
 def plan(preset, mat):
     """The files of `preset` this material writes, each as (File, alpha source or None)."""
     active = {c.id for c in active_channels(mat)}
-    has_ao = ao_image(mat) is not None
+    has_ao_ = has_ao(mat)
     out = []
     for f in preset.files:
-        if f.needs == 'AO' and not has_ao or f.needs not in (None, 'AO') and f.needs not in active:
+        if f.needs == 'AO' and not has_ao_ or f.needs not in (None, 'AO') and f.needs not in active:
             continue
         alpha = f.a
         if f.rgb is not None and alpha in BY_ID and alpha not in active:
@@ -199,7 +207,13 @@ class Baker:
             finally:
                 mat.node_tree.nodes.remove(white)
             for s in sorted(sources):
-                if s in BY_ID and s in active:
+                if s == 'AO':
+                    if 'AO' in active:         # the channel; the mesh map is added below
+                        img = self.images['AO_CHANNEL'] = self._new("ao_channel")
+                        label = BY_ID['AO'].label
+                        self._bake(objects, img, 'EMIT',
+                                   emit(lambda nt, k=label: tail.outputs[k]))
+                elif s in BY_ID and s in active:
                     label = BY_ID[s].label
                     img = self.images[s] = self._new(s.lower())
                     self._bake(objects, img, 'EMIT', emit(lambda nt, k=label: tail.outputs[k]))
@@ -208,7 +222,7 @@ class Baker:
                     self._bake(objects, img, 'NORMAL')
         src = ao_image(mat) if 'AO' in sources else None
         if src is not None:
-            ao = self.images['AO'] = src.copy()
+            ao = self.images['AO_MAP'] = src.copy()
             ao.name = "__essence_ao"
             ao.colorspace_settings.name = 'Non-Color'
             if tuple(ao.size) != (self.size, self.size):
@@ -223,6 +237,12 @@ class Baker:
         n = self.size * self.size
         if s == 'WHITE':
             return np.ones(n, dtype=np.float32)
+        if s == 'AO':
+            out = np.ones(n, dtype=np.float32)
+            for key in ('AO_MAP', 'AO_CHANNEL'):
+                if key in self.images:
+                    out *= _pixels(self.images[key])[:, 0]
+            return out
         if s == 'SMOOTHNESS':
             return 1.0 - self.source('ROUGHNESS')
         if s in ('NORMAL_GL', 'NORMAL_DX'):
@@ -396,8 +416,8 @@ class ESSENCE_OT_export(bpy.types.Operator):
             if out_scene is not None:
                 bpy.data.scenes.remove(out_scene)
         notes = []
-        if 'AO' in {s for f, _a in files for s in (f.r, f.g)} and ao_image(mat) is None:
-            notes.append("no AO in the Mesh Maps, AO is white")
+        if 'AO' in {s for f, _a in files for s in (f.r, f.g)} and not has_ao(mat):
+            notes.append("no AO in the Mesh Maps or the AO channel, AO is white")
         msg = f"Exported {', '.join(written)} to {folder}"
         if notes:
             msg += f" ({'; '.join(notes)})"
@@ -412,6 +432,8 @@ FLAT = (
     ('METALLIC', "Metallic", "Metallic", False),
     ('ALPHA', "Opacity", "Alpha", False),
     ('EMISSION', "Emission", "Emission Color", True),
+    ('SPECULAR', "Specular", "Specular IOR Level", False),
+    ('SPECULAR_TINT', "SpecularTint", "Specular Tint", True),
 )
 FLAT_KEY = "essence_baked_from"
 

@@ -35,6 +35,7 @@ AO_STRENGTH_NODE = "Essence AO Strength"   # Value node, the slider
 AO_COLOR_NODE = "Essence AO Color"         # Base Color * AO
 AO_SPEC_FACTOR_NODE = "Essence AO Specular Factor"
 AO_SPEC_NODE = "Essence AO Specular"       # Specular IOR Level * AO
+AO_COMBINE_NODE = "Essence AO Combine"     # the AO slot * the stack's AO channel
 
 
 # --------------------------------------------------------------------------
@@ -313,7 +314,7 @@ def variant_name(base, key):
         elif not on and c.default_enabled:
             parts.append(f"-{c.label}")
         if on and key["modes"].get(c.id, c.blend) != c.blend:
-            parts.append(f"{c.label}:{key['modes'][c.id].title()}")
+            parts.append(f"{c.label}:{blends.MODES[key['modes'][c.id]][0]}")
         if on and c.id in key.get("paint", ()) and set(key["paint"]) != set(key["ch"]):
             parts.append(f"{c.label}:Paint")
     if key.get("paint") and set(key["paint"]) == set(key["ch"]):
@@ -610,12 +611,21 @@ def _remove_before(tree, node, a_sock, dst):
             tree.links.new(src, dst)
 
 
+def ao_channel_output(mat):
+    """The stack's Ambient Occlusion output when the channel is on, else None."""
+    if 'AO' not in {c.id for c in active_channels(mat)}:
+        return None
+    top = stack_top(mat)
+    return top.outputs.get(BY_ID['AO'].label) if top is not None else None
+
+
 def apply_ao(mat):
-    """Use the AO mesh map slot's image at the end of the shading tree, like the AO pass of
-    a PBR renderer: it darkens Base Color and lowers Specular IOR Level by
-    `lerp(1, AO, Strength)`. It sits after the layer stack and Export reads the layer
-    outputs, so exported maps are not affected. An empty slot unhooks it again (the nodes
-    and the strength stay). Idempotent."""
+    """Use the AO at the end of the shading tree, like the AO pass of a PBR renderer: it
+    darkens Base Color and lowers Specular IOR Level by `lerp(1, AO, Strength)`. The AO is
+    the AO mesh map slot's image times the stack's Ambient Occlusion channel (either alone
+    when the other is missing). It sits after the layer stack and Export reads the layer
+    outputs, so exported maps are not affected. No AO unhooks it again (the nodes and the
+    strength stay). Idempotent."""
     tree = mat.node_tree
     bsdf = find_principled(tree)
     slot = tree.nodes.get(map_slot_name('AO'))
@@ -623,7 +633,11 @@ def apply_ao(mat):
         return None
     x, y = bsdf.location.x - 250, bsdf.location.y + 450
     strength = tree.nodes.get(AO_STRENGTH_NODE)
-    has_image = slot.image is not None
+    channel = ao_channel_output(mat)
+    combine = tree.nodes.get(AO_COMBINE_NODE)
+    if channel is None and combine is not None:
+        tree.nodes.remove(combine)
+    has_image = slot.image is not None or channel is not None
     if not has_image and strength is None:
         return None
     # A Mix node (A=0, B=1) passes its Factor through, so the slider is a real 0 to 1 input.
@@ -650,17 +664,29 @@ def apply_ao(mat):
         _remove_before(tree, spec, spec.inputs[1], spec_level)
         return strength
     slot.location = (x - 500, y - 250)
+    ao = slot.outputs['Color']
+    if channel is not None:
+        combine = _ao_node(tree, AO_COMBINE_NODE, 'ShaderNodeMath', (x - 500, y - 450),
+                           operation='MULTIPLY')
+        for sock in combine.inputs[:2]:
+            _clear_links(tree, sock)
+        if slot.image is not None:
+            tree.links.new(slot.outputs['Color'], combine.inputs[0])
+        else:
+            combine.inputs[0].default_value = 1.0
+        tree.links.new(channel, combine.inputs[1])
+        ao = combine.outputs[0]
     _insert_before(tree, color, a_color, base_color)
     _insert_before(tree, spec, spec.inputs[1], spec_level)
     b_color = _by_ident(color.inputs, "B_Color")
     for sock in (factor_in, b_color, _by_ident(factor.inputs, "Factor_Float")):
         _clear_links(tree, sock)
     tree.links.new(strength_out, factor_in)
-    tree.links.new(slot.outputs['Color'], b_color)
+    tree.links.new(ao, b_color)
     tree.links.new(strength_out, _by_ident(factor.inputs, "Factor_Float"))
     _by_ident(factor.inputs, "A_Float").default_value = 1.0
     _clear_links(tree, _by_ident(factor.inputs, "B_Float"))
-    tree.links.new(slot.outputs['Color'], _by_ident(factor.inputs, "B_Float"))
+    tree.links.new(ao, _by_ident(factor.inputs, "B_Float"))
     _clear_links(tree, spec.inputs[0])
     tree.links.new(_by_ident(factor.outputs, "Result_Float"), spec.inputs[0])
     _clear_links(tree, base_color)

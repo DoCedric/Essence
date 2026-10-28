@@ -297,8 +297,8 @@ Channels are data (`channels.py`). The Principled BSDF already exposes nearly ev
 | Normal | Not a layer channel: one normal map per material, see Mesh maps. Layer detail goes through Bump | | 🚫 as a channel (decided; avoids a per-layer normal blend cost) | |
 | Opacity / Alpha | BSDF Alpha | Mix + blend modes | ✅ BaseMap alpha on export | |
 | Emission (color + strength) | BSDF Emission Color; strength set to 1 when the channel is switched on | Mix + blend modes | ✅ own file on export | |
-| Ambient Occlusion | not a BSDF input; kept as an exported channel and a viewport overlay with a Strength slider (Base Color and Specular), see Mesh maps | Multiply | 🟡 baked, exported and overlaid, not a layer channel | P1 |
-| Specular level / Specular tint | BSDF Specular IOR Level / Tint | Mix | ⬜ | P1 |
+| Ambient Occlusion | not a BSDF input: a layer channel (off by default, white) multiplied with the AO mesh map; the product drives the viewport overlay (Base Color and Specular, Strength slider) and is what export writes as AO (decided with the user, 2026-10-28) | Mix + blend modes | ✅ verified headless (Sprint 10) | |
+| Specular level / Specular tint | BSDF Specular IOR Level / Tint (off by default; the AO overlay lowers the stack's specular when both are on) | Mix + blend modes | ✅ verified headless (Sprint 10), exported by PBR Maps and the baked material | |
 | Coat (weight, roughness, tint, normal) | BSDF Coat inputs | Mix | ⬜ | P2 |
 | Sheen (weight, roughness, tint) | BSDF Sheen inputs | Mix | ⬜ | P2 |
 | Anisotropy (level, rotation) | BSDF Anisotropic / Rotation | Mix | ⬜ | P2 |
@@ -341,14 +341,14 @@ Substance blend modes map almost one to one onto the Mix node (Color type), whic
 | Group | Modes | Status | Pri |
 |---|---|---|---|
 | Basic | Normal (Mix), Multiply, Divide, Add (Linear Dodge), Subtract, Difference, Exclusion | ✅ | |
-| Contrast | Overlay, Soft Light, Hard Light (via Linear/Vivid Light), Linear Light, Pin Light | ⬜ | P1 |
-| Dodge/burn | Color Dodge, Color Burn, Linear Burn, Screen | ⬜ | P1 |
-| Compare | Darken, Lighten | ⬜ | P1 |
-| Color | Hue, Saturation, Color, Value/Luminosity, Tint | ⬜ | P2 |
+| Contrast | Overlay, Soft Light, Hard Light, Linear Light, Pin Light | ✅ verified headless (Sprint 10) | |
+| Dodge/burn | Color Dodge, Color Burn, Linear Burn, Screen | ✅ verified headless (Sprint 10) | |
+| Compare | Darken, Lighten | ✅ verified headless (Sprint 10) | |
+| Color | Hue, Saturation, Color, Value (the Mix node's own, color channels only); Tint not built | 🟡 verified headless (Sprint 10), Tint ⬜ | P2 (Tint) |
 | Special | Replace (ignores layers below), Passthrough (folder), Inverse Divide, Hard Mix | ⬜ | P2 |
 | Normal blends (Whiteout, Detail RNM) | Dropped together with the Normal channel. A normal map combine node can come back if a use appears | | 🚫 | |
 
-Float channels (roughness, metallic, height) use the same modes through the Mix node's RGBA type with grey packing, or Math nodes, whichever is cheaper per mode.
+Float channels (roughness, metallic, height) use Math formulas that follow Blender's Mix node, so a mode gives the same value on a float and on a color where the factor is 1 (a few Mix node modes, Overlay and the dodges, put the factor inside the formula, so partly masked texels differ slightly between a color and a float). Color modes the Mix node lacks (Hard Light = Overlay with the roles swapped, Pin Light, Linear Burn) are vector formulas and a lerp. The color-only modes (Hue, Saturation, Color, Value) are not offered on float channels. Mode numbers are stored in files, so new modes take new numbers (7 to 21). Decided with the user (2026-10-28): P1 plus the Mix node's color modes; Replace, Hard Mix and Inverse Divide stay P2. Tests: `tests/test_blend_modes_more.py` (every mode on a float at three value pairs covering both branches, on a color per component, the HSV modes against `colorsys`, the factor, save and reload).
 
 **Group variants** ✅. The Mix node's `blend_type` is a node property, not a socket, so it cannot be a layer input. The layer node therefore uses a **group variant**: one generated node group per distinct combination of channel set and blend modes, swapped on the node when the dropdown changes (values and links are kept by socket name). A layer is still one node and only the combinations in use exist. Naming is readable: the plain material uses "Essence Layer", others add what differs, e.g. "Essence Layer +Emission Roughness:Multiply" (a hash when it would be too long). Every mode has the shape `lerp(A, f(A, B), factor)`: color channels use the Mix node's own blend types (clamped to 0-1), scalar channels use Math formulas. The group key is stored on the group (`essence_key`) so upgrades rebuild every variant. Folders use a variant per channel set only (they always lerp).
 
@@ -622,11 +622,11 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 17. **Viewport channel/mask/layer solo.** ✅ (preview buttons)
 18. **Export preset engine** with URP, Unreal, glTF, all channels, bit depth, dilation. ✅ (plus PBR Maps; the selected material only, by design)
 19. **Export as a flattened Blender material** (stack baked into a simple image-based Principled material). ✅
-20. **Remaining blend modes** (contrast, dodge/burn, compare). ⬜
+20. **Remaining blend modes** (contrast, dodge/burn, compare). ✅ (plus Hue, Saturation, Color, Value on colors)
 21. **Freeze to image** for layers, folders and the whole stack (performance step for procedural-heavy stacks; do late in P1, once real stacks show the need). ⬜ (a first version was removed again, see B12)
 22. **Baking groups; multi-object bake into one image.** ✅ (texture sets)
 23. **Mask stack blend modes; levels/curves on masks; layer duplicate/copy/paste; Add menu grouping.** ✅ (fills, adjustments, `clipboard.py`, the two Add menus)
-24. **Specular, AO channels; texture set settings (resolution, channels, export preset).** ⬜ (AO is a mesh map overlay, not a channel; a separate texture set settings list is dropped (user, 2026-10-28): texture sets are managed in each material's settings)
+24. **Specular, AO channels; texture set settings (resolution, channels, export preset).** ✅ Specular, Specular Tint and Ambient Occlusion channels (AO is a mesh map overlay, not a channel; a separate texture set settings list is dropped (user, 2026-10-28): texture sets are managed in each material's settings)
 
 ### P2 Important
 25. Compositor-based baked filters (blur, sharpen, edge, dilate/erode, slope blur). 🟡 blur, sharpen, Kuwahara, dilate/erode on masks and layer channels; edge and slope blur ⬜

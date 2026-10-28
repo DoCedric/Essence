@@ -5,11 +5,12 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-28)
-Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 371/371 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 381/381 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks**: none (the baked material confirmed 2026-10-28).
+**Pending GUI checks** (one):
+- **Blend modes and channels**: on a layer over another, try a few new modes in a channel's blend dropdown (Overlay, Screen, Color Dodge on Color; Pin Light, Darken on Roughness): the result looks like the mode's name, and Hue/Saturation/Color/Value only appear on color channels. In the Material panel's Channels list switch on Specular, Specular Tint and Ambient Occlusion: each gets a row in Layer Properties. Paint or fill a dark Ambient Occlusion on a layer: the viewport darkens there (with or without a baked AO), the AO Strength slider fades it, and the channel's preview button shows it. Export PBR Maps: Specular, SpecularTint and AO files appear.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -208,8 +209,14 @@ Decided with the user (2026-10-28): export the **selected material** only (the E
 - [x] [G] Export in Unity (confirmed by the user, 2026-10-28, after the stack-top fix).
 - [x] [G] The baked material in Blender (confirmed 2026-10-28; the reflections were not exactly the same, see Future updates: baked normal check).
 
+## Sprint 10: Blend modes and channels (`sprint-10-blend-channels`)
+Decided with the user (2026-10-28): the P1 blend modes plus the Mix node's color modes (Replace, Hard Mix, Inverse Divide stay P2); AO becomes a layer channel multiplied with the baked AO.
+- [x] **Blend modes** Darken, Lighten, Screen, Color Dodge, Color Burn, Linear Burn, Overlay, Soft Light, Hard Light, Linear Light, Pin Light on every channel; Hue, Saturation, Color, Value on color channels (`blends.py`, new stored numbers 7 to 21). [H] `tests/test_blend_modes_more.py`
+- [x] **Specular** and **Specular Tint** channels (BSDF Specular IOR Level and Tint, off by default), in PBR Maps and the baked material. [H] `tests/test_specular_ao.py`
+- [x] **Ambient Occlusion** channel (off by default, white): times the AO mesh map, drives the overlay (also without a baked AO), exported as AO (PBR Maps, MaskMap green, ORM red), previewable. [H]
+- [ ] [G] the new modes and channels in the GUI (see Pending GUI checks).
+
 ## Later sprints (outline, to be detailed)
-- **Sprint 10, remaining blend modes, specular/AO channels, then P2 and below per the design doc.**
 - **Sprint 11, Essence asset library (last):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).
 
 ## Future updates (not scheduled)
