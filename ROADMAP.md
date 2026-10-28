@@ -214,6 +214,7 @@ Decided with the user (2026-10-28): the P1 blend modes plus the Mix node's color
 - [x] **Blend modes** Darken, Lighten, Screen, Color Dodge, Color Burn, Linear Burn, Overlay, Soft Light, Hard Light, Linear Light, Pin Light on every channel; Hue, Saturation, Color, Value on color channels (`blends.py`, new stored numbers 7 to 21). [H] `tests/test_blend_modes_more.py`
 - [x] **Specular** and **Specular Tint** channels (BSDF Specular IOR Level and Tint, off by default), in PBR Maps and the baked material. [H] `tests/test_specular_ao.py`
 - [x] **Ambient Occlusion** channel (off by default, white): times the AO mesh map, drives the overlay (also without a baked AO), exported as AO (PBR Maps, MaskMap green, ORM red), previewable. [H]
+- [x] Layer, Paint Layer, Folder and Smart Material as separate icon buttons on the bar again, the Add menu removed (user request). [H] `tests/test_add_menus.py`
 - [ ] [G] the new modes and channels in the GUI (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)

@@ -264,11 +264,19 @@ def _stack(self, context):
     if mat is None or not mat.essence.layers:
         col = layout.column(align=True)
         col.operator("essence.add_layer", icon='ADD')
+        col.operator("essence.add_paint_layer", icon='BRUSH_DATA')
         col.operator("essence.add_folder", icon='NEWFOLDER')
+        col.menu("ESSENCE_MT_add_smart", text="Smart Material", icon='MATERIAL')
         return
     _preview_notice(layout, mat, context)
     bar = layout.row(align=True)
-    bar.menu("ESSENCE_MT_add", icon='ADD', text="")
+    # The new-entry buttons each on the bar (the user's request, 2026-10-28); what is added
+    # to the selected entry stays one menu.
+    bar.operator("essence.add_layer", icon='ADD', text="")
+    bar.operator("essence.add_paint_layer", icon='BRUSH_DATA', text="")
+    bar.operator("essence.add_folder", icon='NEWFOLDER', text="")
+    bar.menu("ESSENCE_MT_add_smart", icon='MATERIAL', text="")
+    bar.separator()
     bar.menu("ESSENCE_MT_add_to", icon='MODIFIER', text="")
     bar.operator("essence.remove_layer", icon='REMOVE', text="")
     bar.separator()

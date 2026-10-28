@@ -917,18 +917,6 @@ def _sub_menu(layout, idname, text, icon, enabled):
     col.menu(idname, text=text, icon=icon)
 
 
-class ESSENCE_MT_add(bpy.types.Menu):
-    bl_idname = "ESSENCE_MT_add"
-    bl_label = "Add"
-
-    def draw(self, context):
-        self.layout.operator("essence.add_layer", text="Layer", icon='ADD')
-        self.layout.operator("essence.add_paint_layer", text="Paint Layer", icon='BRUSH_DATA')
-        self.layout.operator("essence.add_folder", text="Folder", icon='NEWFOLDER')
-        self.layout.separator()
-        self.layout.menu("ESSENCE_MT_add_smart", text="Smart Material", icon='MATERIAL')
-
-
 class ESSENCE_MT_add_to(bpy.types.Menu):
     bl_idname = "ESSENCE_MT_add_to"
     bl_label = "Add to Selected"
@@ -1233,7 +1221,7 @@ classes = (
     ESSENCE_OT_derive_curvature,
     ESSENCE_OT_filter_apply,
     ESSENCE_OT_filter_apply_all,
-    ESSENCE_OT_add_generator, ESSENCE_MT_add, ESSENCE_MT_add_to, ESSENCE_MT_add_generator,
+    ESSENCE_OT_add_generator, ESSENCE_MT_add_to, ESSENCE_MT_add_generator,
     ESSENCE_MT_add_filter, ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
     ESSENCE_OT_paint_channel, ESSENCE_OT_add_paint_layer, ESSENCE_OT_exit_paint,

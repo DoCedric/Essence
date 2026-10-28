@@ -180,8 +180,5 @@ def test_paint_layer_panels_draw(addon):
     log = _draw(ui._stack, ob)
     check(any(c[0] == "label" and c[2].get("icon") == 'BRUSH_DATA' for c in log),
           "a brush icon on the paint layer's row")
-    log = []
-    from types import SimpleNamespace
-    ops.ESSENCE_MT_add.draw(SimpleNamespace(layout=Rec(log)), _ctx(ob))
     check(any(c[0] == "operator" and c[1][0] == "essence.add_paint_layer" for c in log),
-          "Add has Paint Layer")
+          "the bar has Paint Layer")

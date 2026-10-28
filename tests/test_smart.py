@@ -178,7 +178,7 @@ def test_save_a_folder_and_into_an_object_without_material(addon):
 
 def test_smart_menus_draw(addon):
     from test_ui import Rec, _ctx
-    from essence import ops
+    from essence import ops, ui
     smart = addon.smart
     root = _library(addon)
     try:
@@ -189,9 +189,10 @@ def test_smart_menus_draw(addon):
             menu.draw(SimpleNamespace(layout=Rec(log)), _ctx(ob))
             return log
 
-        log = draw(ops.ESSENCE_MT_add)
+        from test_ui import _draw
+        log = _draw(ui._stack, ob)
         check(any(c[0] == "menu" and c[1][0] == "ESSENCE_MT_add_smart" for c in log),
-              "Add has Smart Material")
+              "the bar has Smart Material")
         log = draw(smart.ESSENCE_MT_add_smart)
         check(any(c[0] == "label" and "None saved" in c[2].get("text", "") for c in log),
               "empty library")

@@ -101,9 +101,6 @@ def test_menus_draw(addon):
         menu.draw(SimpleNamespace(layout=Rec(log)), _ctx(ob))
         return log
 
-    log = draw(ops.ESSENCE_MT_add)
-    check([c[1][0] for c in log if c[0] == "operator"] == [
-        "essence.add_layer", "essence.add_paint_layer", "essence.add_folder"], "Add")
     log = draw(ops.ESSENCE_MT_add_to)
     check([c[1][0] for c in log if c[0] == "menu"] == [
         "ESSENCE_MT_add_mask", "ESSENCE_MT_add_generator", "ESSENCE_MT_add_filter",
@@ -118,12 +115,14 @@ def test_menus_draw(addon):
                              len(addon.adjustments.TYPES))):
         n = sum(1 for c in draw(menu) if c[0] == "operator" and c[1][0] == op)
         check(n == count, f"{menu.bl_idname}: {n} of {count}")
-    for idname in ("ESSENCE_MT_add", "ESSENCE_MT_add_to", "ESSENCE_MT_add_generator",
+    for idname in ("ESSENCE_MT_add_to", "ESSENCE_MT_add_generator",
                    "ESSENCE_MT_add_filter", "ESSENCE_MT_add_adjustment", "ESSENCE_MT_add_mask"):
         check(hasattr(bpy.types, idname), f"{idname} registered")
     bar = _draw(ui._stack, ob)
     menus = [c[1][0] for c in bar if c[0] == "menu"]
-    check(menus == ["ESSENCE_MT_add", "ESSENCE_MT_add_to"], f"bar menus {menus}")
-    check(not {"essence.add_layer", "essence.add_folder"} & {c[1][0] for c in bar
-                                                              if c[0] == "operator"},
-          "no separate add buttons on the bar")
+    check(menus == ["ESSENCE_MT_add_smart", "ESSENCE_MT_add_to"], f"bar menus {menus}")
+    check(all(c[2].get("text") == "" for c in bar if c[0] == "menu"), "icon-only menus")
+    bar_ops = [c[1][0] for c in bar if c[0] == "operator"]
+    check(bar_ops[:3] == ["essence.add_layer", "essence.add_paint_layer", "essence.add_folder"],
+          f"Layer, Paint Layer and Folder buttons first on the bar: {bar_ops[:4]}")
+    check(not hasattr(bpy.types, "ESSENCE_MT_add"), "the old Add menu is gone")
