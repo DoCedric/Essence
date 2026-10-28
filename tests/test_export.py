@@ -237,6 +237,33 @@ def test_baked_material(addon):
     check(len(bpy.data.images) == n_images, f"no extra images: {len(bpy.data.images)} vs {n_images}")
 
 
+def test_export_reads_the_stack_top_with_a_folder_last(addon):
+    """A folder is stored after its children, and a Passthrough folder is not in the chain:
+    the export must read what the BSDF reads, not the last stored entry (found in the user's
+    file, where the base map came out as the channel defaults)."""
+    from test_folders import _base, _entry, _folder, _layer, _select
+    ob, mat = _base()                                   # roughness 0.2
+    _folder(mat, "F")
+    _layer(mat, 0.7, "Inside")
+    _select(mat, "Inside")
+    _layer(mat, 0.6, "Top")                             # inside the folder, above
+    check(mat.essence.layers[-1].kind == 'FOLDER', "the folder is the last stored entry")
+    stem = bpy.path.clean_name(mat.name)
+    folder = tempfile.mkdtemp(prefix="essence_export_")
+    bsdf = next(n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
+    try:
+        for mode in ('PASSTHROUGH', 'NORMAL'):
+            _entry(mat, "F").folder_mode = mode
+            top = addon.nodes.stack_top(mat)
+            check(top == bsdf.inputs['Roughness'].links[0].from_node,
+                  f"{mode}: stack_top is what the BSDF reads ({top.name})")
+            _export(folder, 'PBR')
+            close(_load(os.path.join(folder, f"{stem}_Roughness.png"))[256, 256, 0], 0.6,
+                  0.003, f"{mode}: the exported roughness is the stack's")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def test_overwrite(addon):
     from test_ui import _draw
     from essence import ui

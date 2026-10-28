@@ -3,8 +3,8 @@ material.
 
 A preset is data: a list of files, each with a name suffix and what goes in its channels
 (an RGB source plus an optional alpha, or one grey source per channel). Every source is
-baked once from the top Essence layer's outputs with Cycles' emit pass (exact and unlit) into
-a float Non-Color image, the normal is a real tangent-space bake of the whole material (baked
+baked once from the outputs of the stack's top node (`nodes.stack_top`) with Cycles' emit
+pass (exact and unlit) into a float Non-Color image, the normal is a real tangent-space bake of the whole material (baked
 normal map + layer bump combined) and AO comes from the AO slot. All of them are baked
 without a margin and dilated afterwards from one coverage bake, then the files are put
 together in numpy (sRGB encoding, smoothness, DirectX green) and saved at the chosen depth.
@@ -172,7 +172,9 @@ class Baker:
 
     def bake(self, objects, sources):
         """Bake `sources` (channel ids, NORMAL, AO) from `objects`, the first one active."""
-        mat, tail = self.mat, self.mat.node_tree.nodes[self.mat.essence.layers[-1].node_name]
+        mat, tail = self.mat, nodes.stack_top(self.mat)
+        if tail is None:
+            raise RuntimeError("the stack has no layer to export")
         active = {c.id for c in active_channels(mat)}
 
         def emit(socket_of):
@@ -350,8 +352,8 @@ class ESSENCE_OT_export(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         mat = context.active_object.active_material
-        if mat.node_tree.nodes.get(mat.essence.layers[-1].node_name) is None:
-            self.report({'ERROR'}, "Top layer node is missing from the shader graph")
+        if nodes.stack_top(mat) is None:
+            self.report({'ERROR'}, "The stack has no layer node in the shader graph")
             return {'CANCELLED'}
         objects, err = _objects(context, mat)
         if err:

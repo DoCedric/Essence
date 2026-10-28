@@ -723,6 +723,32 @@ def rebuild_stack(mat):
     preview.refresh(mat)
 
 
+def stack_top(mat):
+    """The group node whose outputs are the stack's result (what the BSDF reads), or None.
+    It is the end of the chain `_rebuild_stack` links, not the last stored entry: a folder is
+    stored after its children, and a Passthrough folder is not in the chain at all."""
+    tree = mat.node_tree
+    layers = mat.essence.layers
+    by_uid = {e.uid: e for e in layers if e.kind in ('LAYER', 'FOLDER')
+              and tree.nodes.get(e.node_name) is not None}
+    shape = stack.Tree(layers)
+
+    def end(uids, below):
+        prev = below
+        for u in uids:
+            e = by_uid.get(u)
+            if e is None:
+                continue
+            if e.kind == 'FOLDER' and e.folder_mode == 'PASSTHROUGH':
+                prev = end(shape.kids.get(u, []), prev)
+            else:
+                prev = e
+        return prev
+
+    top = end(shape.roots, None)
+    return tree.nodes[top.node_name] if top is not None else None
+
+
 def _rebuild_stack(mat):
     _end_links()  # in case an earlier rebuild stopped on an error
     tree = mat.node_tree
