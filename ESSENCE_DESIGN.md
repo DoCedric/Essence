@@ -614,11 +614,11 @@ Ordered from essential to trivial. Within a tier, work top to bottom. Status in 
 
 ### P1 Core (the "full workflow" line)
 10. **Adjustment layers and filter stack**: levels, HSV, color balance, curves, invert, gradient map, threshold, channel mix. 🟡 all but channel mix (color balance has no shader node)
-11. **Mask generators and asset library**: noise, gradient, grunge, edge wear, dirt, curvature wear, height gradient, position gradient, as node group assets in catalogs. 🟡 generators built (live and map-reading), bundled grunge images; the asset library is the last sprint (Sprint 11)
+11. **Mask generators and asset library**: noise, gradient, grunge, edge wear, dirt, curvature wear, height gradient, position gradient, as node group assets in catalogs. 🟡 generators built (live and map-reading), bundled grunge images; the asset library is the last sprint (Sprint 12)
 12. **More baked maps**: Curvature, Position, Thickness, Material/Object/Color ID, Height from mesh. 🟡 all but Height from mesh (a future update, see ROADMAP)
 13. **ID and Color Selection masks.** ✅ (ID Select)
 14. **Nested folders; Passthrough folder mode; folder opacity.** ✅
-15. **Smart materials**: folder presets as assets, drop onto an object. ✅ (`smart.py`; thumbnails and more catalogs with the asset library, Sprint 11)
+15. **Smart materials**: folder presets as assets, drop onto an object. ✅ (`smart.py`; thumbnails and more catalogs with the asset library, Sprint 12)
 16. **Paint layers** (direct per-channel painting). ✅ (Paint channels, one channel per stroke)
 17. **Viewport channel/mask/layer solo.** ✅ (preview buttons)
 18. **Export preset engine** with URP, Unreal, glTF, all channels, bit depth, dilation. ✅ (plus PBR Maps; the selected material only, by design)

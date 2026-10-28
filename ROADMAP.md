@@ -5,7 +5,7 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-28)
-Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (11). `tests/run_all.py`: 383/383 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (12). `tests/run_all.py`: 383/383 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
@@ -220,7 +220,8 @@ Decided with the user (2026-10-28): the P1 blend modes plus the Mix node's color
 - [x] [G] the row menu and folder delete in the GUI (confirmed 2026-10-28).
 
 ## Later sprints (outline, to be detailed)
-- **Sprint 11, Essence asset library (last):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).
+- **Sprint 11, panel placement:** move the panels out of the N sidebar where Blender allows it (proposal under discussion with the user, 2026-10-28; Layers and Layer Properties stay in the sidebar).
+- **Sprint 12, Essence asset library (last; content and research, moved from Sprint 11 by the user, 2026-10-28):** catalogs, noise/gradient/grunge assets (the bundled masks move there; decide pack or reference then), generators and smart masks as assets, the Mesh Map source kind and presets if still wanted (Open Question 11).
 
 ## Future updates (not scheduled)
 Features moved out of the sprints by the user. They wait here until a user asks for one; the most requested goes first.
