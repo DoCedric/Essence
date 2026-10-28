@@ -138,7 +138,9 @@ def _entry_row(layout, mat, item, active, foldable=False):
     toggle = None
     if item.kind == 'LAYER':
         color = node.inputs.get("Color B") if node is not None else None
-        if color is not None and not color.is_linked:
+        if any(s.kind == 'PAINT' for s in item.sources):
+            row.label(text="", icon='BRUSH_DATA')
+        elif color is not None and not color.is_linked:
             sub = row.row(align=True)
             sub.ui_units_x = 1.3
             sub.prop(color, "default_value", text="")
@@ -461,6 +463,18 @@ def _source_controls(col, mat, e, src, ch, value_socket, preview=False):
     remap or color ramp, then projection and mapping. `preview` draws an image as a
     thumbnail grid, like the mask picker."""
     found = sources.source_nodes(mat.node_tree, e.uid, ch.id)
+    if src.kind == 'PAINT':
+        tex = found.get('TEXTURE')
+        if tex is None:
+            col.label(text="Not painted yet: Paint it above", icon='INFO')
+            return
+        col.template_ID(tex, "image")
+        remap = found.get('REMAP')
+        if remap is not None:
+            sub = col.column(align=True)
+            sub.prop(remap.inputs['To Min'], "default_value", text="Min")
+            sub.prop(remap.inputs['To Max'], "default_value", text="Max")
+        return
     if src.kind == 'VALUE':
         if value_socket.is_linked:
             col.label(text="Driven by nodes in the node editor", icon='NODETREE')
@@ -555,8 +569,31 @@ def _props(self, context):
             layout.prop(opacity, "default_value", text="Opacity", slider=True)
     else:
         layout.prop(node.inputs[nodes.OPACITY], "default_value", text="Opacity", slider=True)
+        _paint_box(layout, mat, e)
         for ch in active_channels(mat):
             _channel(layout, mat, e, node, ch)
+
+
+def _paint_box(layout, mat, e):
+    """A layer with Paint channels: a button per Paint channel (the lit one is being painted;
+    Blender paints one image at a time), then Exit and the fill modes while painting."""
+    paint = [ch for ch in active_channels(mat)
+             if getattr(sources.get_source(e, ch.id), "kind", None) == 'PAINT']
+    if not paint:
+        return
+    ob = bpy.context.active_object
+    painting = ob is not None and ob.mode == 'TEXTURE_PAINT'
+    active = mat.node_tree.nodes.active if mat.node_tree is not None else None
+    box = layout.box()
+    box.label(text="Paint (one channel at a time)", icon='BRUSH_DATA')
+    grid = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+    for ch in paint:
+        tex = sources.source_nodes(mat.node_tree, e.uid, ch.id).get('TEXTURE')
+        on = painting and tex is not None and active == tex
+        grid.operator("essence.paint_channel", text=ch.label, depress=on).channel = ch.id
+    if painting:
+        box.operator("essence.exit_paint", icon='OBJECT_DATAMODE')
+        fill.draw(box, bpy.context)
 
 
 def _mask(self, context):

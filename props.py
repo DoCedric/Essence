@@ -74,6 +74,8 @@ def _source_update(self, context):
         return
     entry = next((e for e in mat.essence.layers if e.uid == self.uid), None)
     if entry is not None:
+        if entry.kind == 'LAYER':
+            nodes.refresh_entry(mat, entry)     # to or from Paint: another group variant
         sources.apply(mat, entry, self.channel)
         if entry.kind == 'FILL':        # the chain of its mask follows what the source became
             owner = next((e for e in mat.essence.layers if e.uid == entry.parent), None)
@@ -164,6 +166,8 @@ class EssenceLayer(bpy.types.PropertyGroup):
     collapsed: BoolProperty(name="Collapsed", default=False,
                             description="Hide what is under this entry in the tree view: a "
                                         "folder's layers, or a layer's and its mask's items")
+    # The channel of a paint layer that Paint works on (the last one painted).
+    paint_channel: StringProperty()
     kind: EnumProperty(items=[('LAYER', "Layer", ""), ('FOLDER', "Folder", ""),
                               ('MASK', "Mask", ""), ('ADJUSTMENT', "Adjustment", ""),
                               ('FILL', "Fill", ""), ('FILTER', "Filter", "")],

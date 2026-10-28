@@ -90,6 +90,7 @@ def _build_group(ng, folder=False, key=None):
     key = key or default_key()
     active = [BY_ID[i] for i in key["ch"]]
     modes = key.get("modes", {})
+    paint = set(key.get("paint", ()))
     iface = ng.interface
     iface.clear()
     ng.nodes.clear()
@@ -110,6 +111,8 @@ def _build_group(ng, folder=False, key=None):
         en = iface.new_socket(f"{ch.label} Enable", in_out='INPUT',
                               socket_type='NodeSocketBool')
         en.default_value = True
+        if ch.id in paint:      # a Paint channel: its image's alpha, so unpainted shows below
+            _opacity_socket(iface, sources.nodes_alpha_name(ch))
     for ch in active:
         _new_socket(iface, ch.label, 'OUTPUT', ch)
     if folder:
@@ -165,6 +168,14 @@ def _build_group(ng, folder=False, key=None):
             links.new(cop.outputs[0], fac.inputs[0])
             links.new(n_in.outputs[f"{ch.label} Enable"], fac.inputs[1])
             factor = fac.outputs[0]
+            if ch.id in paint:
+                pa = nodes.new('ShaderNodeMath')
+                pa.operation = 'MULTIPLY'
+                pa.location = (-200, y - 150)
+                pa.label = f"{ch.label} Paint Alpha"
+                links.new(factor, pa.inputs[0])
+                links.new(n_in.outputs[sources.nodes_alpha_name(ch)], pa.inputs[1])
+                factor = pa.outputs[0]
             mode = modes.get(ch.id, ch.blend)
         result = blends.build(nodes, links, ch, mode, a, b, factor, (0, y))
         links.new(result, n_out.inputs[ch.label])
@@ -284,6 +295,10 @@ def variant_key(mat, entry):
         for ch_id, mode in layer_modes(entry).items():
             if ch_id in key["ch"] and mode != BY_ID[ch_id].blend:
                 key["modes"][ch_id] = mode
+        paint = [c for c in key["ch"] if any(s.channel == c and s.kind == 'PAINT'
+                                              for s in entry.sources)]
+        if paint:
+            key["paint"] = paint
     return key
 
 
@@ -299,6 +314,10 @@ def variant_name(base, key):
             parts.append(f"-{c.label}")
         if on and key["modes"].get(c.id, c.blend) != c.blend:
             parts.append(f"{c.label}:{key['modes'][c.id].title()}")
+        if on and c.id in key.get("paint", ()) and set(key["paint"]) != set(key["ch"]):
+            parts.append(f"{c.label}:Paint")
+    if key.get("paint") and set(key["paint"]) == set(key["ch"]):
+        parts.append("Paint")       # a paint layer: every channel painted
     if not parts:
         return base
     name = f"{base} {' '.join(parts)}"
@@ -310,8 +329,10 @@ def variant_name(base, key):
 
 
 def _canon(key):
-    return json.dumps({"ch": list(key["ch"]), "modes": dict(sorted(key["modes"].items()))},
-                      sort_keys=True)
+    canon = {"ch": list(key["ch"]), "modes": dict(sorted(key["modes"].items()))}
+    if key.get("paint"):    # only then, so every group made before Paint keeps its key
+        canon["paint"] = list(key["paint"])
+    return json.dumps(canon, sort_keys=True)
 
 
 def _ensure_group(name, version, folder, key=None):

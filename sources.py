@@ -31,11 +31,17 @@ KINDS = [('VALUE', "Value", "A plain value", 'NONE', 0),
          ('PROCEDURAL', "Procedural", "A procedural texture", 'NONE', 2),
          ('GENERATOR', "Generator",
           "A live generator that reacts to the mesh: light direction, slope, gradients",
-          'NONE', 3)]
+          'NONE', 3),
+         ('PAINT', "Paint",
+          "Paint this channel: a transparent image, so where nothing is painted the layers "
+          "below show. The image is made when you first paint",
+          'NONE', 4)]
+# A mask paints with its own image or with paint items, so Paint is for layer channels only.
+MASK_KINDS = [k for k in KINDS if k[0] != 'PAINT']
 
 
 def kind_items(src):
-    return KINDS
+    return MASK_KINDS if src.channel == 'MASK' else KINDS
 PROJECTIONS = [('UV', "UV", "Use the UV map"),
                ('TRIPLANAR', "Triplanar",
                 "Project along the object's axes and blend the sides, with no UV map needed. "
@@ -245,6 +251,11 @@ def wire_baked_inputs(tree):
         _feed(tree, input_name, src, name, 'ShaderNodeRGB', 'Color', color)
 
 
+def nodes_alpha_name(ch):
+    """The layer group input a Paint channel's alpha goes into (see nodes._build_group)."""
+    return f"{ch.label} Alpha"
+
+
 def tag(uid, ch_id):
     return f"{uid}:{ch_id}"
 
@@ -337,6 +348,14 @@ def _wanted(src, ch, adjusted=False):
             return {}
         return {'CONST': 'ShaderNodeValue' if ch.socket_type == 'NodeSocketFloat'
                 else 'ShaderNodeRGB'}
+    if src.kind == 'PAINT':
+        # Nothing until the channel's image exists (made on the first Paint): no effect.
+        if src.image_memory is None:
+            return {}
+        roles = {'TEXTURE': 'ShaderNodeTexImage', 'UNPREM': 'ShaderNodeVectorMath'}
+        if ch.socket_type == 'NodeSocketFloat':
+            roles['REMAP'] = 'ShaderNodeMapRange'
+        return roles
     roles = ({} if src.kind == 'GENERATOR'
              else {'COORD': 'ShaderNodeTexCoord', 'MAPPING': 'ShaderNodeMapping'})
     roles['TEXTURE'] = 'ShaderNodeTexImage' if src.kind == 'IMAGE' else 'ShaderNodeGroup'
@@ -564,6 +583,12 @@ def apply(mat, entry, ch_id):
     # A mask's value goes to its group's Value; a fill's to the second input of its blend node.
     b_in = (layer_node.inputs[1] if entry.kind == 'FILL'
             else layer_node.inputs["Value" if is_mask else f"{ch.label} B"])
+    # A Paint channel's alpha scales the channel's factor (the layer group has the input then).
+    alpha_in = (layer_node.inputs.get(nodes_alpha_name(ch))
+                if not is_mask and entry.kind == 'LAYER' else None)
+    if alpha_in is not None:
+        _clear_links(tree, alpha_in)
+        alpha_in.default_value = 0.0 if src.kind == 'PAINT' else 1.0
     for role, node in list(have.items()):
         if role not in wanted or node.bl_idname != wanted[role]:
             if role == 'CONST':  # the value goes back to the socket it was adjusting
@@ -604,8 +629,10 @@ def apply(mat, entry, ch_id):
             n.interpolation = 'Linear'
             if src.image_memory is not None:
                 n.image = src.image_memory
+        elif role == 'UNPREM':
+            n.operation = 'DIVIDE'
         elif role == 'REMAP':
-            lo, hi = ch.image_range if src.kind == 'IMAGE' else ch.proc_range
+            lo, hi = ch.image_range if src.kind in ('IMAGE', 'PAINT') else ch.proc_range
             n.data_type = 'FLOAT'
             n.clamp = True
             n.inputs['To Min'].default_value = lo
@@ -643,7 +670,7 @@ def apply(mat, entry, ch_id):
 
     # Wiring. Only links between the nodes made here are replaced.
     links = tree.links
-    if src.kind != 'GENERATOR':
+    if src.kind not in ('GENERATOR', 'PAINT'):     # these two need no coordinates of ours
         coord = 'UV' if src.projection == 'UV' else 'Object'
         _clear_links(tree, have['MAPPING'].inputs['Vector'])
         links.new(have['COORD'].outputs[coord], have['MAPPING'].inputs['Vector'])
@@ -652,6 +679,17 @@ def apply(mat, entry, ch_id):
 
     if src.kind == 'IMAGE':
         out = tex.outputs['Color']
+    elif src.kind == 'PAINT':
+        # The brush leaves color * alpha where it only partly covered a texel (see the paint
+        # items), so the painted color is the stored color divided by the stored alpha.
+        unprem = have['UNPREM']
+        for sock in (unprem.inputs[0], unprem.inputs[1]):
+            _clear_links(tree, sock)
+        links.new(tex.outputs['Color'], unprem.inputs[0])
+        links.new(tex.outputs['Alpha'], unprem.inputs[1])
+        out = unprem.outputs['Vector']
+        if alpha_in is not None:
+            links.new(tex.outputs['Alpha'], alpha_in)
     else:
         out = tex.outputs['Fac']
     if 'REMAP' in have:
@@ -671,7 +709,7 @@ def apply(mat, entry, ch_id):
         layout(tree, entry, layer_node)
 
 
-_ROLE_ORDER = ('CONST', 'COORD', 'MAPPING', 'TEXTURE', 'REMAP', 'RAMP')
+_ROLE_ORDER = ('CONST', 'COORD', 'MAPPING', 'TEXTURE', 'UNPREM', 'REMAP', 'RAMP')
 _STEP = {'CONST': 200, 'COORD': 230, 'MAPPING': 330, 'TEXTURE': 330, 'REMAP': 290,
          'RAMP': 320, 'MAIN': 330, 'ALPHA': 250, 'UNPREM': 200, 'MIX': 250, 'IN': 60,
          'OUT': 330}

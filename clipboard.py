@@ -44,9 +44,12 @@ def _subtree(layers, uid):
 
 
 def _plain(v):
-    """An ID property value as plain data (groups to dicts, collections to lists of dicts)."""
-    if hasattr(v, "to_dict"):
-        return v.to_dict()
+    """An ID property value as plain data (groups to dicts, collections to lists of dicts). A
+    pointer to a data-block (an image a source remembers) stays that data-block."""
+    if isinstance(v, bpy.types.ID):
+        return v
+    if hasattr(v, "to_dict"):       # key by key: to_dict() would turn a pointer into a dict
+        return {k: _plain(v[k]) for k in v.keys()}
     if isinstance(v, list):
         return [_plain(x) for x in v]
     if hasattr(v, "to_list"):
@@ -219,7 +222,7 @@ def copy_entry(src_mat, uid, dst_mat, parent, anchor=None):
             if src.get("uid") in umap:
                 src["uid"] = umap[src["uid"]]
             mem = src.get("image_memory")
-            if mem is not None and mem in images:
+            if isinstance(mem, bpy.types.ID) and mem in images:  # an unset one reads as {}
                 src["image_memory"] = images[mem]
         if u == uid:
             d["name"] = new_name

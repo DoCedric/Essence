@@ -3,7 +3,7 @@ from bpy.props import EnumProperty, IntProperty, StringProperty
 
 from . import (adjustments, curvature, filters, generators, gizmo, nodes, preview, sources,
                stack)
-from .channels import SOURCE_BY_ID
+from .channels import SOURCE_BY_ID, active_channels
 
 
 def _material(context, create=False):
@@ -923,6 +923,7 @@ class ESSENCE_MT_add(bpy.types.Menu):
 
     def draw(self, context):
         self.layout.operator("essence.add_layer", text="Layer", icon='ADD')
+        self.layout.operator("essence.add_paint_layer", text="Paint Layer", icon='BRUSH_DATA')
         self.layout.operator("essence.add_folder", text="Folder", icon='NEWFOLDER')
         self.layout.separator()
         self.layout.menu("ESSENCE_MT_add_smart", text="Smart Material", icon='MATERIAL')
@@ -1070,6 +1071,105 @@ class ESSENCE_OT_paint_mask(_Base, bpy.types.Operator):
         return {'FINISHED'}
 
 
+def _paint_layer(context):
+    """The layer the active entry belongs to, when it has a Paint channel."""
+    mat = _material(context)
+    e = _owner(mat, _active(mat)) if mat is not None else None
+    if e is None or e.kind != 'LAYER':
+        return None
+    return e if any(s.kind == 'PAINT' for s in e.sources) else None
+
+
+def paint_image(mat, layer, ch):
+    """A new image for Paint channel `ch` of `layer`: transparent, at the texture set's size;
+    a color channel holds color (scene linear, so the brush's color is converted into it),
+    the others plain values."""
+    size = int(mat.essence.bake_size)
+    img = nodes.new_paint_image(f"{mat.name}_{layer.name}_{ch.label}", size,
+                                (0.0, 0.0, 0.0, 0.0), alpha=True)
+    if ch.socket_type == 'NodeSocketColor':
+        img.colorspace_settings.name = 'Linear Rec.709'
+    return img
+
+
+class ESSENCE_OT_paint_channel(_Base, bpy.types.Operator):
+    bl_idname = "essence.paint_channel"
+    bl_label = "Paint Channel"
+    bl_description = ("Paint this channel of the layer in Texture Paint. Its image is made the "
+                      "first time; one channel is painted at a time")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    channel: StringProperty(options={'HIDDEN', 'SKIP_SAVE'})
+
+    @classmethod
+    def poll(cls, context):
+        return _paint_layer(context) is not None
+
+    def execute(self, context):
+        ob = context.active_object
+        mat = _material(context)
+        layer = _paint_layer(context)
+        ch = SOURCE_BY_ID.get(self.channel)
+        src = sources.get_source(layer, self.channel) if ch is not None else None
+        if src is None or src.kind != 'PAINT' or ch not in active_channels(mat):
+            self.report({'ERROR'}, f"{self.channel.title()} is not a Paint channel here")
+            return {'CANCELLED'}
+        if not ob.data.uv_layers:
+            self.report({'ERROR'}, "Object has no UV map; unwrap it to paint")
+            return {'CANCELLED'}
+        tree = mat.node_tree
+        if sources.source_nodes(tree, layer.uid, ch.id).get('TEXTURE') is None:
+            sources.SUSPEND = True
+            try:
+                src.image_memory = paint_image(mat, layer, ch)
+            finally:
+                sources.SUSPEND = False
+            uid = layer.uid
+            sources.apply(mat, layer, ch.id)
+            nodes.rebuild_stack(mat)
+            layer = next(x for x in mat.essence.layers if x.uid == uid)  # the rebuild may move it
+        tex = sources.source_nodes(tree, layer.uid, ch.id)['TEXTURE']
+        tree.nodes.active = tex
+        layer.paint_channel = ch.id
+        context.tool_settings.image_paint.mode = 'MATERIAL'
+        # Texture Paint lists the paintable images when it starts: enter it (again) so a new
+        # image is in the list and the active image node is the target.
+        if ob.mode == 'TEXTURE_PAINT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='TEXTURE_PAINT')
+        return {'FINISHED'}
+
+
+class ESSENCE_OT_add_paint_layer(_Base, bpy.types.Operator):
+    bl_idname = "essence.add_paint_layer"
+    bl_label = "Add Paint Layer"
+    bl_description = ("Add a layer to paint on: every channel is a Paint channel, transparent "
+                      "until painted. Paint one channel at a time from the layer's panel")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        bpy.ops.essence.add_layer()
+        mat = _material(context)
+        s = mat.essence
+        e = s.layers[s.active_index]
+        n = sum(1 for x in s.layers if x.kind == 'LAYER'
+                and any(src.kind == 'PAINT' for src in x.sources))
+        sources.SUSPEND = True
+        try:
+            for src in e.sources:
+                src.kind = 'PAINT'
+        finally:
+            sources.SUSPEND = False
+        e.name = f"Paint Layer {n + 1}"
+        e.paint_channel = 'COLOR'
+        uid = e.uid
+        nodes.refresh_entry(mat, e)
+        sources.apply_owner(mat, e)
+        nodes.rebuild_stack(mat)
+        s.active_index = next(i for i, x in enumerate(s.layers) if x.uid == uid)
+        return {'FINISHED'}
+
+
 class ESSENCE_OT_exit_paint(_Base, bpy.types.Operator):
     bl_idname = "essence.exit_paint"
     bl_label = "Exit Paint Mode"
@@ -1136,7 +1236,7 @@ classes = (
     ESSENCE_OT_add_generator, ESSENCE_MT_add, ESSENCE_MT_add_to, ESSENCE_MT_add_generator,
     ESSENCE_MT_add_filter, ESSENCE_MT_add_adjustment,
     ESSENCE_OT_mask_non_color, ESSENCE_OT_map_non_color, ESSENCE_OT_source_colorspace, ESSENCE_OT_paint_mask,
-    ESSENCE_OT_exit_paint,
+    ESSENCE_OT_paint_channel, ESSENCE_OT_add_paint_layer, ESSENCE_OT_exit_paint,
     ESSENCE_OT_rebuild, ESSENCE_MT_add_mask,
 )
 

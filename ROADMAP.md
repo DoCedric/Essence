@@ -5,11 +5,12 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-27)
-Sprints 0 to 6 are done and merged into `main`. Sprint 7 is on `sprint-7-paint-fill-folders`: the paint fill modes first (pulled forward from Sprint 8 by the user), then folders and materials. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 356/356 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 7 are done and merged into `main`. Sprint 8 is on `sprint-8-paint-layers`: paint layers, then texture set settings. Height from mesh is deferred to Sprint 9 as a nice-to-have (decided with the user: nothing reads it until export to Unity is tested). The asset library moved to the last sprint (11). `tests/run_all.py`: 361/361 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
-**Pending GUI checks**: none (Add menus and smart materials confirmed 2026-10-27).
+**Pending GUI checks** (one):
+- **Paint layers**: Add > Paint Layer over a colored layer: nothing changes until painted, the row has a brush icon. In its panel, the Paint box: click Color, paint red with a soft brush: red appears only where painted, soft edges blend into the layer below with no light or dark fringe, and the red looks like the brush color (not lighter or darker). Click Roughness: the Color button goes dark and Roughness lights; paint grey 0.9 and the reflections blur only there. Fill modes in the box (UV Island, Face) fill the lit channel. Exit Paint Mode. Save, reopen: the paint is there.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -181,8 +182,17 @@ What a shader reads live: Geometry Normal and Position (world space), Texture Co
 - [x] **Duplicate / copy / paste of layers and folders** (`clipboard.py`): with masks, items, contents, copied paint images and filter groups, across materials; buttons on the stack bar and a row menu (right-click or Shift+click: Rename, Duplicate, Copy, Paste, Delete). [H] `tests/test_clipboard.py`. [G] confirmed by the user (2026-10-27).
 - [x] **Add menu grouping**: two menus on the stack bar, Add (Layer, Folder) and Add to Selected (Mask, Fill, Paint, Generator, Filters, Adjustments); Generator adds straight to the mask (`essence.add_generator`). [H] `tests/test_add_menus.py`. [G] confirmed by the user (2026-10-27).
 
+## Sprint 8: Paint layers, then texture set settings (`sprint-8-paint-layers`)
+Decided with the user (2026-10-28): a paint layer is a layer whose channels use a Paint source; a channel's image is made on its first paint.
+- [x] **Paint source** for layer channels (`sources.py`): no nodes until painted; then image, unpremultiply, remap, adjustments. Masks do not offer it. [H] `tests/test_paint_layers.py`
+- [x] **Layer group variant** with a `<Channel> Alpha` input per Paint channel in the channel's factor (`nodes.py`, key `paint`; other layers keep their groups). [H]
+- [x] **Paint button per channel** (`essence.paint_channel`): makes the image at the texture set's size (color channels scene linear, others Non-Color), targets it, enters Texture Paint. [H]
+- [x] **Add > Paint Layer** (`essence.add_paint_layer`), brush icon on the row, Paint box with Exit and the fill modes in the layer panel. [H] draws
+- [x] Fix: copying an entry whose source remembers no image crashed after a reload (an unset pointer reads as `{}`), and nested pointers were turned into dicts (`clipboard._plain`). [H]
+- [ ] [G] paint layers in the GUI (see Pending GUI checks).
+- [ ] Texture set settings: a list of the texture sets (materials) with their resolution.
+
 ## Later sprints (outline, to be detailed)
-- **Sprint 8, painting and viewport:** paint layers (per-channel painting, the paint item machinery on a channel), the fill modes on paint layers (built for masks and paint items in Sprint 7), texture set settings. Already built: paint items on masks and the preview buttons (layer, mask, whole-stack channels, mesh maps).
 - **Sprint 9, export:** preset engine, URP/Unreal/glTF, all channels, bit depth, dilation, export all, flattened Blender material; tested in Unity.
   - [ ] Nice-to-have, **Height from mesh** (designed, see "Height from mesh" in the design doc; three decisions are open, Open Question 12). A new Mesh Maps slot `HEIGHT`, a bake entry with a thumbnail, a Range setting. Plan:
     - [ ] Decide with the user: method (position delta, recommended, or Ray Length), Range (automatic by default, recommended), and that the slot does not feed the Bump node (recommended). [ask]

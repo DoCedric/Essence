@@ -102,8 +102,8 @@ def test_menus_draw(addon):
         return log
 
     log = draw(ops.ESSENCE_MT_add)
-    check([c[1][0] for c in log if c[0] == "operator"] == ["essence.add_layer",
-                                                            "essence.add_folder"], "Add")
+    check([c[1][0] for c in log if c[0] == "operator"] == [
+        "essence.add_layer", "essence.add_paint_layer", "essence.add_folder"], "Add")
     log = draw(ops.ESSENCE_MT_add_to)
     check([c[1][0] for c in log if c[0] == "menu"] == [
         "ESSENCE_MT_add_mask", "ESSENCE_MT_add_generator", "ESSENCE_MT_add_filter",
