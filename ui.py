@@ -824,28 +824,35 @@ def _export(self, context):
     layout.operator("essence.bake_material", icon='MATERIAL')
 
 
-# The stack and what is selected in it: the N sidebar of the 3D View and the Image Editor.
+# What is selected in the stack: the N sidebar of the 3D View and the Image Editor.
 _PANELS = (
-    ("LAYERS", "Layers", _stack, None),
     ("PROPS", "Layer Properties", _props, _props_poll),
     ("MASK", "Mask Properties", _mask, _mask_poll),
     ("ADJUSTMENT", "Adjustment Properties", _adjustment, _adjustment_poll),
 )
 
-# The texture set's settings: the Material tab of the Properties editor (decided with the
-# user, 2026-10-28), full width, below Blender's own material panels, each collapsible and
-# draggable. A texture set is a material, and that tab follows the active object's material.
-MATERIAL_PANELS = (
-    ("MAPS", "Essence Mesh Maps", _maps),
-    ("MATERIAL", "Essence Channels", _material),
-    ("BAKE", "Essence Bake", _bake),
-    ("EXPORT", "Essence Export", _export),
-)
-
-
 def _material_tab_poll(cls, context):
     ob = context.active_object
     return ob is not None and ob.type == 'MESH' and ob.active_material is not None
+
+
+def _layers_poll(cls, context):
+    # Any mesh: on one without a material, Add Layer makes it.
+    ob = context.active_object
+    return ob is not None and ob.type == 'MESH'
+
+
+# The stack and the texture set's settings: the Material tab of the Properties editor
+# (decided with the user, 2026-10-28 and 29), full width, below Blender's own material panels,
+# each collapsible and draggable. A texture set is a material, and that tab follows the
+# active object's material.
+MATERIAL_PANELS = (
+    ("LAYERS", "Essence Layers", _stack, _layers_poll),
+    ("MAPS", "Essence Mesh Maps", _maps, _material_tab_poll),
+    ("MATERIAL", "Essence Channels", _material, _material_tab_poll),
+    ("BAKE", "Essence Bake", _bake, _material_tab_poll),
+    ("EXPORT", "Essence Export", _export, _material_tab_poll),
+)
 
 
 classes = []
@@ -865,7 +872,7 @@ for space, tag in SPACES:
         cls = type(f"ESSENCE_PT_{key.lower()}_{tag.lower()}", (bpy.types.Panel,), attrs)
         classes.append(cls)
 
-for key, label, draw in MATERIAL_PANELS:
+for key, label, draw, poll in MATERIAL_PANELS:
     classes.append(type(f"ESSENCE_PT_{key.lower()}_material", (bpy.types.Panel,), {
         "bl_idname": f"ESSENCE_PT_{key.lower()}_material",
         "bl_label": label,
@@ -873,7 +880,7 @@ for key, label, draw in MATERIAL_PANELS:
         "bl_region_type": 'WINDOW',
         "bl_context": "material",
         "draw": draw,
-        "poll": classmethod(_material_tab_poll),
+        "poll": classmethod(poll),
     }))
 
 

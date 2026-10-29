@@ -10,7 +10,7 @@ Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and chann
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
 **Pending GUI checks** (one):
-- **Panel placement**: the N sidebar's Essence tab has Layers and the selection's properties only. The Properties editor's Material tab has Essence Mesh Maps, Essence Channels, Essence Bake and Essence Export below Blender's panels; they collapse, drag into another order, and follow the active object's material slot. Baking, exporting, the channel list and the Show on Mesh buttons work from there.
+- **Panel placement**: the N sidebar's Essence tab has the selection's properties only (Layer, Mask or Adjustment Properties). The Properties editor's Material tab has Essence Layers (first, also on a mesh without a material: Add Layer makes one; selecting a row there updates the sidebar), Essence Mesh Maps, Essence Channels, Essence Bake and Essence Export below Blender's panels; they collapse, drag into another order, and follow the active object's material slot. Baking, exporting, the channel list and the Show on Mesh buttons work from there.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -223,6 +223,7 @@ Decided with the user (2026-10-28): the P1 blend modes plus the Mix node's color
 ## Sprint 11: Panel placement (`sprint-11-panels`, branched from `sprint-10-blend-channels`)
 Decided with the user (2026-10-28): plain option A. Blender has no add-on editor types and no add-on tabs in the Properties editor, so the texture set's panels move to the Material tab; the stack and the selection stay in the N sidebar.
 - [x] Essence Mesh Maps, Essence Channels, Essence Bake and Essence Export as panels in the Properties editor's Material tab; Layers, Layer, Mask and Adjustment Properties stay in the sidebars. Messages that point at a panel say where it is now. [H] `tests/test_panels.py`
+- [x] **Essence Layers** moved to the Material tab too, first (user request, 2026-10-29); the sidebar keeps the selection's properties. [H] `tests/test_panels.py`
 - [ ] [G] the panels in the Material tab (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)

@@ -9,12 +9,13 @@ from harness import check, make_plane
 
 
 def test_panel_placement(addon):
-    for key in ("layers", "props", "mask", "adjustment"):
+    for key in ("props", "mask", "adjustment"):
         for tag, space in (("view3d", 'VIEW_3D'), ("image", 'IMAGE_EDITOR')):
             cls = getattr(bpy.types, f"ESSENCE_PT_{key}_{tag}", None)
             check(cls is not None and cls.bl_space_type == space and cls.bl_region_type == 'UI'
                   and cls.bl_category == "Essence", f"{key} in the {space} sidebar")
-    for key, label in (("maps", "Essence Mesh Maps"), ("material", "Essence Channels"),
+    for key, label in (("layers", "Essence Layers"), ("maps", "Essence Mesh Maps"),
+                       ("material", "Essence Channels"),
                        ("bake", "Essence Bake"), ("export", "Essence Export")):
         cls = getattr(bpy.types, f"ESSENCE_PT_{key}_material", None)
         check(cls is not None and cls.bl_space_type == 'PROPERTIES'
@@ -29,3 +30,9 @@ def test_panel_placement(addon):
     check(not poll(SimpleNamespace(active_object=ob)), "no material: hidden")
     bpy.ops.essence.add_layer()
     check(poll(SimpleNamespace(active_object=ob)), "a material: shown")
+    names = [c.__name__ for c in addon.ui.classes if c.bl_space_type == 'PROPERTIES']
+    check(names[0] == "ESSENCE_PT_layers_material", f"Layers first in the Material tab: {names}")
+    layers_poll = bpy.types.ESSENCE_PT_layers_material.poll
+    plain = make_plane("Plain")
+    check(layers_poll(SimpleNamespace(active_object=plain)),
+          "Layers shows on a mesh without a material (Add Layer makes one)")
