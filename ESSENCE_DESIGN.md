@@ -61,6 +61,9 @@ Nothing in the code or the generated node structure should assume today's featur
 - The layer node has a stable, documented set of inputs and outputs so that added channels extend it rather than replace it.
 - Export targets, mask generators and layer presets are data (presets and assets), not code paths.
 
+### 9. Trust the Blender user
+The user is assumed to be a veteran Blender user. Essence does not second-guess or override a setting they chose in Blender, hide a control because one of their settings makes it moot, or decide for them. Example: World Rotation shows in Material Preview even with Scene World ticked; someone who ticked it knows to untick it (decided with the user, 2026-10-29). Essence warns only where it cannot be seen otherwise (a wrong colorspace on an image) and offers a fix the user presses; it never changes their setup on its own.
+
 ### 8. Use Blender's infrastructure; never build a program inside the program
 This is the rule for deciding *how* every feature below is built. Before writing code for a feature, ask which Blender system already does it:
 
