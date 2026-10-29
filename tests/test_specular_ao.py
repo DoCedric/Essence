@@ -83,10 +83,16 @@ def test_ao_channel_drives_the_overlay(addon):
     _slot(addon, mat, 'AO').image = _grey_ao(0.5)
     bpy.ops.essence.rebuild()
     close(_ao_rgb(addon, ob, mat)[0], 0.2, 0.01, "0.8 * baked 0.5 * channel 0.5")
-    # Preview of the channel shows the stack's AO.
+    # The whole-stack AO preview shows what the overlay uses: the channel times the bake.
     sock = addon.preview._resolve(mat, 'CHANNEL', 'AO')
     check(sock is not None, "the AO channel can be previewed")
-    close(sample_socket(ob, mat, sock)[0], 0.5, 0.01, "the preview shows the channel")
+    close(sample_socket(ob, mat, sock)[0], 0.25, 0.01, "the preview shows baked 0.5 * channel 0.5")
+    _slot(addon, mat, 'AO').image = None
+    bpy.ops.essence.rebuild()
+    close(sample_socket(ob, mat, addon.preview._resolve(mat, 'CHANNEL', 'AO'))[0], 0.5, 0.01,
+          "no bake: the preview shows the channel alone")
+    _slot(addon, mat, 'AO').image = _grey_ao(0.5)
+    bpy.ops.essence.rebuild()
     _state(mat, 'AO').enabled = False
     check(mat.node_tree.nodes.get(addon.nodes.AO_COMBINE_NODE) is None, "combine node gone")
     close(_ao_rgb(addon, ob, mat)[0], 0.4, 0.01, "off: the baked AO alone")

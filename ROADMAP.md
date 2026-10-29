@@ -225,6 +225,7 @@ Decided with the user (2026-10-28): plain option A. Blender has no add-on editor
 - [x] Essence Mesh Maps, Essence Channels, Essence Bake and Essence Export as panels in the Properties editor's Material tab; Layers, Layer, Mask and Adjustment Properties stay in the sidebars. Messages that point at a panel say where it is now. [H] `tests/test_panels.py`
 - [x] **Essence Layers** moved to the Material tab too, first (user request, 2026-10-29); the sidebar keeps the selection's properties. [H] `tests/test_panels.py`
 - [x] Above the stack: World Rotation (the 3D View's HDRI) and the whole-stack previews as short buttons, five per row (`Channel.short`, `preview_order`); Mesh Maps' Show on Mesh is an eye beside the map's name; Directional Light has Use Detail Normal on by default (group version 3, existing generators keep their value). User requests, 2026-10-29. [H] `tests/test_panels.py`, `tests/test_generators.py`
+- [x] The whole-stack AO preview shows the baked AO times the AO channel, like the overlay and export (it showed the channel alone). User request, 2026-10-29. [H] `tests/test_specular_ao.py`
 - [ ] [G] the panels in the Material tab (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)

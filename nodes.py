@@ -619,6 +619,16 @@ def ao_channel_output(mat):
     return top.outputs.get(BY_ID['AO'].label) if top is not None else None
 
 
+def ao_output(mat):
+    """The AO the overlay and export use: the channel times the AO mesh map once `apply_ao`
+    has combined them, else the channel alone (None while it is off)."""
+    channel = ao_channel_output(mat)
+    combine = mat.node_tree.nodes.get(AO_COMBINE_NODE)
+    if channel is not None and combine is not None:
+        return combine.outputs[0]
+    return channel
+
+
 def apply_ao(mat):
     """Use the AO at the end of the shading tree, like the AO pass of a PBR renderer: it
     darkens Base Color and lowers Specular IOR Level by `lerp(1, AO, Strength)`. The AO is

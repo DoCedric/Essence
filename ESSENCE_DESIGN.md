@@ -297,7 +297,7 @@ Channels are data (`channels.py`). The Principled BSDF already exposes nearly ev
 | Normal | Not a layer channel: one normal map per material, see Mesh maps. Layer detail goes through Bump | | 🚫 as a channel (decided; avoids a per-layer normal blend cost) | |
 | Opacity / Alpha | BSDF Alpha | Mix + blend modes | ✅ BaseMap alpha on export | |
 | Emission (color + strength) | BSDF Emission Color; strength set to 1 when the channel is switched on | Mix + blend modes | ✅ own file on export | |
-| Ambient Occlusion | not a BSDF input: a layer channel (off by default, white) multiplied with the AO mesh map; the product drives the viewport overlay (Base Color and Specular, Strength slider) and is what export writes as AO (decided with the user, 2026-10-28) | Mix + blend modes | ✅ verified headless and in the GUI (Sprint 10) | |
+| Ambient Occlusion | not a BSDF input: a layer channel (off by default, white) multiplied with the AO mesh map; the product drives the viewport overlay (Base Color and Specular, Strength slider), is what the whole-stack AO preview shows (2026-10-29) and is what export writes as AO (decided with the user, 2026-10-28) | Mix + blend modes | ✅ verified headless and in the GUI (Sprint 10) | |
 | Specular level / Specular tint | BSDF Specular IOR Level / Tint (off by default; the AO overlay lowers the stack's specular when both are on) | Mix + blend modes | ✅ verified headless and in the GUI (Sprint 10), exported by PBR Maps and the baked material | |
 | Coat (weight, roughness, tint, normal) | BSDF Coat inputs | Mix | ⬜ | P2 |
 | Sheen (weight, roughness, tint) | BSDF Sheen inputs | Mix | ⬜ | P2 |
