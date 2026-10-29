@@ -56,6 +56,39 @@ def _preview_button(row, mat, kind, ident):
     op.kind, op.ident = kind, ident
 
 
+def _shading(context):
+    """The shading of the 3D View that shows the HDRI (Material Preview, or Rendered without
+    the scene world), or None."""
+    screen = getattr(context, "screen", None)
+    for area in (screen.areas if screen is not None else ()):
+        if area.type == 'VIEW_3D':
+            shading = area.spaces.active.shading
+            if shading.type == 'MATERIAL' or (shading.type == 'RENDERED'
+                                              and not shading.use_scene_world_render):
+                return shading
+    return None
+
+
+def _view_controls(layout, context, mat):
+    """Above the stack: the HDRI's rotation (the 3D View's shading, so it turns without its
+    popover) and the whole-stack preview of each channel, five short buttons per row."""
+    shading = _shading(context)
+    if shading is not None:
+        layout.prop(shading, "studiolight_rotate_z", text="World Rotation", icon='WORLD')
+    chans = sorted(active_channels(mat), key=lambda c: c.preview_order)
+    if not chans:
+        return
+    col = layout.column(align=True)
+    for i in range(0, len(chans), 5):
+        row = col.row(align=True)
+        for c in chans[i:i + 5]:
+            op = row.operator("essence.preview", text=c.short or c.label,
+                              depress=preview.active(mat) == ('CHANNEL', c.id))
+            op.kind, op.ident = 'CHANNEL', c.id
+        for _ in range(5 - len(chans[i:i + 5])):
+            row.label(text="")      # keeps the buttons of a short row as wide as above
+
+
 def _preview_active_button(row, mat):
     """The stack bar's preview toggle: it works on the selected layer or mask, so the rows
     stay free of per-row buttons."""
@@ -269,6 +302,7 @@ def _stack(self, context):
         col.menu("ESSENCE_MT_add_smart", text="Smart Material", icon='MATERIAL')
         return
     _preview_notice(layout, mat, context)
+    _view_controls(layout, context, mat)
     bar = layout.row(align=True)
     # The new-entry buttons each on the bar (the user's request, 2026-10-28); what is added
     # to the selected entry stays one menu.
@@ -646,14 +680,6 @@ def _material(self, context):
     if mat is None or mat.node_tree is None:
         return
     tree = mat.node_tree
-    if mat.essence.layers:
-        box = layout.box()
-        box.label(text="Preview the whole stack")
-        grid = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
-        for c in active_channels(mat):
-            op = grid.operator("essence.preview", text=c.label,
-                               depress=preview.active(mat) == ('CHANNEL', c.id))
-            op.kind, op.ident = 'CHANNEL', c.id
     if mat.essence.channels:
         box = layout.box()
         box.label(text="Channels")
@@ -692,7 +718,14 @@ def _maps(self, context):
             continue
         found = True
         box = layout.box()
-        box.label(text=label)
+        row = box.row()
+        row.label(text=label)
+        if node.image is not None:
+            # Show on Mesh: an eye beside the name, open while the map is shown.
+            on = preview.active(mat) == ('MAP', map_id)
+            op = row.operator("essence.preview", text="", emboss=False,
+                              icon='HIDE_OFF' if on else 'HIDE_ON')
+            op.kind, op.ident = 'MAP', map_id
         box.template_ID(node, "image", open="image.open")
         if node.image is not None and node.image.colorspace_settings.name != 'Non-Color':
             box.label(text="Maps should be Non-Color", icon='ERROR')
@@ -708,10 +741,6 @@ def _maps(self, context):
                 box.prop(factor, "default_value", text="Strength", slider=True)
         elif map_id == 'CURVATURE':
             _curvature(box, mat)
-        if node.image is not None:
-            op = box.operator("essence.preview", text="Show on Mesh", icon='SHADING_TEXTURE',
-                              depress=preview.active(mat) == ('MAP', map_id))
-            op.kind, op.ident = 'MAP', map_id
     if not found:
         layout.label(text="Add a layer first")
     elif missing:    # a file from before some slots existed: a rebuild adds them

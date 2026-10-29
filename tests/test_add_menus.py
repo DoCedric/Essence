@@ -122,7 +122,7 @@ def test_menus_draw(addon):
     menus = [c[1][0] for c in bar if c[0] == "menu"]
     check(menus == ["ESSENCE_MT_add_smart", "ESSENCE_MT_add_to"], f"bar menus {menus}")
     check(all(c[2].get("text") == "" for c in bar if c[0] == "menu"), "icon-only menus")
-    bar_ops = [c[1][0] for c in bar if c[0] == "operator"]
+    bar_ops = [c[1][0] for c in bar if c[0] == "operator" and c[1][0] != "essence.preview"]
     check(bar_ops[:3] == ["essence.add_layer", "essence.add_paint_layer", "essence.add_folder"],
           f"Layer, Paint Layer and Folder buttons first on the bar: {bar_ops[:4]}")
     check(not hasattr(bpy.types, "ESSENCE_MT_add"), "the old Add menu is gone")

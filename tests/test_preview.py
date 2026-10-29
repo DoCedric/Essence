@@ -219,16 +219,19 @@ def test_preview_buttons_and_notice_draw(addon):
     ob, mat, bottom, top, mask = _setup()
     log = _draw(ui._stack, ob)
     kinds = [(c[2].get("icon"), c[1][0]) for c in log if c[0] == "operator"
-             and c[1][0] == "essence.preview"]
+             and c[1][0] == "essence.preview" and c[2].get("icon")]
     check(len(kinds) == 1, f"one preview toggle, on the stack bar: {len(kinds)}")
     check(kinds[0][0] == 'SHADING_TEXTURE', "the icon")
-    log = _draw(ui._material, ob)
-    channels = [c for c in log if c[0] == "operator" and c[1][0] == "essence.preview"]
-    check(len(channels) >= 4, f"a preview button per channel: {len(channels)}")
+    channels = [c[2].get("text") for c in log if c[0] == "operator"
+                and c[1][0] == "essence.preview" and not c[2].get("icon")]
+    check(channels == ["Col", "Rgh", "Met", "Bmp"],
+          f"the whole-stack previews above the stack, short: {channels}")
+    check(not any(c[0] == "operator" and c[1][0] == "essence.preview"
+                  for c in _draw(ui._material, ob)), "no longer in Essence Channels")
     _run('MASK', mask)
     # the bar's toggle follows the selection: pressed on the previewed mask, not on a layer
     pressed = lambda: [c[2].get("depress") for c in _draw(ui._stack, ob) if c[0] == "operator"
-                       and c[1][0] == "essence.preview"][0]
+                       and c[1][0] == "essence.preview" and c[2].get("icon")][0]
     mat.essence.active_index = next(i for i, e in enumerate(mat.essence.layers) if e.uid == mask)
     check(pressed(), "the selected mask is the one previewed: pressed")
     mat.essence.active_index = next(i for i, e in enumerate(mat.essence.layers) if e.uid == top)

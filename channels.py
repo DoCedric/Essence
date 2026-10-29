@@ -29,35 +29,43 @@ class Channel:
     default_enabled: bool = True
     # BSDF inputs set when the channel is switched on or off: (socket, on value, off value).
     enable_values: Tuple = ()
+    short: str = ''          # the label of its whole-stack preview button (a row of five)
+    preview_order: int = 0   # its place in that row: the common ones first
 
 
 CHANNELS = (
     Channel('COLOR', 'Color', 'NodeSocketColor', 'MIX',
-            (0.8, 0.8, 0.8, 1.0), target=('BSDF', 'Base Color'), colorspace='sRGB'),
+            (0.8, 0.8, 0.8, 1.0), target=('BSDF', 'Base Color'), colorspace='sRGB',
+            short="Col", preview_order=0),
     Channel('ROUGHNESS', 'Roughness', 'NodeSocketFloat', 'MIX',
-            0.5, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Roughness')),
+            0.5, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Roughness'), short="Rgh",
+            preview_order=1),
     Channel('METALLIC', 'Metallic', 'NodeSocketFloat', 'MIX',
-            0.0, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Metallic')),
+            0.0, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Metallic'), short="Met",
+            preview_order=2),
     # Height images follow Substance: black = -1, mid grey = 0, white = 1.
     Channel('BUMP', 'Bump', 'NodeSocketFloat', 'ADD',
             0.0, -1.0, 1.0, 'NONE', target=('BUMP', 'Height'),
-            image_range=(-1.0, 1.0), proc_range=(0.0, 1.0)),
+            image_range=(-1.0, 1.0), proc_range=(0.0, 1.0), short="Bmp", preview_order=3),
     Channel('ALPHA', 'Alpha', 'NodeSocketFloat', 'MIX',
-            1.0, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Alpha'), default_enabled=False),
+            1.0, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Alpha'), default_enabled=False,
+            short="Alp", preview_order=5),
     Channel('EMISSION', 'Emission', 'NodeSocketColor', 'MIX',
             (0.0, 0.0, 0.0, 1.0), target=('BSDF', 'Emission Color'), colorspace='sRGB',
             ramp_color=(1.0, 1.0, 1.0, 1.0), default_enabled=False,
-            enable_values=(('Emission Strength', 1.0, 0.0),)),
+            enable_values=(('Emission Strength', 1.0, 0.0),), short="Emi", preview_order=8),
     Channel('SPECULAR', 'Specular', 'NodeSocketFloat', 'MIX',
             0.5, 0.0, 1.0, 'FACTOR', target=('BSDF', 'Specular IOR Level'),
-            default_enabled=False),
+            default_enabled=False, short="Spec", preview_order=6),
     Channel('SPECULAR_TINT', 'Specular Tint', 'NodeSocketColor', 'MIX',
             (1.0, 1.0, 1.0, 1.0), target=('BSDF', 'Specular Tint'), colorspace='sRGB',
-            ramp_color=(1.0, 1.0, 1.0, 1.0), default_enabled=False),
+            ramp_color=(1.0, 1.0, 1.0, 1.0), default_enabled=False, short="SpCo",
+            preview_order=7),
     # Painted or filled occlusion, multiplied with the AO mesh map: the product drives the AO
     # overlay and is what export writes as AO (see nodes.apply_ao).
     Channel('AO', 'Ambient Occlusion', 'NodeSocketFloat', 'MIX',
-            1.0, 0.0, 1.0, 'FACTOR', target=('AO', ''), default_enabled=False),
+            1.0, 0.0, 1.0, 'FACTOR', target=('AO', ''), default_enabled=False, short="AO",
+            preview_order=4),
 )
 
 BY_ID = {c.id: c for c in CHANNELS}

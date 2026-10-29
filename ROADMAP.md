@@ -5,12 +5,12 @@ Work queue derived from the Master Roadmap in `ESSENCE_DESIGN.md`. Sprints run i
 Legend: **[H]** verified headless, **[G]** needs the user's GUI check (milestone checklist).
 
 ## Status (2026-10-28)
-Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (12). `tests/run_all.py`: 384/384 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
+Sprints 0 to 9 are done and merged into `main`. Sprint 10 (blend modes and channels) is on `sprint-10-blend-channels`. Height from mesh moved to **Future updates** (decided with the user, 2026-10-28: built when it is requested). The asset library moved to the last sprint (12). `tests/run_all.py`: 385/385 pass headless; `tests/gui_fill_modes.py` (windowed, not in run_all) passes.
 
 The user confirmed every implemented feature on 2026-10-27 (the earlier pending GUI checks: ID Select, map preview, rename, baking groups, texture sets, Sprint 1 and Sprint 0 leftovers).
 
 **Pending GUI checks** (one):
-- **Panel placement**: the N sidebar's Essence tab has the selection's properties only (Layer, Mask or Adjustment Properties). The Properties editor's Material tab has Essence Layers (first, also on a mesh without a material: Add Layer makes one; selecting a row there updates the sidebar), Essence Mesh Maps, Essence Channels, Essence Bake and Essence Export below Blender's panels; they collapse, drag into another order, and follow the active object's material slot. Baking, exporting, the channel list and the Show on Mesh buttons work from there.
+- **Panel placement**: the N sidebar's Essence tab has the selection's properties only (Layer, Mask or Adjustment Properties). The Properties editor's Material tab has Essence Layers (first, also on a mesh without a material: Add Layer makes one; selecting a row there updates the sidebar; World Rotation turns the Material Preview HDRI; the preview buttons Col Rgh Met Bmp (AO) sit in one row, extra channels in a second), Essence Mesh Maps (an eye beside a filled map's name shows it on the mesh; a new Directional Light has Use Detail Normal ticked), Essence Channels, Essence Bake and Essence Export below Blender's panels; they collapse, drag into another order, and follow the active object's material slot. Baking, exporting, the channel list and the Show on Mesh buttons work from there.
 
 **Open decisions** (details in Open Questions of the design doc): the Mesh Map source kind and presets next to the dedicated generators; anchor points (postponed); the remedy for the shader recompile cost of deep stacks; pack or reference the bundled masks when they ship.
 
@@ -224,6 +224,7 @@ Decided with the user (2026-10-28): the P1 blend modes plus the Mix node's color
 Decided with the user (2026-10-28): plain option A. Blender has no add-on editor types and no add-on tabs in the Properties editor, so the texture set's panels move to the Material tab; the stack and the selection stay in the N sidebar.
 - [x] Essence Mesh Maps, Essence Channels, Essence Bake and Essence Export as panels in the Properties editor's Material tab; Layers, Layer, Mask and Adjustment Properties stay in the sidebars. Messages that point at a panel say where it is now. [H] `tests/test_panels.py`
 - [x] **Essence Layers** moved to the Material tab too, first (user request, 2026-10-29); the sidebar keeps the selection's properties. [H] `tests/test_panels.py`
+- [x] Above the stack: World Rotation (the 3D View's HDRI) and the whole-stack previews as short buttons, five per row (`Channel.short`, `preview_order`); Mesh Maps' Show on Mesh is an eye beside the map's name; Directional Light has Use Detail Normal on by default (group version 3, existing generators keep their value). User requests, 2026-10-29. [H] `tests/test_panels.py`, `tests/test_generators.py`
 - [ ] [G] the panels in the Material tab (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)

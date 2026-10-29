@@ -155,7 +155,9 @@ def test_map_preview_buttons_and_notices_draw(addon):
     bpy.ops.essence.rebuild()
     log = _draw(ui._maps, ob)
     shows = [c for c in log if c[0] == "operator" and c[1][0] == "essence.preview"]
-    check(len(shows) == 1, f"a Show on Mesh button for the slot that has an image: {len(shows)}")
+    check(len(shows) == 1, f"a Show on Mesh eye for the slot that has an image: {len(shows)}")
+    check(shows[0][2].get("text") == "" and shows[0][2].get("icon") == 'HIDE_ON'
+          and shows[0][2].get("emboss") is False, f"an eye icon, not a button: {shows[0][2]}")
     _make_agx()
     _run('MAP', 'ID')
     ctx = SimpleNamespace(active_object=ob, scene=bpy.context.scene,

@@ -52,7 +52,7 @@ def test_generator_source_has_no_coordinates(addon):
     check(set(found) == {'TEXTURE', 'REMAP'}, f"roles: {sorted(found)}")
     ng = found['TEXTURE'].node_tree
     check(ng.name == "Essence Gen Directional Light", ng.name)
-    check(ng.get("essence_version") == 2, "the group needs a version key")
+    check(ng.get("essence_version") == 3, "the group needs a version key")
     # Switching to a procedural brings coordinates back, and back again removes them.
     next(s for s in e.sources if s.channel == 'ROUGHNESS').kind = 'PROCEDURAL'
     check({'COORD', 'MAPPING', 'TEXTURE', 'REMAP'} == set(
@@ -117,9 +117,16 @@ def test_directional_light_can_use_the_detail_normal(addon):
     check(tex.inputs['Detail Normal'].is_linked, "the detail normal should be wired")
     check(tex.inputs['Detail Normal'].links[0].from_node.name == addon.nodes.NORMAL_NODE_NAME,
           "from the Essence Normal Map node")
-    close(_value(ob, mat, e), 0.5, 0.02, "off by default: the detail is not used")
-    tex.inputs['Use Detail Normal'].default_value = True
+    check(tex.inputs['Use Detail Normal'].default_value, "on by default (version 3)")
     close(_value(ob, mat, e), 0.5 + 0.5 * math.sqrt(0.5), 0.03, "with the detail normal")
+    tex.inputs['Use Detail Normal'].default_value = False
+    close(_value(ob, mat, e), 0.5, 0.02, "off: the detail is not used")
+    # A version 2 group upgrades and keeps the value its generator had (off then).
+    tex.node_tree["essence_version"] = 2
+    bpy.ops.essence.rebuild()
+    tex = _tex(addon, mat, e)
+    check(tex.node_tree["essence_version"] == 3, "upgraded")
+    check(not tex.inputs['Use Detail Normal'].default_value, "an existing generator keeps off")
 
 
 def test_an_empty_normal_slot_means_the_surface_normal(addon):
@@ -442,7 +449,7 @@ def test_old_direction_values_become_a_rotation(addon):
     tex.inputs['Direction'].default_value = (0, 1, 0)
     bpy.ops.essence.rebuild()
     tex = _tex(addon, mat, e)
-    check(ng["essence_version"] == 2 and tex.node_tree is ng, "rebuilt to version 2")
+    check(ng["essence_version"] == 3 and tex.node_tree is ng, "rebuilt to version 3")
     check('Direction' not in tex.inputs, "the old input is gone")
     ob.rotation_euler = (0, 0, 0)
     close(_value(ob, mat, e), 0.5, 0.02, "a light along +Y is sideways on this plane, as before")

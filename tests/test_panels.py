@@ -36,3 +36,40 @@ def test_panel_placement(addon):
     plain = make_plane("Plain")
     check(layers_poll(SimpleNamespace(active_object=plain)),
           "Layers shows on a mesh without a material (Add Layer makes one)")
+
+
+def test_view_controls_above_the_stack(addon):
+    from test_channels import _state
+    from test_ui import Rec
+    ob = make_plane()
+    bpy.ops.essence.add_layer()
+    mat = ob.active_material
+    for ch in ('ALPHA', 'SPECULAR', 'SPECULAR_TINT', 'EMISSION', 'AO'):
+        _state(mat, ch).enabled = True
+    shading = bpy.context.scene.display.shading      # a real View3DShading to draw from
+
+    def draw(kind):
+        shading.type = kind
+        area = SimpleNamespace(type='VIEW_3D', spaces=SimpleNamespace(
+            active=SimpleNamespace(shading=shading)))
+        ctx = SimpleNamespace(active_object=ob, scene=bpy.context.scene,
+                              view_layer=bpy.context.view_layer,
+                              screen=SimpleNamespace(areas=[area]))
+        log = []
+        addon.ui._stack(SimpleNamespace(layout=Rec(log)), ctx)
+        return log
+
+    log = draw('MATERIAL')
+    rot = [c for c in log if c[0] == "prop" and c[1][1] == "studiolight_rotate_z"]
+    check(len(rot) == 1 and rot[0][2].get("text") == "World Rotation",
+          "the HDRI rotation above the stack in Material Preview")
+    first = next(i for i, c in enumerate(log) if c[0] == "operator")
+    check(log.index(rot[0]) < first, "before the stack's buttons")
+    texts = [c[2].get("text") for c in log if c[0] == "operator"
+             and c[1][0] == "essence.preview" and not c[2].get("icon")]
+    check(texts == ["Col", "Rgh", "Met", "Bmp", "AO", "Alp", "Spec", "SpCo", "Emi"],
+          f"five per row, the common ones first: {texts}")
+    check(sum(1 for c in log if c[0] == "label" and c[2].get("text") == "") >= 1,
+          "the short second row is padded to the first row's widths")
+    check(not any(c[0] == "prop" and c[1][1] == "studiolight_rotate_z" for c in draw('SOLID')),
+          "no rotation in Solid shading (no HDRI)")

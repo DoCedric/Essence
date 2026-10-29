@@ -163,11 +163,15 @@ def surface_normal(ng, n_in):
     return _vector_math(ng, 'NORMALIZE', chosen, x=-200, y=150).outputs['Vector']
 
 
-_NORMAL_INPUTS = (
-    ("World Space", 'NodeSocketBool', False, {}),
-    ("Use Detail Normal", 'NodeSocketBool', False, {}),
-    (DETAIL_INPUT, 'NodeSocketVector', (0.0, 0.0, 1.0), {"hide_value": True}),
-)
+def _normal_inputs(detail=False):
+    return (
+        ("World Space", 'NodeSocketBool', False, {}),
+        ("Use Detail Normal", 'NodeSocketBool', detail, {}),
+        (DETAIL_INPUT, 'NodeSocketVector', (0.0, 0.0, 1.0), {"hide_value": True}),
+    )
+
+
+_NORMAL_INPUTS = _normal_inputs()
 
 
 def rotated_axis(ng, n_in, label, x=-400, y=-250):
@@ -395,8 +399,10 @@ def _migrate_vector(old_name):
 GENERATORS = {g.id: g for g in (
     Gen('DIRECTIONAL_LIGHT', "Directional Light",
         "How much each surface faces a light direction, like a light from that side",
-        2,
-        (_ROTATION,) + _NORMAL_INPUTS + (
+        # 3: Use Detail Normal on by default (the user's request; a rebuild keeps the value
+        # of existing generators, only new ones start with it on)
+        3,
+        (_ROTATION,) + _normal_inputs(detail=True) + (
             ("Contrast", _F, 1.0, {"min_value": 0.0, "max_value": 10.0}),
             ("Balance", _F, 0.0, {"min_value": -1.0, "max_value": 1.0})),
         _build_directional, _migrate_vector("Direction")),
