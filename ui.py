@@ -129,31 +129,6 @@ def _palette(col, tex, e, ch, mat):
     col.operator("essence.show_map", icon='IMAGE_DATA').map_id = 'ID'
 
 
-def _preview_notice(layout, mat, context):
-    """While a preview runs: what it shows, a way out, and a hint when the viewport is in Solid
-    (which ignores the node graph)."""
-    state = preview.active(mat)
-    if state is None:
-        return
-    kind, ident = state
-    if kind == 'CHANNEL':
-        name = f"{BY_ID[ident].label} of the stack" if ident in BY_ID else ident
-    elif kind == 'MAP':
-        name = f"the {dict(nodes.MAP_SLOTS).get(ident, ident)} map"
-    else:
-        e = next((x for x in mat.essence.layers if x.uid == ident), None)
-        name = e.name if e is not None else "?"
-    box = layout.box()
-    row = box.row(align=True)
-    row.label(text=f"Previewing: {name}", icon='SHADING_TEXTURE')
-    row.operator("essence.preview_stop", text="", icon='X')
-    if preview.view_override(mat):
-        box.label(text="Color management is Standard until you stop", icon='INFO')
-    shading = getattr(getattr(context, "space_data", None), "shading", None)
-    if shading is not None and shading.type == 'SOLID':
-        box.label(text="Solid ignores the nodes: use Material Preview or Rendered", icon='ERROR')
-
-
 def _previewing(mat, kind, ident):
     """Is this the preview that is running? (A function of its own: `_source_controls` has an
     argument called `preview`, which hides the module.)"""
@@ -301,7 +276,6 @@ def _stack(self, context):
         col.operator("essence.add_folder", icon='NEWFOLDER')
         col.menu("ESSENCE_MT_add_smart", text="Smart Material", icon='MATERIAL')
         return
-    _preview_notice(layout, mat, context)
     _view_controls(layout, context, mat)
     bar = layout.row(align=True)
     # The new-entry buttons each on the bar (the user's request, 2026-10-28); what is added

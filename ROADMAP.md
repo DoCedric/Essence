@@ -226,6 +226,7 @@ Decided with the user (2026-10-28): plain option A. Blender has no add-on editor
 - [x] **Essence Layers** moved to the Material tab too, first (user request, 2026-10-29); the sidebar keeps the selection's properties. [H] `tests/test_panels.py`
 - [x] Above the stack: World Rotation (the 3D View's HDRI) and the whole-stack previews as short buttons, five per row (`Channel.short`, `preview_order`); Mesh Maps' Show on Mesh is an eye beside the map's name; Directional Light has Use Detail Normal on by default (group version 3, existing generators keep their value). User requests, 2026-10-29. [H] `tests/test_panels.py`, `tests/test_generators.py`
 - [x] The whole-stack AO preview shows the baked AO times the AO channel, like the overlay and export (it showed the channel alone). User request, 2026-10-29. [H] `tests/test_specular_ao.py`
+- [x] No "Previewing: …" notice above the stack: it pushed the preview buttons down when a preview started; the pressed button shows what runs and stops it. User request, 2026-10-29. [H] `tests/test_preview.py`, `tests/test_preview_map.py`
 - [ ] [G] the panels in the Material tab (see Pending GUI checks).
 
 ## Later sprints (outline, to be detailed)

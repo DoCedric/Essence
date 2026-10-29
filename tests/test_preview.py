@@ -236,18 +236,14 @@ def test_preview_buttons_and_notice_draw(addon):
     check(pressed(), "the selected mask is the one previewed: pressed")
     mat.essence.active_index = next(i for i, e in enumerate(mat.essence.layers) if e.uid == top)
     check(not pressed(), "another layer selected: not pressed")
-    ctx = SimpleNamespace(active_object=ob, scene=bpy.context.scene,
-                          view_layer=bpy.context.view_layer,
-                          space_data=SimpleNamespace(shading=SimpleNamespace(type='SOLID')))
-    panel = SimpleNamespace(layout=Rec())
-    ui._stack(panel, ctx)
-    log = panel.layout.log
-    labels = [c[2].get("text", "") for c in log if c[0] == "label"]
-    check(any(t.startswith("Previewing:") for t in labels), f"the notice: {labels}")
-    check(any("Solid ignores the nodes" in t for t in labels), "the Solid hint")
-    check(any(c[0] == "operator" and c[1][0] == "essence.preview_stop" for c in log), "a stop button")
-    ctx.space_data.shading.type = 'MATERIAL'
-    panel = SimpleNamespace(layout=Rec())
-    ui._stack(panel, ctx)
-    check(not any("Solid ignores" in c[2].get("text", "") for c in panel.layout.log
-                  if c[0] == "label"), "no hint in Material Preview")
+    # No notice above the stack while previewing (the user's request, 2026-10-29): it pushed
+    # the buttons down; the pressed button is enough, and pressing it again stops.
+    log = _draw(ui._stack, ob)
+    check(not any(c[0] == "label" and c[2].get("text", "").startswith("Previewing")
+                  for c in log), "no Previewing notice")
+    check(not any(c[0] == "operator" and c[1][0] == "essence.preview_stop" for c in log),
+          "no stop button")
+    _run('CHANNEL', 'ROUGHNESS')
+    rgh = [c[2].get("depress") for c in _draw(ui._stack, ob) if c[0] == "operator"
+           and c[1][0] == "essence.preview" and c[2].get("text") == "Rgh"]
+    check(rgh == [True], f"the Rgh button is pressed: {rgh}")

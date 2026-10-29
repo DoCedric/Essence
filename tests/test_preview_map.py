@@ -160,13 +160,9 @@ def test_map_preview_buttons_and_notices_draw(addon):
           and shows[0][2].get("emboss") is False, f"an eye icon, not a button: {shows[0][2]}")
     _make_agx()
     _run('MAP', 'ID')
-    ctx = SimpleNamespace(active_object=ob, scene=bpy.context.scene,
-                          view_layer=bpy.context.view_layer)
-    panel = SimpleNamespace(layout=Rec())
-    ui._stack(panel, ctx)
-    labels = [c[2].get("text", "") for c in panel.layout.log if c[0] == "label"]
-    check(any("the ID map" in t for t in labels), f"the notice names the map: {labels}")
-    check(any("Color management is Standard" in t for t in labels), "and the color management")
+    eye = [c[2].get("icon") for c in _draw(ui._maps, ob) if c[0] == "operator"
+           and c[1][0] == "essence.preview"]
+    check(eye == ['HIDE_OFF'], f"the eye is open while the map is shown: {eye}")
     bpy.ops.essence.preview_stop()
     # the ID Select panel
     from test_generators import _setup as _gen_setup
